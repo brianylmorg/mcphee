@@ -1,0 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Instrument+Sans:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-cream: #FDF8F3;
+  --color-terracotta: #C4785A;
+  --color-terracotta-dark: #A85D3F;
+  --color-warm-brown: #3D2B1F;
+}
+
+body {
+  background-color: var(--color-cream);
+  font-family: "Instrument Sans", sans-serif;
+}

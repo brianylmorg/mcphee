@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/active-timers": {},
+    "/api/activities": {},
+    "/api/admin/migrate": {},
+    "/api/babies": {},
+    "/api/household": {}
+  }
+}

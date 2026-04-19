@@ -1,0 +1,11 @@
+{
+  "/(app)/dashboard/page": "/dashboard",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/active-timers/route": "/api/active-timers",
+  "/api/activities/route": "/api/activities",
+  "/api/admin/migrate/route": "/api/admin/migrate",
+  "/api/babies/route": "/api/babies",
+  "/api/household/route": "/api/household",
+  "/page": "/"
+}
