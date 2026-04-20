@@ -6,6 +6,15 @@ export const households = sqliteTable("households", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey(),
+  householdId: text("household_id")
+    .notNull()
+    .references(() => households.id),
+  name: text("name").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const babies = sqliteTable("babies", {
   id: text("id").primaryKey(),
   householdId: text("household_id")

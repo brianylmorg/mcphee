@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
-import { formatAge, timeSince, median } from "@/lib/utils";
+import { formatAge, timeSince, median, formatTime } from "@/lib/utils";
 
 interface Baby {
   id: string;
@@ -16,10 +16,16 @@ interface Activity {
   type: string;
   started_at: number;
   details: Record<string, unknown>;
+  created_by?: string;
+}
+
+interface User {
+  id: string;
+  name: string;
 }
 
 export default function DashboardPage() {
-  const { householdId, setHouseholdId } = useHousehold();
+  const { householdId, userId, userName, setHouseholdId } = useHousehold();
   const router = useRouter();
   const [baby, setBaby] = useState<Baby | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -88,6 +94,16 @@ export default function DashboardPage() {
     }
   };
 
+  const handleDelete = async (activityId: string) => {
+    if (!confirm("Delete this activity?")) return;
+    try {
+      await fetch(`/api/activities?id=${activityId}`, { method: "DELETE" });
+      fetchData();
+    } catch (error) {
+      console.error("Delete error:", error);
+    }
+  };
+
   const getLastActivity = (type: string) => {
     return activities.find((a) => a.type === type);
   };
@@ -149,6 +165,11 @@ export default function DashboardPage() {
             {baby?.birth_date && (
               <p className="text-sm text-warm-brown-light">
                 {formatAge(baby.birth_date)}
+              </p>
+            )}
+            {userName && (
+              <p className="text-xs text-warm-brown-light/70 mt-1">
+                Logged by {userName}
               </p>
             )}
           </div>
@@ -216,7 +237,12 @@ export default function DashboardPage() {
             {activities.slice(0, 6).map((activity) => (
               <div
                 key={activity.id}
-                className="bg-white p-4 rounded-xl border border-warm-brown-light/10 flex items-center justify-between"
+                onClick={() => {
+                  setLogType(activity.type);
+                  // For edit, we'd need to set editingActivity state
+                  // For now just show the existing UI as edit
+                }}
+                className="bg-white p-4 rounded-xl border border-warm-brown-light/10 flex items-center justify-between cursor-pointer hover:border-terracotta/30 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <span className="text-xl">
@@ -234,11 +260,31 @@ export default function DashboardPage() {
                     <p className="text-sm text-warm-brown-light">
                       {formatActivityDetails(activity)}
                     </p>
+                    {activity.created_by && (
+                      <p className="text-xs text-warm-brown-light/60">
+                        by {activity.created_by}
+                      </p>
+                    )}
+                    <p className="text-xs text-warm-brown-light/50">
+                      {formatTime(activity.started_at)}
+                    </p>
                   </div>
                 </div>
-                <p className="text-sm text-warm-brown-light">
-                  {timeSince(activity.started_at)}
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="text-sm text-warm-brown-light">
+                    {timeSince(activity.started_at)}
+                  </p>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(activity.id);
+                    }}
+                    className="text-warm-brown-light/40 hover:text-red-500 transition-colors text-xs"
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
             ))}
             {activities.length === 0 && (
@@ -323,6 +369,10 @@ function LogModal({
       details.kind = diaperKind;
     }
 
+    // Get userId from cookie
+    const userCookie = document.cookie.split(';').find(c => c.trim().startsWith('mcphee_user='));
+    const userId = userCookie ? userCookie.split('=')[1] : null;
+
     try {
       await fetch("/api/activities", {
         method: "POST",
@@ -332,6 +382,7 @@ function LogModal({
           type,
           startedAt,
           details,
+          userId,
         }),
       });
       onSuccess();

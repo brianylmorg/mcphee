@@ -15,11 +15,16 @@ export default async function RootLayout({
 }) {
   const cookieStore = await cookies();
   const householdId = cookieStore.get("mcphee_hh")?.value;
+  const userId = cookieStore.get("mcphee_user")?.value;
 
   return (
     <html lang="en">
       <body className="bg-cream text-warm-brown antialiased">
-        <HouseholdProvider initialHouseholdId={householdId}>
+        <HouseholdProvider 
+          initialHouseholdId={householdId}
+          initialUserId={userId}
+          initialUserName={undefined}
+        >
           {children}
         </HouseholdProvider>
       </body>

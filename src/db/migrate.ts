@@ -12,6 +12,13 @@ CREATE TABLE IF NOT EXISTS households (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  household_id TEXT NOT NULL REFERENCES households(id),
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS babies (
   id TEXT PRIMARY KEY,
   household_id TEXT NOT NULL REFERENCES households(id),

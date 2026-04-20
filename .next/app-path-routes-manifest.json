@@ -7,5 +7,6 @@
   "/api/admin/migrate/route": "/api/admin/migrate",
   "/api/babies/route": "/api/babies",
   "/api/household/route": "/api/household",
+  "/api/users/route": "/api/users",
   "/page": "/"
 }

@@ -56,6 +56,22 @@ export async function POST(request: NextRequest) {
     const db = createDB();
     const activityId = generateId();
 
+    // Get userId from household's users table
+    let createdBy: string | null = null;
+    if (body.userId) {
+      try {
+        const userResult = await db.execute({
+          sql: "SELECT name FROM users WHERE id = ? AND household_id = ?",
+          args: [body.userId, householdId],
+        });
+        if (userResult.rows.length > 0) {
+          createdBy = (userResult.rows[0] as unknown as { name: string }).name;
+        }
+      } catch (e) {
+        // user lookup failed, skip createdBy
+      }
+    }
+
     await db.execute({
       sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -67,7 +83,7 @@ export async function POST(request: NextRequest) {
         body.endedAt || null,
         JSON.stringify(body.details || {}),
         Date.now(),
-        body.createdBy || null,
+        createdBy,
       ],
     });
 

@@ -5,6 +5,7 @@
     "/api/activities": {},
     "/api/admin/migrate": {},
     "/api/babies": {},
-    "/api/household": {}
+    "/api/household": {},
+    "/api/users": {}
   }
 }
