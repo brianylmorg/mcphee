@@ -109,18 +109,37 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const db = createDB();
 
+    // Fetch existing activity to merge details
+    const existing = await db.execute({
+      sql: "SELECT details FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
+      args: [body.id, householdId],
+    });
+
+    let mergedDetails = {};
+    if (existing.rows.length > 0) {
+      const existingDetails = (existing.rows[0] as unknown as { details: string | null }).details;
+      if (existingDetails) {
+        try {
+          mergedDetails = JSON.parse(existingDetails);
+        } catch {}
+      }
+    }
+
+    // Merge new details on top of existing
+    mergedDetails = { ...mergedDetails, ...body.details };
+
     await db.execute({
       sql: `UPDATE activities SET 
-            type = COALESCE(?, type),
-            started_at = COALESCE(?, started_at),
+            type = ?,
+            started_at = ?,
             ended_at = ?,
-            details = COALESCE(?, details)
+            details = ?
             WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
       args: [
-        body.type || null,
-        body.startedAt || null,
-        body.endedAt,
-        body.details ? JSON.stringify(body.details) : null,
+        body.type,
+        body.startedAt,
+        body.endedAt ?? null,
+        JSON.stringify(mergedDetails),
         body.id,
         householdId,
       ],
