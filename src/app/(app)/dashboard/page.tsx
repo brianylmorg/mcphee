@@ -213,14 +213,18 @@ export default function DashboardPage() {
   const formatActivityDetails = (activity: Activity): string => {
     const d = activity.details || {};
     switch (activity.type) {
-      case "bottlefeed":
-        return `${d.amount} ml ${d.milkType === "formula" ? "formula" : "breastmilk"}`;
+      case "bottlefeed": {
+        const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : null;
+        return amt != null ? `${amt} ml ${d.milkType === "formula" ? "formula" : "breastmilk"}` : "—";
+      }
       case "breastfeed":
-        return d.side ? `${d.side} side` : "";
-      case "pump":
-        return `${d.amount} ml`;
+        return d.side ? `${d.side} side` : "—";
+      case "pump": {
+        const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : null;
+        return amt != null ? `${amt} ml` : "—";
+      }
       case "diaper":
-        return d.kind as string;
+        return d.kind as string || "—";
       default:
         return "";
     }
@@ -510,7 +514,7 @@ function LogModal({
     isEditing ? new Date(activity.started_at).toISOString().slice(0, 16) : ""
   );
   const [amount, setAmount] = useState(
-    isEditing && activity.details?.amount ? String(activity.details.amount) : ""
+    isEditing && activity.details?.amount != null ? String(activity.details.amount) : ""
   );
   const [milkType, setMilkType] = useState(
     isEditing && activity.details?.milkType ? String(activity.details.milkType) : "formula"
@@ -539,12 +543,12 @@ function LogModal({
     const details: Record<string, unknown> = {};
 
     if (type === "bottlefeed") {
-      details.amount = parseInt(amount) || 0;
+      details.amount = amount ? parseInt(amount) : null;
       details.milkType = milkType;
     } else if (type === "breastfeed") {
       details.side = side;
     } else if (type === "pump") {
-      details.amount = parseInt(amount) || 0;
+      details.amount = amount ? parseInt(amount) : null;
       details.side = side;
     } else if (type === "diaper") {
       details.kind = diaperKind;
