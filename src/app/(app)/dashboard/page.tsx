@@ -32,6 +32,8 @@ export default function DashboardPage() {
   const [inviteCode, setInviteCode] = useState("");
   const [showLogModal, setShowLogModal] = useState(false);
   const [logType, setLogType] = useState<string | null>(null);
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -238,9 +240,9 @@ export default function DashboardPage() {
               <div
                 key={activity.id}
                 onClick={() => {
+                  setEditingActivity(activity);
                   setLogType(activity.type);
-                  // For edit, we'd need to set editingActivity state
-                  // For now just show the existing UI as edit
+                  setShowLogModal(true);
                 }}
                 className="bg-white p-4 rounded-xl border border-warm-brown-light/10 flex items-center justify-between cursor-pointer hover:border-terracotta/30 transition-colors"
               >
@@ -287,6 +289,14 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
+            {activities.length > 6 && !showHistory && (
+              <button
+                onClick={() => setShowHistory(true)}
+                className="w-full py-3 text-sm text-terracotta hover:text-terracotta-dark transition-colors"
+              >
+                View all {activities.length} activities
+              </button>
+            )}
             {activities.length === 0 && (
               <p className="text-center text-warm-brown-light py-8">
                 No activities yet. Tap a card above to log one!
@@ -301,9 +311,14 @@ export default function DashboardPage() {
         <LogModal
           type={logType!}
           babyId={baby?.id!}
-          onClose={() => setShowLogModal(false)}
+          activity={editingActivity}
+          onClose={() => {
+            setShowLogModal(false);
+            setEditingActivity(null);
+          }}
           onSuccess={() => {
             setShowLogModal(false);
+            setEditingActivity(null);
             fetchData();
           }}
         />
@@ -326,20 +341,33 @@ export default function DashboardPage() {
 function LogModal({
   type,
   babyId,
+  activity,
   onClose,
   onSuccess,
 }: {
   type: string;
   babyId: string;
+  activity?: Activity | null;
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [when, setWhen] = useState("now");
-  const [customTime, setCustomTime] = useState("");
-  const [amount, setAmount] = useState("");
-  const [milkType, setMilkType] = useState("formula");
-  const [side, setSide] = useState("L");
-  const [diaperKind, setDiaperKind] = useState("wet");
+  const isEditing = !!activity;
+  const [when, setWhen] = useState(isEditing ? "custom" : "now");
+  const [customTime, setCustomTime] = useState(
+    isEditing ? new Date(activity.started_at).toISOString().slice(0, 16) : ""
+  );
+  const [amount, setAmount] = useState(
+    isEditing && activity.details?.amount ? String(activity.details.amount) : ""
+  );
+  const [milkType, setMilkType] = useState(
+    isEditing && activity.details?.milkType ? String(activity.details.milkType) : "formula"
+  );
+  const [side, setSide] = useState(
+    isEditing && activity.details?.side ? String(activity.details.side) : "L"
+  );
+  const [diaperKind, setDiaperKind] = useState(
+    isEditing && activity.details?.kind ? String(activity.details.kind) : "wet"
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async () => {
@@ -374,17 +402,30 @@ function LogModal({
     const userId = userCookie ? userCookie.split('=')[1] : null;
 
     try {
-      await fetch("/api/activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          babyId,
-          type,
-          startedAt,
-          details,
-          userId,
-        }),
-      });
+      if (isEditing && activity) {
+        await fetch("/api/activities", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: activity.id,
+            type,
+            startedAt,
+            details,
+          }),
+        });
+      } else {
+        await fetch("/api/activities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            babyId,
+            type,
+            startedAt,
+            details,
+            userId,
+          }),
+        });
+      }
       onSuccess();
     } catch (error) {
       console.error("Log error:", error);
@@ -408,7 +449,7 @@ function LogModal({
       <div className="bg-cream w-full max-w-lg rounded-t-3xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-display text-xl text-terracotta capitalize">
-            Log {type === "bottlefeed" ? "Bottle" : type}
+            {isEditing ? "Edit" : "Log"} {type === "bottlefeed" ? "Bottle" : type}
           </h2>
           <button onClick={onClose} className="text-warm-brown-light text-2xl">
             ×
@@ -587,7 +628,7 @@ function LogModal({
             disabled={isLoading}
             className="w-full py-4 bg-terracotta text-white font-medium rounded-2xl text-lg hover:bg-terracotta-dark transition-colors disabled:opacity-50"
           >
-            {isLoading ? "Saving..." : "Log activity"}
+            {isLoading ? "Saving..." : isEditing ? "Save changes" : "Log activity"}
           </button>
         </div>
       </div>
