@@ -492,17 +492,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Floating Action Button */}
-      <button
-        onClick={() => {
-          setLogType("bottlefeed");
-          setShowLogModal(true);
-        }}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-terracotta text-white rounded-full shadow-lg text-2xl flex items-center justify-center hover:bg-terracotta-dark transition-colors"
-      >
-        +
-      </button>
-    </main>
+      </main>
   );
 }
 
