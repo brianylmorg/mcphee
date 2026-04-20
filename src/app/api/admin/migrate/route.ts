@@ -81,7 +81,14 @@ export async function GET(request: NextRequest) {
       authToken: process.env.TURSO_AUTH_TOKEN,
     });
 
-    await client.execute(schema);
+    const statements = schema
+      .split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    for (const stmt of statements) {
+      await client.execute(stmt);
+    }
     client.close();
 
     return NextResponse.json({ success: true, message: "Migrations completed" });
