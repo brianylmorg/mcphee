@@ -52,32 +52,10 @@ export function HouseholdProvider({
 
   const isProd = process.env.NODE_ENV === "production";
 
-  // Hydration fix: re-read cookies from document after mount
-  // (cookies may exist but server couldn't read them during initial render)
-  useEffect(() => {
-    const hh = document.cookie.split(';').find(c => c.trim().startsWith('mcphee_hh='));
-    const usr = document.cookie.split(';').find(c => c.trim().startsWith('mcphee_user='));
-    if (hh && !householdId) {
-      const val = hh.split('=')[1];
-      setHouseholdIdState(val);
-    }
-    if (usr && !userId) {
-      const val = usr.split('=')[1];
-      setUserIdState(val);
-      // Also fetch user name from API
-      fetch('/api/users/me')
-        .then(r => r.json())
-        .then(data => {
-          if (data.user?.name) setUserNameState(data.user.name);
-        })
-        .catch(() => {});
-    }
-  }, []);
-
   const setHouseholdId = (id: string | null) => {
     setHouseholdIdState(id);
     if (id) {
-      document.cookie = `mcphee_hh=${id}; path=/; SameSite=Lax;${isProd ? " Secure;": ""} max-age=${60 * 60 * 24 * 365}; priority=high`;
+      document.cookie = `mcphee_hh=${id}; path=/; SameSite=Lax;${isProd ? " Secure;" : ""} max-age=${60 * 60 * 24 * 365}; priority=high`;
     } else {
       document.cookie = "mcphee_hh=; path=/; SameSite=Lax; max-age=0; priority=high";
     }
@@ -88,7 +66,7 @@ export function HouseholdProvider({
     setUserIdState(id);
     setUserNameState(name);
     if (id) {
-      document.cookie = `mcphee_user=${id}; path=/; SameSite=Lax;${isProd ? " Secure;": ""} max-age=${60 * 60 * 24 * 365}; priority=high`;
+      document.cookie = `mcphee_user=${id}; path=/; SameSite=Lax;${isProd ? " Secure;" : ""} max-age=${60 * 60 * 24 * 365}; priority=high`;
     } else {
       document.cookie = "mcphee_user=; path=/; SameSite=Lax; max-age=0; priority=high";
     }
