@@ -232,8 +232,8 @@ export default function DashboardPage() {
       }
       case "diaper": {
         const parts: string[] = [];
-        if (d.poop) parts.push(`poop ${d.poopSize || "M"}`);
-        if (d.peeSize) parts.push(`pee ${d.peeSize}`);
+        if (d.poop === "M" || d.poop === "L") parts.push(`poop ${d.poop}`);
+        if (d.peeSize === "M" || d.peeSize === "L") parts.push(`pee ${d.peeSize}`);
         return parts.length > 0 ? parts.join(", ") : "—";
       }
       default:
@@ -560,36 +560,59 @@ function LogModal({
     isEditing && detailsObj.kind ? String(detailsObj.kind) : "wet"
   );
   const [diaperPoop, setDiaperPoop] = useState(
-    isEditing && detailsObj.poop != null ? (detailsObj.poop ? "yes" : "no") : "no"
+    () => {
+      if (!isEditing) return "no";
+      const v = detailsObj.poop;
+      return v === "M" || v === "L" ? String(v) : "no";
+    }
   );
-  const [diaperPoopSize, setDiaperPoopSize] = useState(
-    isEditing && detailsObj.poopSize ? String(detailsObj.poopSize) : "M"
-  );
+  const [diaperPoopSize] = useState("M");
   const [diaperPeeSize, setDiaperPeeSize] = useState(
-    isEditing && detailsObj.peeSize ? String(detailsObj.peeSize) : "M"
+    () => {
+      if (!isEditing) return "M";
+      const v = detailsObj.peeSize;
+      return v === "M" || v === "L" ? String(v) : "M";
+    }
   );
   const [isLoading, setIsLoading] = useState(false);
 
   // Custom time picker state (hour/minute as numbers, 24h)
   const [customHour, setCustomHour] = useState(() => {
-    if (!isEditing || !activity) return 12;
-    const d = new Date(activity.started_at);
-    return d.getHours();
+    if (isEditing && activity) {
+      return new Date(activity.started_at).getHours();
+    }
+    return getSGTNow().h;
   });
   const [customMinute, setCustomMinute] = useState(() => {
-    if (!isEditing || !activity) return 0;
-    const d = new Date(activity.started_at);
-    return Math.round(d.getMinutes() / 5) * 5; // round to nearest 5
+    if (isEditing && activity) {
+      return Math.round(new Date(activity.started_at).getMinutes() / 5) * 5;
+    }
+    return getSGTNow().m;
   });
   const [customDate, setCustomDate] = useState(() => {
-    if (!isEditing || !activity) return "";
-    return new Date(activity.started_at).toLocaleDateString("en-CA", {
+    if (isEditing && activity) {
+      return new Date(activity.started_at).toLocaleDateString("en-CA", {
+        timeZone: "Asia/Singapore",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    }
+    // Default to today in SGT
+    return new Date().toLocaleDateString("en-CA", {
       timeZone: "Asia/Singapore",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
     });
   });
+
+  // Helper to get current SGT hour/minute for default
+  const getSGTNow = (): { h: number; m: number } => {
+    const now = new Date();
+    const sg = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+    return { h: sg.getHours(), m: Math.round(sg.getMinutes() / 5) * 5 };
+  };
 
   const handleSubmit = async () => {
     setIsLoading(true);
@@ -617,9 +640,8 @@ function LogModal({
       details.amount = amount ? parseInt(amount) : null;
       details.side = side;
     } else if (type === "diaper") {
-      details.poop = diaperPoop === "yes";
-      details.poopSize = diaperPoop === "yes" ? diaperPoopSize : null;
-      details.peeSize = diaperPeeSize;
+      details.poop = diaperPoop; // "no", "M", or "L"
+      details.peeSize = diaperPeeSize; // "M" or "L"
     }
 
     // Get userId from cookie
@@ -846,58 +868,58 @@ function LogModal({
 
           {type === "diaper" && (
             <div className="space-y-4">
-              {/* Poop */}
+              {/* Poo */}
               <div>
                 <label className="block text-sm font-medium text-warm-brown-light mb-2">
-                  Poop
+                  Poo
                 </label>
                 <div className="flex gap-2">
-                  {["no", "yes"].map((v) => (
+                  <button
+                    onClick={() => setDiaperPoop("no")}
+                    className={`flex-[3] py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
+                      diaperPoop === "no"
+                        ? "bg-terracotta text-white"
+                        : "bg-white border border-warm-brown-light/20"
+                    }`}
+                  >
+                    No
+                  </button>
+                  {["M", "L"].map((s) => (
                     <button
-                      key={v}
-                      onClick={() => setDiaperPoop(v)}
+                      key={s}
+                      onClick={() => {
+                        setDiaperPoop(s);
+                      }}
                       className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
-                        diaperPoop === v
+                        diaperPoop === s
                           ? "bg-terracotta text-white"
                           : "bg-white border border-warm-brown-light/20"
                       }`}
                     >
-                      {v}
+                      {s}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Poop size (only if poop = yes) */}
-              {diaperPoop === "yes" && (
-                <div>
-                  <label className="block text-sm font-medium text-warm-brown-light mb-2">
-                    Size
-                  </label>
-                  <div className="flex gap-2">
-                    {["M", "L"].map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => setDiaperPoopSize(s)}
-                        className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
-                          diaperPoopSize === s
-                            ? "bg-terracotta text-white"
-                            : "bg-white border border-warm-brown-light/20"
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Pee size */}
+              {/* Pee */}
               <div>
                 <label className="block text-sm font-medium text-warm-brown-light mb-2">
                   Pee
                 </label>
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setDiaperPeeSize("no");
+                    }}
+                    className={`flex-[3] py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
+                      diaperPeeSize === "no"
+                        ? "bg-terracotta text-white"
+                        : "bg-white border border-warm-brown-light/20"
+                    }`}
+                  >
+                    No
+                  </button>
                   {["M", "L"].map((s) => (
                     <button
                       key={s}
