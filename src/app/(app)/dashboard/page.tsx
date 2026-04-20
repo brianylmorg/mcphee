@@ -1,8 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Component, ReactNode } from "react";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
+
+class ErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; fallback: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
 import { formatAge, timeSince, median, formatTime } from "@/lib/utils";
 
 interface Baby {
@@ -132,7 +144,7 @@ export default function DashboardPage() {
     try {
       const userCookie = document.cookie.split(';').find(c => c.trim().startsWith('mcphee_user='));
       const userId = userCookie ? userCookie.split('=')[1] : null;
-      await fetch("/api/active-timers", {
+      const res = await fetch("/api/active-timers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -142,7 +154,7 @@ export default function DashboardPage() {
           startedBy: userId,
         }),
       });
-      fetchData();
+      if (!res.ok) throw new Error("Failed to start timer");
     } catch (error) {
       console.error("Start timer error:", error);
     }
@@ -250,6 +262,7 @@ export default function DashboardPage() {
   }
 
   return (
+    <ErrorBoundary fallback={<div className="min-h-screen bg-cream flex items-center justify-center"><p className="text-warm-brown">Something went wrong. <button onClick={() => window.location.reload()} className="text-terracotta underline">Reload</button></p></div>}>
     <main className="min-h-screen bg-cream pb-24">
       <header className="bg-white border-b border-warm-brown-light/10 px-6 py-4">
         <div className="max-w-lg mx-auto flex items-center justify-between">
@@ -493,6 +506,7 @@ export default function DashboardPage() {
       )}
 
       </main>
+    </ErrorBoundary>
   );
 }
 
