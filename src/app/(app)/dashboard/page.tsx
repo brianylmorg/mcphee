@@ -35,20 +35,24 @@ export default function DashboardPage() {
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
+  const [timerElapsed, setTimerElapsed] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!householdId) return;
 
     try {
-      const [babiesRes, activitiesRes, householdRes] = await Promise.all([
+      const [babiesRes, activitiesRes, householdRes, timersRes] = await Promise.all([
         fetch("/api/babies"),
         fetch("/api/activities?limit=50"),
         fetch("/api/household"),
+        fetch("/api/active-timers"),
       ]);
 
       const babiesData = await babiesRes.json();
       const activitiesData = await activitiesRes.json();
       const householdData = await householdRes.json();
+      const timersData = await timersRes.json();
 
       if (babiesData.babies?.length > 0) {
         setBaby(babiesData.babies[0]);
@@ -56,6 +60,13 @@ export default function DashboardPage() {
       setActivities(activitiesData.activities || []);
       if (householdData.inviteCode) {
         setInviteCode(householdData.inviteCode);
+      }
+      if (timersData.timers?.length > 0) {
+        setActiveTimer(timersData.timers[0]);
+        setTimerElapsed(Date.now() - Number(timersData.timers[0].started_at));
+      } else {
+        setActiveTimer(null);
+        setTimerElapsed(0);
       }
     } catch (error) {
       console.error("Fetch error:", error);
@@ -79,6 +90,15 @@ export default function DashboardPage() {
       window.removeEventListener("focus", fetchData);
     };
   }, [householdId, router, fetchData]);
+
+  // Live timer ticker
+  useEffect(() => {
+    if (!activeTimer) return;
+    const tick = () => setTimerElapsed(Date.now() - Number(activeTimer.started_at));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [activeTimer]);
 
   const handleLeave = async () => {
     if (!confirm("Are you sure you want to leave this household?")) return;
@@ -104,6 +124,63 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Delete error:", error);
     }
+  };
+
+  const handleStartTimer = async (type: string, side?: string) => {
+    if (!baby?.id) return;
+    try {
+      const userCookie = document.cookie.split(';').find(c => c.trim().startsWith('mcphee_user='));
+      const userId = userCookie ? userCookie.split('=')[1] : null;
+      await fetch("/api/active-timers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          babyId: baby.id,
+          type,
+          side: side || "L",
+          startedBy: userId,
+        }),
+      });
+      fetchData();
+    } catch (error) {
+      console.error("Start timer error:", error);
+    }
+  };
+
+  const handleSwitchSide = async (side: string) => {
+    if (!baby?.id) return;
+    try {
+      await fetch("/api/active-timers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ babyId: baby.id, side }),
+      });
+      fetchData();
+    } catch (error) {
+      console.error("Switch side error:", error);
+    }
+  };
+
+  const handleStopTimer = async () => {
+    if (!activeTimer || !baby?.id) return;
+    try {
+      await fetch(`/api/active-timers?id=${activeTimer.id}&babyId=${baby.id}`, {
+        method: "DELETE",
+      });
+      setActiveTimer(null);
+      fetchData();
+    } catch (error) {
+      console.error("Stop timer error:", error);
+    }
+  };
+
+  const formatElapsed = (ms: number): string => {
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
   };
 
   const getLastActivity = (type: string) => {
@@ -185,6 +262,49 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
+        {/* Live Timer */}
+        {activeTimer && (
+          <div className="bg-white rounded-2xl border border-terracotta/30 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">🤱</span>
+                <div>
+                  <p className="text-sm text-warm-brown-light/60">Live feeding</p>
+                  <p className="font-display text-3xl text-terracotta font-semibold tabular-nums">
+                    {formatElapsed(timerElapsed)}
+                  </p>
+                </div>
+              </div>
+              {timerElapsed > 2 * 60 * 60 * 1000 && (
+                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
+                  Safety check
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2 mb-4">
+              {["L", "R"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleSwitchSide(s)}
+                  className={`flex-1 py-3 rounded-xl text-sm font-medium uppercase transition-colors ${
+                    activeTimer.current_side === s
+                      ? "bg-terracotta text-white"
+                      : "bg-cream border border-warm-brown-light/20"
+                  }`}
+                >
+                  {s === "L" ? "Left" : "Right"} side
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={handleStopTimer}
+              className="w-full py-3 bg-green-600 text-white font-medium rounded-xl text-sm hover:bg-green-700 transition-colors"
+            >
+              Stop & log
+            </button>
+          </div>
+        )}
+
         {/* Activity Cards */}
         <div className="grid grid-cols-2 gap-3">
           {["bottlefeed", "breastfeed", "pump", "diaper"].map((type) => {
@@ -197,15 +317,26 @@ export default function DashboardPage() {
               diaper: "🧷",
             };
 
+            const isBreastfeeding = activeTimer?.type === "breastfeed";
+            const isThisBreastfeed = type === "breastfeed";
+
             return (
               <button
                 key={type}
                 onClick={() => {
-                  setLogType(type);
-                  setShowLogModal(true);
+                  if (isThisBreastfeed && !activeTimer) {
+                    handleStartTimer("breastfeed", "L");
+                  } else if (isThisBreastfeed && isBreastfeeding) {
+                    // do nothing, timer is running
+                  } else {
+                    setLogType(type);
+                    setShowLogModal(true);
+                  }
                 }}
                 className={`p-4 rounded-2xl text-left transition-all ${
-                  overdue
+                  isThisBreastfeed && isBreastfeeding
+                    ? "bg-terracotta text-white"
+                    : overdue
                     ? "bg-terracotta text-white"
                     : "bg-white border border-warm-brown-light/10"
                 }`}
@@ -216,13 +347,17 @@ export default function DashboardPage() {
                     {type === "bottlefeed" ? "Bottle" : type}
                   </span>
                 </div>
-                {last ? (
+                {isThisBreastfeed && isBreastfeeding ? (
+                  <p className="text-sm font-semibold animate-pulse">
+                    Feeding...
+                  </p>
+                ) : last ? (
                   <p className={`text-lg font-semibold ${overdue ? "text-white" : "text-warm-brown"}`}>
                     {timeSince(last.started_at)}
                   </p>
                 ) : (
                   <p className={`text-sm ${overdue ? "text-white/80" : "text-warm-brown-light"}`}>
-                    No entries yet
+                    {isThisBreastfeed ? "Tap to start" : "No entries yet"}
                   </p>
                 )}
               </button>

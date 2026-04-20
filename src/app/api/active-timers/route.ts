@@ -86,9 +86,28 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const db = createDB();
 
+    // Get current timer to read existing side_switches
+    const timerResult = await db.execute({
+      sql: "SELECT side_switches FROM active_timers WHERE baby_id = ?",
+      args: [body.babyId],
+    });
+
+    let sideSwitches: string[] = [];
+    if (timerResult.rows.length > 0) {
+      const existing = timerResult.rows[0].side_switches;
+      if (existing) {
+        try {
+          sideSwitches = JSON.parse(existing as string);
+        } catch {}
+      }
+    }
+
+    // Append new side switch
+    sideSwitches.push(body.side);
+
     await db.execute({
-      sql: `UPDATE active_timers SET current_side = ? WHERE baby_id = ?`,
-      args: [body.side, body.babyId],
+      sql: `UPDATE active_timers SET current_side = ?, side_switches = ? WHERE baby_id = ?`,
+      args: [body.side, JSON.stringify(sideSwitches), body.babyId],
     });
 
     return NextResponse.json({ success: true });
