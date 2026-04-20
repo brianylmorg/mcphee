@@ -637,6 +637,7 @@ function LogModal({
             {when === "custom" && (
               <input
                 type="datetime-local"
+                lang="en-GB"
                 value={customTime}
                 onChange={(e) => setCustomTime(e.target.value)}
                 className="mt-2 w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none"
