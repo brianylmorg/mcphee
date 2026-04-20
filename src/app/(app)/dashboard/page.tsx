@@ -230,8 +230,12 @@ export default function DashboardPage() {
         const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : null;
         return amt != null ? `${amt} ml` : "—";
       }
-      case "diaper":
-        return d.kind as string || "—";
+      case "diaper": {
+        const parts: string[] = [];
+        if (d.poop) parts.push(`poop ${d.poopSize || "M"}`);
+        if (d.peeSize) parts.push(`pee ${d.peeSize}`);
+        return parts.length > 0 ? parts.join(", ") : "—";
+      }
       default:
         return "";
     }
@@ -555,7 +559,37 @@ function LogModal({
   const [diaperKind, setDiaperKind] = useState(
     isEditing && detailsObj.kind ? String(detailsObj.kind) : "wet"
   );
+  const [diaperPoop, setDiaperPoop] = useState(
+    isEditing && detailsObj.poop != null ? (detailsObj.poop ? "yes" : "no") : "no"
+  );
+  const [diaperPoopSize, setDiaperPoopSize] = useState(
+    isEditing && detailsObj.poopSize ? String(detailsObj.poopSize) : "M"
+  );
+  const [diaperPeeSize, setDiaperPeeSize] = useState(
+    isEditing && detailsObj.peeSize ? String(detailsObj.peeSize) : "M"
+  );
   const [isLoading, setIsLoading] = useState(false);
+
+  // Custom time picker state (hour/minute as numbers, 24h)
+  const [customHour, setCustomHour] = useState(() => {
+    if (!isEditing || !activity) return 12;
+    const d = new Date(activity.started_at);
+    return d.getHours();
+  });
+  const [customMinute, setCustomMinute] = useState(() => {
+    if (!isEditing || !activity) return 0;
+    const d = new Date(activity.started_at);
+    return Math.round(d.getMinutes() / 5) * 5; // round to nearest 5
+  });
+  const [customDate, setCustomDate] = useState(() => {
+    if (!isEditing || !activity) return "";
+    return new Date(activity.started_at).toLocaleDateString("en-CA", {
+      timeZone: "Asia/Singapore",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  });
 
   const handleSubmit = async () => {
     setIsLoading(true);
@@ -566,8 +600,10 @@ function LogModal({
     else if (when === "30m") startedAt -= 30 * 60 * 1000;
     else if (when === "1h") startedAt -= 60 * 60 * 1000;
     else if (when === "2h") startedAt -= 2 * 60 * 60 * 1000;
-    else if (when === "custom" && customTime) {
-      startedAt = new Date(customTime).getTime();
+    else if (when === "custom" && customDate) {
+      // Build epoch from customDate + customHour + customMinute (SGT)
+      const [year, month, day] = customDate.split("-").map(Number);
+      startedAt = new Date(year, month - 1, day, customHour, customMinute, 0, 0).getTime();
     }
 
     const details: Record<string, unknown> = {};
@@ -581,7 +617,9 @@ function LogModal({
       details.amount = amount ? parseInt(amount) : null;
       details.side = side;
     } else if (type === "diaper") {
-      details.kind = diaperKind;
+      details.poop = diaperPoop === "yes";
+      details.poopSize = diaperPoop === "yes" ? diaperPoopSize : null;
+      details.peeSize = diaperPeeSize;
     }
 
     // Get userId from cookie
@@ -665,13 +703,54 @@ function LogModal({
               ))}
             </div>
             {when === "custom" && (
-              <input
-                type="datetime-local"
-                lang="en-GB"
-                value={customTime}
-                onChange={(e) => setCustomTime(e.target.value)}
-                className="mt-2 w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none"
-              />
+              <div className="mt-2 space-y-3">
+                {/* Date */}
+                <input
+                  type="date"
+                  value={customDate}
+                  onChange={(e) => setCustomDate(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none"
+                />
+                {/* Time: hour + minute spinners (24h) */}
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs text-warm-brown-light mb-1 text-center">Hour</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={customHour}
+                      onChange={(e) => setCustomHour(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-center text-lg tabular-nums"
+                    />
+                  </div>
+                  <span className="text-2xl text-warm-brown-light pt-4">:</span>
+                  <div className="flex-1">
+                    <label className="block text-xs text-warm-brown-light mb-1 text-center">Min</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={55}
+                      step={5}
+                      value={customMinute}
+                      onChange={(e) => setCustomMinute(Math.max(0, Math.min(55, parseInt(e.target.value) || 0)))}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-center text-lg tabular-nums"
+                    />
+                  </div>
+                </div>
+                {/* Preview in SGT */}
+                {customDate && (
+                  <p className="text-xs text-warm-brown-light/60 text-center">
+                    {new Date(
+                      parseInt(customDate.split("-")[0]),
+                      parseInt(customDate.split("-")[1]) - 1,
+                      parseInt(customDate.split("-")[2]),
+                      customHour,
+                      customMinute
+                    ).toLocaleString("en-SG", { timeZone: "Asia/Singapore", hour12: false, hour: "2-digit", minute: "2-digit" })} SGT
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
@@ -766,24 +845,73 @@ function LogModal({
           )}
 
           {type === "diaper" && (
-            <div>
-              <label className="block text-sm font-medium text-warm-brown-light mb-2">
-                Kind
-              </label>
-              <div className="flex gap-2">
-                {["wet", "dirty", "both"].map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => setDiaperKind(k)}
-                    className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
-                      diaperKind === k
-                        ? "bg-terracotta text-white"
-                        : "bg-white border border-warm-brown-light/20"
-                    }`}
-                  >
-                    {k}
-                  </button>
-                ))}
+            <div className="space-y-4">
+              {/* Poop */}
+              <div>
+                <label className="block text-sm font-medium text-warm-brown-light mb-2">
+                  Poop
+                </label>
+                <div className="flex gap-2">
+                  {["no", "yes"].map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setDiaperPoop(v)}
+                      className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
+                        diaperPoop === v
+                          ? "bg-terracotta text-white"
+                          : "bg-white border border-warm-brown-light/20"
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Poop size (only if poop = yes) */}
+              {diaperPoop === "yes" && (
+                <div>
+                  <label className="block text-sm font-medium text-warm-brown-light mb-2">
+                    Size
+                  </label>
+                  <div className="flex gap-2">
+                    {["M", "L"].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setDiaperPoopSize(s)}
+                        className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
+                          diaperPoopSize === s
+                            ? "bg-terracotta text-white"
+                            : "bg-white border border-warm-brown-light/20"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Pee size */}
+              <div>
+                <label className="block text-sm font-medium text-warm-brown-light mb-2">
+                  Pee
+                </label>
+                <div className="flex gap-2">
+                  {["M", "L"].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setDiaperPeeSize(s)}
+                      className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
+                        diaperPeeSize === s
+                          ? "bg-terracotta text-white"
+                          : "bg-white border border-warm-brown-light/20"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
