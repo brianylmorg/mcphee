@@ -325,6 +325,9 @@ export default function DashboardPage() {
                 key={type}
                 onClick={() => {
                   if (isThisBreastfeed && !activeTimer) {
+                    // Optimistic: show timer immediately
+                    setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
+                    setTimerElapsed(0);
                     handleStartTimer("breastfeed", "L");
                   } else if (isThisBreastfeed && isBreastfeeding) {
                     // do nothing, timer is running

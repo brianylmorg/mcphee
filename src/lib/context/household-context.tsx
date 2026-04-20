@@ -50,12 +50,14 @@ export function HouseholdProvider({
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
+  const isProd = process.env.NODE_ENV === "production";
+
   const setHouseholdId = (id: string | null) => {
     setHouseholdIdState(id);
     if (id) {
-      document.cookie = `mcphee_hh=${id}; path=/; SameSite=Strict; Secure`;
+      document.cookie = `mcphee_hh=${id}; path=/; SameSite=Strict;${isProd ? " Secure;" : ""} max-age=${60 * 60 * 24 * 365}`;
     } else {
-      document.cookie = "mcphee_hh=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      document.cookie = "mcphee_hh=; path=/; SameSite=Strict; max-age=0";
     }
     router.refresh();
   };
@@ -64,9 +66,9 @@ export function HouseholdProvider({
     setUserIdState(id);
     setUserNameState(name);
     if (id) {
-      document.cookie = `mcphee_user=${id}; path=/; SameSite=Strict; Secure`;
+      document.cookie = `mcphee_user=${id}; path=/; SameSite=Strict;${isProd ? " Secure;" : ""} max-age=${60 * 60 * 24 * 365}`;
     } else {
-      document.cookie = "mcphee_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      document.cookie = "mcphee_user=; path=/; SameSite=Strict; max-age=0";
     }
   };
 
