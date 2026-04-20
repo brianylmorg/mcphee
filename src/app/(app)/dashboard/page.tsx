@@ -43,15 +43,17 @@ export default function DashboardPage() {
     if (!householdId) return;
 
     try {
-      const [babiesRes, activitiesRes, householdRes] = await Promise.all([
+      const [babiesRes, activitiesRes, householdRes, timersRes] = await Promise.all([
         fetch("/api/babies"),
         fetch("/api/activities?limit=50"),
         fetch("/api/household"),
+        fetch("/api/active-timers"),
       ]);
 
       const babiesData = await babiesRes.json();
       const activitiesData = await activitiesRes.json();
       const householdData = await householdRes.json();
+      const timersData = await timersRes.json();
 
       if (babiesData.babies?.length > 0) {
         setBaby(babiesData.babies[0]);
@@ -59,6 +61,13 @@ export default function DashboardPage() {
       setActivities(activitiesData.activities || []);
       if (householdData.inviteCode) {
         setInviteCode(householdData.inviteCode);
+      }
+      if (timersData.timers?.length > 0) {
+        setActiveTimer(timersData.timers[0]);
+        setTimerElapsed(Date.now() - Number(timersData.timers[0].started_at));
+      } else {
+        setActiveTimer(null);
+        setTimerElapsed(0);
       }
     } catch (error) {
       console.error("Fetch error:", error);
@@ -331,8 +340,20 @@ export default function DashboardPage() {
               <button
                 key={type}
                 onClick={() => {
-                  setLogType(type);
-                  setShowLogModal(true);
+                  if (isThisBreastfeed && !activeTimer) {
+                    if (!breastfeedPromptShown) {
+                      setBreastfeedPromptShown(true);
+                    } else {
+                      // Start timer
+                      setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
+                      setTimerElapsed(0);
+                      setBreastfeedPromptShown(false);
+                      handleStartTimer("breastfeed", "L");
+                    }
+                  } else {
+                    setLogType(type);
+                    setShowLogModal(true);
+                  }
                 }}
                 className={`p-4 rounded-2xl text-left transition-all ${
                   isThisBreastfeed && isBreastfeeding
