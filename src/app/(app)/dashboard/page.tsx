@@ -15,7 +15,7 @@ interface Activity {
   id: string;
   type: string;
   started_at: number;
-  details: Record<string, unknown>;
+  details: string | Record<string, unknown>; // JSON string from API, parsed client-side
   created_by?: string;
 }
 
@@ -210,8 +210,15 @@ export default function DashboardPage() {
     return elapsed > medianInterval * 1.2;
   };
 
+  const parseDetails = (activity: Activity): Record<string, unknown> => {
+    if (!activity.details) return {};
+    if (typeof activity.details === "object") return activity.details as Record<string, unknown>;
+    try { return JSON.parse(activity.details as string) as Record<string, unknown>; }
+    catch { return {}; }
+  };
+
   const formatActivityDetails = (activity: Activity): string => {
-    const d = activity.details || {};
+    const d = parseDetails(activity);
     switch (activity.type) {
       case "bottlefeed": {
         const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : null;
@@ -509,21 +516,30 @@ function LogModal({
   onSuccess: () => void;
 }) {
   const isEditing = !!activity;
+
+  // Parse details - comes back from API as JSON string
+  const detailsObj = (() => {
+    if (!activity?.details) return {};
+    if (typeof activity.details === "object") return activity.details as Record<string, unknown>;
+    try { return JSON.parse(activity.details as string) as Record<string, unknown>; }
+    catch { return {}; }
+  })();
+
   const [when, setWhen] = useState(isEditing ? "custom" : "now");
   const [customTime, setCustomTime] = useState(
     isEditing ? new Date(activity.started_at).toISOString().slice(0, 16) : ""
   );
   const [amount, setAmount] = useState(
-    isEditing && activity.details?.amount != null ? String(activity.details.amount) : ""
+    isEditing && detailsObj.amount != null ? String(detailsObj.amount) : ""
   );
   const [milkType, setMilkType] = useState(
-    isEditing && activity.details?.milkType ? String(activity.details.milkType) : "formula"
+    isEditing && detailsObj.milkType ? String(detailsObj.milkType) : "formula"
   );
   const [side, setSide] = useState(
-    isEditing && activity.details?.side ? String(activity.details.side) : "L"
+    isEditing && detailsObj.side ? String(detailsObj.side) : "L"
   );
   const [diaperKind, setDiaperKind] = useState(
-    isEditing && activity.details?.kind ? String(activity.details.kind) : "wet"
+    isEditing && detailsObj.kind ? String(detailsObj.kind) : "wet"
   );
   const [isLoading, setIsLoading] = useState(false);
 
