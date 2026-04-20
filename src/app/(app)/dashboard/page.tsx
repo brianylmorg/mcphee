@@ -533,6 +533,13 @@ function LogModal({
   );
   const [isLoading, setIsLoading] = useState(false);
 
+  // Helper to get current SGT hour/minute for default
+  const getSGTNow = (): { h: number; m: number } => {
+    const now = new Date();
+    const sg = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+    return { h: sg.getHours(), m: Math.round(sg.getMinutes() / 5) * 5 };
+  };
+
   // Custom time picker state (hour/minute as numbers, 24h)
   const [customHour, setCustomHour] = useState(() => {
     if (isEditing && activity) {
@@ -563,13 +570,6 @@ function LogModal({
       day: "2-digit",
     });
   });
-
-  // Helper to get current SGT hour/minute for default
-  const getSGTNow = (): { h: number; m: number } => {
-    const now = new Date();
-    const sg = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
-    return { h: sg.getHours(), m: Math.round(sg.getMinutes() / 5) * 5 };
-  };
 
   const handleSubmit = async () => {
     setIsLoading(true);
