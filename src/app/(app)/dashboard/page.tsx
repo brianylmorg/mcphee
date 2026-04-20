@@ -43,18 +43,23 @@ export default function DashboardPage() {
     if (!householdId) return;
 
     try {
-      const [babiesRes, activitiesRes] = await Promise.all([
+      const [babiesRes, activitiesRes, householdRes] = await Promise.all([
         fetch("/api/babies"),
         fetch("/api/activities?limit=50"),
+        fetch("/api/household"),
       ]);
 
       const babiesData = await babiesRes.json();
       const activitiesData = await activitiesRes.json();
+      const householdData = await householdRes.json();
 
       if (babiesData.babies?.length > 0) {
         setBaby(babiesData.babies[0]);
       }
       setActivities(activitiesData.activities || []);
+      if (householdData.inviteCode) {
+        setInviteCode(householdData.inviteCode);
+      }
     } catch (error) {
       console.error("Fetch error:", error);
     } finally {
