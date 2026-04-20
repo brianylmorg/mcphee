@@ -26,19 +26,26 @@
 - Dashboard: baby name, age display, invite code
 - Leave-household action
 
-### Stage 2 — Core Logging
-- Bottlefeed (formula/breastmilk subtypes),Pump, Diaper activities
+### Stage 1 — Scaffold + Household Setup ✅
+- Welcome screen: create OR join household
+- Baby profile form (name + optional birth date)
+- Dashboard: baby name, age display, invite code
+- Leave-household action
+
+### Stage 2 — Core Logging ✅
+- Bottlefeed (formula/breastmilk subtypes), Pump, Diaper activities
 - Dashboard cards with time-since-last + predicted-next (median, 3+ entries)
-- "Overdue" accent state
-- Recent activity list (last 6) + full history grouped by day
+- "Overdue" accent state (terracotta when past median × 1.2)
+- Recent activity list (last 6, expand to all) + full history grouped by day
 - Edit/delete entries, backfill timestamps
 - "When" quick chips: Now / 5m / 15m / 30m / 1h / 2h + custom picker
 
-### Stage 3 — Breastfeed Live Timer
-- Start creates `active_timers` row (server-side)
-- Side switching logged in `side_switches` JSON
-- Stop atomically deletes timer + creates activity entry
-- Safety prompt at 2h runtime
+### Stage 3 — Breastfeed Live Timer ✅
+- Tap breastfeed card to start live timer (server-side active_timers row)
+- Live elapsed time ticker (MM:SS or H:MM:SS)
+- L/R side toggle — each switch appended to side_switches JSON array
+- Safety prompt at 2h runtime (amber "Safety check" badge)
+- Stop & log atomically creates activity entry with full side history
 
 ### Stage 4 — Growth Tracking
 - Weight (g), length (mm), optional head (mm), backdatable
