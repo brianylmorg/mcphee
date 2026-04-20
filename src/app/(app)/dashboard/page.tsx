@@ -526,8 +526,22 @@ function LogModal({
   })();
 
   const [when, setWhen] = useState(isEditing ? "custom" : "now");
+  // Convert UTC epoch ms → SGT datetime-local value (YYYY-MM-DDTHH:mm)
+  const toSGTLocal = (epochMs: number): string => {
+    return new Date(epochMs)
+      .toLocaleString("en-CA", {
+        timeZone: "Asia/Singapore",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+      .replace(", ", "T");
+  };
   const [customTime, setCustomTime] = useState(
-    isEditing ? new Date(activity.started_at).toISOString().slice(0, 16) : ""
+    isEditing ? toSGTLocal(activity.started_at) : ""
   );
   const [amount, setAmount] = useState(
     isEditing && detailsObj.amount != null ? String(detailsObj.amount) : ""
