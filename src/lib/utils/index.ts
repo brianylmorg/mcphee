@@ -47,6 +47,7 @@ export function formatTime(timestamp: number): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: "Asia/Singapore",
   });
 }
 
@@ -55,6 +56,7 @@ export function formatDate(timestamp: number): string {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone: "Asia/Singapore",
   });
 }
 

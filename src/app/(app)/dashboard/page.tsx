@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
   const [timerElapsed, setTimerElapsed] = useState(0);
+  const [breastfeedPromptShown, setBreastfeedPromptShown] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!householdId) return;
@@ -325,11 +326,21 @@ export default function DashboardPage() {
                 key={type}
                 onClick={() => {
                   if (isThisBreastfeed && !activeTimer) {
-                    // Optimistic: show timer immediately
-                    setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
-                    setTimerElapsed(0);
-                    handleStartTimer("breastfeed", "L");
-                  } else if (isThisBreastfeed && isBreastfeeding) {
+                    if (!breastfeedPromptShown) {
+                      setBreastfeedPromptShown(true);
+                    } else {
+                      setBreastfeedPromptShown(false);
+                      setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
+                      setTimerElapsed(0);
+                      handleStartTimer("breastfeed", "L");
+                    }
+                  } else if (isThisBreastfeed && !activeTimer && breastfeedPromptShown) {
+                  // Second click: start timer
+                  setBreastfeedPromptShown(false);
+                  setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
+                  setTimerElapsed(0);
+                  handleStartTimer("breastfeed", "L");
+                } else if (isThisBreastfeed && isBreastfeeding) {
                     // do nothing, timer is running
                   } else {
                     setLogType(type);
@@ -353,6 +364,10 @@ export default function DashboardPage() {
                 {isThisBreastfeed && isBreastfeeding ? (
                   <p className="text-sm font-semibold animate-pulse">
                     Feeding...
+                  </p>
+                ) : isThisBreastfeed && !activeTimer && breastfeedPromptShown ? (
+                  <p className="text-sm font-semibold text-terracotta">
+                    Tap again to start
                   </p>
                 ) : last ? (
                   <p className={`text-lg font-semibold ${overdue ? "text-white" : "text-warm-brown"}`}>
