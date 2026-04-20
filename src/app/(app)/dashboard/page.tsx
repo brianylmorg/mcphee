@@ -1,20 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, Component, ReactNode } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
-
-class ErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: ReactNode; fallback: ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-  static getDerivedStateFromError() { return { hasError: true }; }
-  render() {
-    if (this.state.hasError) return this.props.fallback;
-    return this.props.children;
-  }
-}
 import { formatAge, timeSince, median, formatTime } from "@/lib/utils";
 
 interface Baby {
@@ -262,7 +250,6 @@ export default function DashboardPage() {
   }
 
   return (
-    <ErrorBoundary fallback={<div className="min-h-screen bg-cream flex items-center justify-center"><p className="text-warm-brown">Something went wrong. <button onClick={() => window.location.reload()} className="text-terracotta underline">Reload</button></p></div>}>
     <main className="min-h-screen bg-cream pb-24">
       <header className="bg-white border-b border-warm-brown-light/10 px-6 py-4">
         <div className="max-w-lg mx-auto flex items-center justify-between">
@@ -353,27 +340,8 @@ export default function DashboardPage() {
               <button
                 key={type}
                 onClick={() => {
-                  if (isThisBreastfeed && !activeTimer) {
-                    if (!breastfeedPromptShown) {
-                      setBreastfeedPromptShown(true);
-                    } else {
-                      setBreastfeedPromptShown(false);
-                      setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
-                      setTimerElapsed(0);
-                      handleStartTimer("breastfeed", "L");
-                    }
-                  } else if (isThisBreastfeed && !activeTimer && breastfeedPromptShown) {
-                  // Second click: start timer
-                  setBreastfeedPromptShown(false);
-                  setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
-                  setTimerElapsed(0);
-                  handleStartTimer("breastfeed", "L");
-                } else if (isThisBreastfeed && isBreastfeeding) {
-                    // do nothing, timer is running
-                  } else {
-                    setLogType(type);
-                    setShowLogModal(true);
-                  }
+                  setLogType(type);
+                  setShowLogModal(true);
                 }}
                 className={`p-4 rounded-2xl text-left transition-all ${
                   isThisBreastfeed && isBreastfeeding
@@ -506,7 +474,6 @@ export default function DashboardPage() {
       )}
 
       </main>
-    </ErrorBoundary>
   );
 }
 
