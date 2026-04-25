@@ -19,14 +19,20 @@ export function formatAge(birthDate: number | null): string {
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) return "Day 1";
-  if (diffDays === 1) return "Day 2";
   if (diffDays < 7) return `Day ${diffDays + 1}`;
-  if (diffDays < 14) return "1 week";
-  if (diffDays < 21) return "2 weeks";
-  if (diffDays < 28) return "3 weeks";
-  if (diffDays < 60) return `${Math.floor(diffDays / 7)} weeks`;
-  if (diffDays < 90) return `${Math.floor(diffDays / 30)} month`;
-  return `${Math.floor(diffDays / 30)} months`;
+
+  const weeks = Math.floor(diffDays / 7);
+  const remainDays = diffDays % 7;
+
+  if (diffDays < 90) {
+    if (remainDays === 0) return `${weeks} week${weeks > 1 ? "s" : ""}`;
+    return `${weeks} week${weeks > 1 ? "s" : ""} ${remainDays} day${remainDays > 1 ? "s" : ""}`;
+  }
+
+  const months = Math.floor(diffDays / 30);
+  const remainWeeks = Math.floor((diffDays % 30) / 7);
+  if (remainWeeks === 0) return `${months} month${months > 1 ? "s" : ""}`;
+  return `${months} month${months > 1 ? "s" : ""} ${remainWeeks} week${remainWeeks > 1 ? "s" : ""}`;
 }
 
 export function timeSince(timestamp: number): string {

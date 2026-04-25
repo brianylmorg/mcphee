@@ -66,8 +66,9 @@ export default function DashboardPage() {
         setPushEnabled(false);
       } else {
         const vapidRes = await fetch("/api/push-vapid");
-        const { publicKey } = await vapidRes.json();
-        if (!publicKey) { alert("Push not configured on server"); return; }
+        const vapidData = await vapidRes.json();
+        if (!vapidData.publicKey) { alert(vapidData.error || "Push not configured on server"); return; }
+        const publicKey = vapidData.publicKey;
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: publicKey,
@@ -333,7 +334,7 @@ export default function DashboardPage() {
             )}
             {userName && (
               <p className="text-xs text-warm-brown-light/70 mt-1">
-                Logged by {userName}
+                You are {userName}
               </p>
             )}
           </div>
@@ -573,6 +574,7 @@ export default function DashboardPage() {
           babyId={baby?.id!}
           userId={userId}
           activity={editingActivity}
+          activities={activities}
           onClose={() => {
             setShowLogModal(false);
             setEditingActivity(null);
@@ -594,6 +596,7 @@ function LogModal({
   babyId,
   userId,
   activity,
+  activities,
   onClose,
   onSuccess,
 }: {
@@ -601,6 +604,7 @@ function LogModal({
   babyId: string;
   userId: string | null;
   activity?: Activity | null;
+  activities: Activity[];
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -632,9 +636,22 @@ function LogModal({
   const [customTime, setCustomTime] = useState(
     isEditing ? toSGTLocal(activity.started_at) : ""
   );
-  const [amount, setAmount] = useState(
-    isEditing && detailsObj.amount != null ? String(detailsObj.amount) : ""
-  );
+  const [amount, setAmount] = useState(() => {
+    if (isEditing && detailsObj.amount != null) return String(detailsObj.amount);
+    if (type === "bottlefeed" && !isEditing) {
+      const lastPump = activities.find((a) => {
+        if (a.type !== "pump") return false;
+        const d = typeof a.details === "object" ? a.details : (() => { try { return JSON.parse(a.details as string); } catch { return {}; } })();
+        return d && (d as Record<string, unknown>).amount != null;
+      });
+      if (lastPump) {
+        const d = typeof lastPump.details === "object" ? lastPump.details : (() => { try { return JSON.parse(lastPump.details as string); } catch { return {}; } })();
+        const pumpAmt = (d as Record<string, unknown>)?.amount;
+        if (pumpAmt != null) return String(pumpAmt);
+      }
+    }
+    return "";
+  });
   const [milkType, setMilkType] = useState(
     isEditing && detailsObj.milkType ? String(detailsObj.milkType) : "formula"
   );
