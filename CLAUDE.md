@@ -74,7 +74,7 @@
 - One-tap logging is #1 priority
 
 ## Activity Types
-`bottlefeed` | `breastfeed` | `pump` | `diaper`
+`bottlefeed` | `breastfeed` | `pump` | `diaper` | `vomit`
 
 ## Database Schema
 - `households`: id, invite_code (unique), created_at

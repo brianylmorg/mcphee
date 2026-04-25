@@ -38,6 +38,54 @@ export default function DashboardPage() {
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
   const [timerElapsed, setTimerElapsed] = useState(0);
   const [breastfeedPromptShown, setBreastfeedPromptShown] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator && "PushManager" in window) {
+      setPushSupported(true);
+      navigator.serviceWorker.register("/sw.js").then((reg) => {
+        reg.pushManager.getSubscription().then((sub) => {
+          setPushEnabled(!!sub);
+        });
+      });
+    }
+  }, []);
+
+  const togglePush = async () => {
+    setPushLoading(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (pushEnabled) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch(`/api/push-subscribe?endpoint=${encodeURIComponent(sub.endpoint)}`, { method: "DELETE" });
+          await sub.unsubscribe();
+        }
+        setPushEnabled(false);
+      } else {
+        const vapidRes = await fetch("/api/push-vapid");
+        const { publicKey } = await vapidRes.json();
+        if (!publicKey) { alert("Push not configured on server"); return; }
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: publicKey,
+        });
+        await fetch("/api/push-subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub.toJSON(), label: navigator.userAgent.slice(0, 50) }),
+        });
+        setPushEnabled(true);
+      }
+    } catch (err) {
+      console.error("Push toggle error:", err);
+      alert("Could not toggle notifications. Check browser permissions.");
+    } finally {
+      setPushLoading(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     if (!householdId) return;
@@ -208,6 +256,21 @@ export default function DashboardPage() {
     return elapsed > medianInterval * 1.2;
   };
 
+  const userColors = (() => {
+    const palette = [
+      { bg: "bg-terracotta/15", text: "text-terracotta", dot: "bg-terracotta" },
+      { bg: "bg-blue-100", text: "text-blue-700", dot: "bg-blue-500" },
+      { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
+      { bg: "bg-violet-100", text: "text-violet-700", dot: "bg-violet-500" },
+    ];
+    const names = [...new Set(activities.map((a) => a.created_by).filter(Boolean))] as string[];
+    const map: Record<string, typeof palette[0]> = {};
+    names.forEach((name, i) => {
+      map[name] = palette[i % palette.length];
+    });
+    return map;
+  })();
+
   const parseDetails = (activity: Activity): Record<string, unknown> => {
     if (!activity.details) return {};
     if (typeof activity.details === "object") return activity.details as Record<string, unknown>;
@@ -233,6 +296,14 @@ export default function DashboardPage() {
         if (d.poop === "M" || d.poop === "L") parts.push(`poop ${d.poop}`);
         if (d.peeSize === "M" || d.peeSize === "L") parts.push(`pee ${d.peeSize}`);
         return parts.length > 0 ? parts.join(", ") : "—";
+      }
+      case "vomit": {
+        const labels: Record<string, string> = {
+          projectile: "Projectile",
+          "dribble-milk": "Dribble milk",
+          "dribble-beancurd": "Dribble beancurd",
+        };
+        return labels[d.vomitType as string] || "—";
       }
       default:
         return "";
@@ -321,7 +392,7 @@ export default function DashboardPage() {
 
         {/* Activity Cards */}
         <div className="grid grid-cols-2 gap-3">
-          {["bottlefeed", "breastfeed", "pump", "diaper"].map((type) => {
+          {["bottlefeed", "breastfeed", "pump", "diaper", "vomit"].map((type) => {
             const last = getLastActivity(type);
             const overdue = isOverdue(type);
             const icons: Record<string, string> = {
@@ -329,6 +400,7 @@ export default function DashboardPage() {
               breastfeed: "🤱",
               pump: "🧴",
               diaper: "🧷",
+              vomit: "🤮",
             };
 
             const isBreastfeeding = activeTimer?.type === "breastfeed";
@@ -364,7 +436,7 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2 mb-2">
                   <span>{icons[type]}</span>
                   <span className="text-sm font-medium capitalize">
-                    {type === "bottlefeed" ? "Bottle" : type}
+                    {type === "bottlefeed" ? "Bottle" : type === "vomit" ? "Vomit" : type}
                   </span>
                 </div>
                 {isThisBreastfeed && isBreastfeeding ? (
@@ -412,19 +484,21 @@ export default function DashboardPage() {
                       breastfeed: "🤱",
                       pump: "🧴",
                       diaper: "🧷",
+                      vomit: "🤮",
                     }[activity.type]}
                   </span>
                   <div>
                     <p className="font-medium capitalize">
-                      {activity.type === "bottlefeed" ? "Bottle" : activity.type}
+                      {activity.type === "bottlefeed" ? "Bottle" : activity.type === "vomit" ? "Vomit" : activity.type}
                     </p>
                     <p className="text-sm text-warm-brown-light">
                       {formatActivityDetails(activity)}
                     </p>
                     {activity.created_by && (
-                      <p className="text-xs text-warm-brown-light/60">
-                        by {activity.created_by}
-                      </p>
+                      <span className={`inline-flex items-center gap-1 text-xs mt-0.5 px-1.5 py-0.5 rounded-full ${userColors[activity.created_by]?.bg || "bg-warm-brown-light/10"} ${userColors[activity.created_by]?.text || "text-warm-brown-light/60"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${userColors[activity.created_by]?.dot || "bg-warm-brown-light/40"}`} />
+                        {activity.created_by}
+                      </span>
                     )}
                     <p className="text-xs text-warm-brown-light/50">
                       {formatTime(activity.started_at)}
@@ -462,6 +536,33 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
+        </section>
+
+        {/* Settings */}
+        <section className="pt-4 border-t border-warm-brown-light/10 space-y-3">
+          {pushSupported && (
+            <button
+              onClick={togglePush}
+              disabled={pushLoading}
+              className={`w-full py-3 rounded-xl text-sm font-medium transition-colors ${
+                pushEnabled
+                  ? "bg-green-600 text-white"
+                  : "bg-white border border-warm-brown-light/20 text-warm-brown"
+              } disabled:opacity-50`}
+            >
+              {pushLoading
+                ? "..."
+                : pushEnabled
+                ? "Notifications on"
+                : "Enable notifications"}
+            </button>
+          )}
+          <button
+            onClick={handleLeave}
+            className="w-full py-3 text-sm text-warm-brown-light/50 hover:text-red-500 transition-colors"
+          >
+            Leave household
+          </button>
         </section>
       </div>
 
@@ -539,6 +640,9 @@ function LogModal({
   );
   const [side, setSide] = useState(
     isEditing && detailsObj.side ? String(detailsObj.side) : "L"
+  );
+  const [vomitType, setVomitType] = useState(
+    isEditing && detailsObj.vomitType ? String(detailsObj.vomitType) : "projectile"
   );
   const [diaperKind, setDiaperKind] = useState(
     isEditing && detailsObj.kind ? String(detailsObj.kind) : "wet"
@@ -624,8 +728,10 @@ function LogModal({
       details.amount = amount ? parseInt(amount) : null;
       details.side = side;
     } else if (type === "diaper") {
-      details.poop = diaperPoop; // "no", "M", or "L"
-      details.peeSize = diaperPeeSize; // "M" or "L"
+      details.poop = diaperPoop;
+      details.peeSize = diaperPeeSize;
+    } else if (type === "vomit") {
+      details.vomitType = vomitType;
     }
 
     try {
@@ -935,6 +1041,33 @@ function LogModal({
                     }`}
                   >
                     {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {type === "vomit" && (
+            <div>
+              <label className="block text-sm font-medium text-warm-brown-light mb-2">
+                Type
+              </label>
+              <div className="flex flex-col gap-2">
+                {[
+                  { value: "projectile", label: "Projectile" },
+                  { value: "dribble-milk", label: "Dribble milk" },
+                  { value: "dribble-beancurd", label: "Dribble beancurd" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setVomitType(opt.value)}
+                    className={`py-3 rounded-xl text-sm font-medium transition-colors ${
+                      vomitType === opt.value
+                        ? "bg-terracotta text-white"
+                        : "bg-white border border-warm-brown-light/20"
+                    }`}
+                  >
+                    {opt.label}
                   </button>
                 ))}
               </div>

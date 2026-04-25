@@ -50,6 +50,17 @@ export function HouseholdProvider({
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    if (userId && !userName) {
+      fetch("/api/users")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.user?.name) setUserNameState(data.user.name);
+        })
+        .catch(() => {});
+    }
+  }, [userId, userName]);
+
   const setHouseholdId = (id: string | null) => {
     setHouseholdIdState(id);
     router.refresh();

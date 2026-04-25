@@ -1,0 +1,18 @@
+{
+  "name": "mcphee — Baby Activity Tracker",
+  "short_name": "mcphee",
+  "description": "Track your baby's activities together",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#FDF8F3",
+  "theme_color": "#C4785A",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
