@@ -141,11 +141,21 @@ export async function DELETE(request: NextRequest) {
 
     if (timerResult.rows.length > 0) {
       const timer = timerResult.rows[0] as Record<string, unknown>;
-      
-      // Create activity from timer
+
+      let createdBy: string | null = null;
+      if (timer.started_by) {
+        const userResult = await db.execute({
+          sql: "SELECT name FROM users WHERE id = ?",
+          args: [String(timer.started_by)],
+        });
+        if (userResult.rows.length > 0) {
+          createdBy = (userResult.rows[0] as unknown as { name: string }).name;
+        }
+      }
+
       const activityId = generateId();
       await db.execute({
-        sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by) 
+        sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           activityId,
@@ -155,7 +165,7 @@ export async function DELETE(request: NextRequest) {
           Date.now(),
           JSON.stringify({ side: timer.current_side, sideSwitches: timer.side_switches }),
           Date.now(),
-          timer.started_by ? String(timer.started_by) : null,
+          createdBy,
         ],
       });
     }

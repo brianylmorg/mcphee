@@ -96,6 +96,21 @@ export async function GET(request: NextRequest) {
     for (const stmt of statements) {
       await client.execute(stmt);
     }
+
+    // Fix activities where created_by is a userId instead of a name
+    await client.execute(`
+      UPDATE activities SET created_by = (
+        SELECT u.name FROM users u WHERE u.id = activities.created_by
+      ) WHERE created_by IN (SELECT id FROM users)
+    `);
+
+    // Deduplicate users: keep the earliest record per (household_id, name)
+    await client.execute(`
+      DELETE FROM users WHERE id NOT IN (
+        SELECT MIN(id) FROM users GROUP BY household_id, name
+      )
+    `);
+
     client.close();
 
     return NextResponse.json({ success: true, message: "Migrations completed" });

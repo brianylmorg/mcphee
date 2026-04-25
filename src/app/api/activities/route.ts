@@ -18,10 +18,9 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get("limit") || "50";
 
     let sql = `
-      SELECT a.*, b.name as baby_name, u.name as user_name
-      FROM activities a 
-      JOIN babies b ON a.baby_id = b.id 
-      LEFT JOIN users u ON a.created_by = u.name
+      SELECT a.*, b.name as baby_name
+      FROM activities a
+      JOIN babies b ON a.baby_id = b.id
       WHERE b.household_id = ?
     `;
     const args: string[] = [householdId];
