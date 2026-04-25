@@ -66,9 +66,10 @@ export async function POST(request: NextRequest) {
 
       response.cookies.set("mcphee_hh", householdId, {
         httpOnly: true,
-        sameSite: "strict",
+        sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
         path: "/",
+        maxAge: 60 * 60 * 24 * 365,
       });
 
       return response;
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "join") {
       const { inviteCode } = body;
-      
+
       const result = await db.execute({
         sql: "SELECT id FROM households WHERE invite_code = ?",
         args: [inviteCode],
@@ -96,11 +97,31 @@ export async function POST(request: NextRequest) {
 
       response.cookies.set("mcphee_hh", householdId, {
         httpOnly: true,
-        sameSite: "strict",
+        sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
         path: "/",
+        maxAge: 60 * 60 * 24 * 365,
       });
 
+      return response;
+    }
+
+    if (body.action === "leave") {
+      const response = NextResponse.json({ success: true });
+      response.cookies.set("mcphee_hh", "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 0,
+      });
+      response.cookies.set("mcphee_user", "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 0,
+      });
       return response;
     }
 

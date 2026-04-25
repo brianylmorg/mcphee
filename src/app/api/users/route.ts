@@ -76,10 +76,10 @@ export async function POST(request: NextRequest) {
       const response = NextResponse.json({ id: newUserId, name: body.name, householdId });
       response.cookies.set("mcphee_user", newUserId, {
         httpOnly: true,
-        sameSite: "strict",
+        sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
         path: "/",
-        maxAge: 60 * 60 * 24 * 365, // 1 year
+        maxAge: 60 * 60 * 24 * 365,
       });
       return response;
     }

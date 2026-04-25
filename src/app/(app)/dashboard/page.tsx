@@ -130,8 +130,6 @@ export default function DashboardPage() {
   const handleStartTimer = async (type: string, side?: string) => {
     if (!baby?.id) return;
     try {
-      const userCookie = document.cookie.split(';').find(c => c.trim().startsWith('mcphee_user='));
-      const userId = userCookie ? userCookie.split('=')[1] : null;
       const res = await fetch("/api/active-timers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -472,6 +470,7 @@ export default function DashboardPage() {
         <LogModal
           type={logType!}
           babyId={baby?.id!}
+          userId={userId}
           activity={editingActivity}
           onClose={() => {
             setShowLogModal(false);
@@ -492,12 +491,14 @@ export default function DashboardPage() {
 function LogModal({
   type,
   babyId,
+  userId,
   activity,
   onClose,
   onSuccess,
 }: {
   type: string;
   babyId: string;
+  userId: string | null;
   activity?: Activity | null;
   onClose: () => void;
   onSuccess: () => void;
@@ -626,10 +627,6 @@ function LogModal({
       details.poop = diaperPoop; // "no", "M", or "L"
       details.peeSize = diaperPeeSize; // "M" or "L"
     }
-
-    // Get userId from cookie
-    const userCookie = document.cookie.split(';').find(c => c.trim().startsWith('mcphee_user='));
-    const userId = userCookie ? userCookie.split('=')[1] : null;
 
     try {
       if (isEditing && activity) {

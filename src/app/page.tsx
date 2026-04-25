@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
 
@@ -17,8 +17,14 @@ export default function WelcomePage() {
     inviteCode?: string;
     babyId?: string;
   } | null>(null);
-  const { setHouseholdId } = useHousehold();
+  const { householdId, setHouseholdId } = useHousehold();
   const router = useRouter();
+
+  useEffect(() => {
+    if (householdId) {
+      router.replace("/dashboard");
+    }
+  }, [householdId, router]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

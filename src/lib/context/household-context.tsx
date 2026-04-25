@@ -50,26 +50,14 @@ export function HouseholdProvider({
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const isProd = process.env.NODE_ENV === "production";
-
   const setHouseholdId = (id: string | null) => {
     setHouseholdIdState(id);
-    if (id) {
-      document.cookie = `mcphee_hh=${id}; path=/; SameSite=Lax;${isProd ? " Secure;" : ""} max-age=${60 * 60 * 24 * 365}; priority=high`;
-    } else {
-      document.cookie = "mcphee_hh=; path=/; SameSite=Lax; max-age=0; priority=high";
-    }
     router.refresh();
   };
 
   const setUserId = (id: string | null, name: string | null) => {
     setUserIdState(id);
     setUserNameState(name);
-    if (id) {
-      document.cookie = `mcphee_user=${id}; path=/; SameSite=Lax;${isProd ? " Secure;" : ""} max-age=${60 * 60 * 24 * 365}; priority=high`;
-    } else {
-      document.cookie = "mcphee_user=; path=/; SameSite=Lax; max-age=0; priority=high";
-    }
   };
 
   return (
