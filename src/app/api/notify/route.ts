@@ -11,9 +11,13 @@ function median(arr: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-export async function POST(request: NextRequest) {
-  const key = new URL(request.url).searchParams.get("key");
-  if (key !== process.env.MIGRATION_KEY) {
+async function handleNotify(request: NextRequest) {
+  const cronSecret = request.headers.get("authorization")?.replace("Bearer ", "");
+  const queryKey = new URL(request.url).searchParams.get("key");
+  const authorized =
+    (process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET) ||
+    (process.env.MIGRATION_KEY && queryKey === process.env.MIGRATION_KEY);
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -101,4 +105,12 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ sent: sent.length });
+}
+
+export async function GET(request: NextRequest) {
+  return handleNotify(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleNotify(request);
 }
