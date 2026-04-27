@@ -56,3 +56,25 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export async function PUT(request: NextRequest) {
+  const householdId = request.cookies.get("mcphee_hh")?.value;
+  if (!householdId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const db = createDB();
+
+    await db.execute({
+      sql: "UPDATE babies SET name = ? WHERE id = ? AND household_id = ?",
+      args: [body.name, body.id, householdId],
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Update baby error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

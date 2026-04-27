@@ -25,7 +25,7 @@ interface User {
 }
 
 export default function DashboardPage() {
-  const { householdId, userId, userName, setHouseholdId } = useHousehold();
+  const { householdId, userId, userName, setHouseholdId, setUserId } = useHousehold();
   const router = useRouter();
   const [baby, setBaby] = useState<Baby | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -724,7 +724,36 @@ export default function DashboardPage() {
         </section>
 
         {/* Settings */}
-        <section className="pt-4 border-t border-warm-brown-light/10 space-y-3">
+        <section className="pt-4 border-t border-warm-brown-light/10 space-y-4">
+          <h2 className="text-sm font-medium text-warm-brown-light">Settings</h2>
+
+          <SettingsField
+            label="Your name"
+            value={userName || ""}
+            onSave={async (name) => {
+              await fetch("/api/users", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+              });
+              setUserId(userId, name);
+            }}
+          />
+
+          <SettingsField
+            label="Baby name"
+            value={baby?.name || ""}
+            onSave={async (name) => {
+              if (!baby?.id) return;
+              await fetch("/api/babies", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: baby.id, name }),
+              });
+              setBaby({ ...baby, name });
+            }}
+          />
+
           {pushSupported && (
             <button
               onClick={togglePush}
@@ -1283,6 +1312,71 @@ function LogModal({
             {isLoading ? "Saving..." : isEditing ? "Save changes" : "Log activity"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsField({
+  label,
+  value,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  if (!editing) {
+    return (
+      <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-warm-brown-light/10">
+        <div>
+          <p className="text-xs text-warm-brown-light/60">{label}</p>
+          <p className="text-sm text-warm-brown">{value || "—"}</p>
+        </div>
+        <button
+          onClick={() => { setDraft(value); setEditing(true); }}
+          className="text-xs text-terracotta hover:text-terracotta-dark transition-colors"
+        >
+          Edit
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white p-4 rounded-xl border border-terracotta/30 space-y-2">
+      <p className="text-xs text-warm-brown-light/60">{label}</p>
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        autoFocus
+        className="w-full px-3 py-2 rounded-lg border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-sm"
+      />
+      <div className="flex gap-2">
+        <button
+          onClick={() => setEditing(false)}
+          className="flex-1 py-2 rounded-lg text-sm text-warm-brown-light border border-warm-brown-light/20"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={async () => {
+            if (!draft.trim()) return;
+            setSaving(true);
+            await onSave(draft.trim());
+            setSaving(false);
+            setEditing(false);
+          }}
+          disabled={!draft.trim() || saving}
+          className="flex-1 py-2 rounded-lg text-sm bg-terracotta text-white font-medium disabled:opacity-50"
+        >
+          {saving ? "..." : "Save"}
+        </button>
       </div>
     </div>
   );

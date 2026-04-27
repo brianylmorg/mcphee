@@ -90,3 +90,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export async function PUT(request: NextRequest) {
+  const userId = request.cookies.get("mcphee_user")?.value;
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const db = createDB();
+
+    await db.execute({
+      sql: "UPDATE users SET name = ? WHERE id = ?",
+      args: [body.name, userId],
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Update user error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
