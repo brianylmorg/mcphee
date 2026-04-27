@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { cookies } from "next/headers";
 import { HouseholdProvider } from "@/lib/context/household-context";
+import { createDB } from "@/db";
 
 export const metadata: Metadata = {
   title: "mcphee — Baby Activity Tracker",
@@ -30,6 +31,17 @@ export default async function RootLayout({
   const householdId = cookieStore.get("mcphee_hh")?.value;
   const userId = cookieStore.get("mcphee_user")?.value;
 
+  let userName: string | undefined;
+  if (userId) {
+    try {
+      const db = createDB();
+      const result = await db.execute({ sql: "SELECT name FROM users WHERE id = ?", args: [userId] });
+      if (result.rows.length > 0) {
+        userName = (result.rows[0] as unknown as { name: string }).name;
+      }
+    } catch {}
+  }
+
   return (
     <html lang="en">
       <head>
@@ -37,10 +49,10 @@ export default async function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body className="bg-cream text-warm-brown antialiased">
-        <HouseholdProvider 
+        <HouseholdProvider
           initialHouseholdId={householdId}
           initialUserId={userId}
-          initialUserName={undefined}
+          initialUserName={userName}
         >
           {children}
         </HouseholdProvider>
