@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
-import { formatAge, timeSince, median, formatTime, formatWeight } from "@/lib/utils";
+import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
 
 interface Baby {
   id: string;
@@ -646,67 +646,85 @@ export default function DashboardPage() {
             Recent Activity
           </h2>
           <div className="space-y-2">
-            {activities.slice(0, 6).map((activity) => {
-              const displayType = activity.type === "bottlefeed" ? "Bottle" : activity.type === "vomit" ? "Vomit" : activity.type.charAt(0).toUpperCase() + activity.type.slice(1);
-              const details = formatActivityDetails(activity);
-              const color = activity.created_by ? userColors[activity.created_by] : null;
+            {(() => {
+              const visible = showHistory ? activities : activities.slice(0, 6);
+              const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+              const yesterday = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
 
-              return (
-                <div
-                  key={activity.id}
-                  onClick={() => {
-                    setEditingActivity(activity);
-                    setLogType(activity.type);
-                    setShowLogModal(true);
-                  }}
-                  className="bg-white p-4 rounded-xl border border-warm-brown-light/10 cursor-pointer hover:border-terracotta/30 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-xl shrink-0">
-                        {{
-                          bottlefeed: "🍼",
-                          breastfeed: "🤱",
-                          pump: "🧴",
-                          diaper: "🧷",
-                          vomit: "🤮",
-                        }[activity.type]}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm text-warm-brown">
-                          <span className="font-medium">{displayType}</span>
-                          {details && details !== "—" && (
-                            <span className="text-warm-brown-light"> {details}</span>
-                          )}
-                        </p>
-                        <p className="text-xs text-warm-brown-light/60 mt-0.5">
-                          {timeSince(activity.started_at)} at {formatTime(activity.started_at)}
-                          {activity.created_by && (
-                            <>
-                              {" · "}
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${color?.bg || "bg-warm-brown-light/10"} ${color?.text || "text-warm-brown-light/60"}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${color?.dot || "bg-warm-brown-light/40"}`} />
-                                {activity.created_by}
-                              </span>
-                            </>
-                          )}
-                        </p>
+              let lastDateKey = "";
+              return visible.map((activity) => {
+                const dateKey = new Date(activity.started_at).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+                const showHeader = dateKey !== lastDateKey;
+                lastDateKey = dateKey;
+
+                const dateLabel = dateKey === today ? "Today" : dateKey === yesterday ? "Yesterday" : formatDate(activity.started_at);
+                const displayType = activity.type === "bottlefeed" ? "Bottle" : activity.type === "vomit" ? "Vomit" : activity.type.charAt(0).toUpperCase() + activity.type.slice(1);
+                const details = formatActivityDetails(activity);
+                const color = activity.created_by ? userColors[activity.created_by] : null;
+
+                return (
+                  <div key={activity.id}>
+                    {showHeader && (
+                      <p className="text-xs font-medium text-warm-brown-light/50 uppercase tracking-wide pt-3 pb-1 first:pt-0">
+                        {dateLabel}
+                      </p>
+                    )}
+                    <div
+                      onClick={() => {
+                        setEditingActivity(activity);
+                        setLogType(activity.type);
+                        setShowLogModal(true);
+                      }}
+                      className="bg-white p-4 rounded-xl border border-warm-brown-light/10 cursor-pointer hover:border-terracotta/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-xl shrink-0">
+                            {{
+                              bottlefeed: "🍼",
+                              breastfeed: "🤱",
+                              pump: "🧴",
+                              diaper: "🧷",
+                              vomit: "🤮",
+                            }[activity.type]}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm text-warm-brown">
+                              <span className="font-medium">{displayType}</span>
+                              {details && details !== "—" && (
+                                <span className="text-warm-brown-light"> {details}</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-warm-brown-light/60 mt-0.5">
+                              {timeSince(activity.started_at)} at {formatTime(activity.started_at)}
+                              {activity.created_by && (
+                                <>
+                                  {" · "}
+                                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${color?.bg || "bg-warm-brown-light/10"} ${color?.text || "text-warm-brown-light/60"}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${color?.dot || "bg-warm-brown-light/40"}`} />
+                                    {activity.created_by}
+                                  </span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(activity.id);
+                          }}
+                          className="text-warm-brown-light/40 hover:text-red-500 transition-colors text-xs shrink-0 ml-2"
+                          title="Delete"
+                        >
+                          ×
+                        </button>
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(activity.id);
-                      }}
-                      className="text-warm-brown-light/40 hover:text-red-500 transition-colors text-xs shrink-0 ml-2"
-                      title="Delete"
-                    >
-                      ×
-                    </button>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
             {activities.length > 6 && !showHistory && (
               <button
                 onClick={() => setShowHistory(true)}
