@@ -373,13 +373,14 @@ export default function DashboardPage() {
   const handleSaveWeight = async () => {
     if (!baby?.id || !weightInput) return;
     setSavingWeight(true);
+    const weightG = Math.round(parseFloat(weightInput) * 1000);
     try {
       await fetch("/api/measurements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ babyId: baby.id, weightG: parseInt(weightInput) }),
+        body: JSON.stringify({ babyId: baby.id, weightG }),
       });
-      setLatestWeight(parseInt(weightInput));
+      setLatestWeight(weightG);
       setShowWeightInput(false);
       setWeightInput("");
     } catch (error) {
@@ -414,9 +415,11 @@ export default function DashboardPage() {
             <h1 className="font-display text-2xl text-terracotta">
               {baby?.name || "Baby"}
             </h1>
-            {baby?.birth_date && (
+            {(baby?.birth_date || latestWeight) && (
               <p className="text-sm text-warm-brown-light">
-                {formatAge(baby.birth_date)}
+                {baby?.birth_date ? formatAge(baby.birth_date) : ""}
+                {baby?.birth_date && latestWeight ? " · " : ""}
+                {latestWeight ? formatWeight(latestWeight) : ""}
               </p>
             )}
             {userName && (
@@ -487,7 +490,7 @@ export default function DashboardPage() {
                 onClick={() => setShowWeightInput(!showWeightInput)}
                 className="text-xs text-warm-brown-light/60 hover:text-terracotta transition-colors"
               >
-                {formatWeight(latestWeight)}
+                Update weight
               </button>
             )}
           </div>
@@ -498,25 +501,26 @@ export default function DashboardPage() {
                 {latestWeight == null ? "Enter baby’s weight to calculate feed target" : "Update weight"}
               </p>
               <div className="flex flex-wrap gap-2">
-                {[2500, 3000, 3500, 4000, 4500, 5000].map((g) => (
+                {[2.5, 3.0, 3.5, 4.0, 4.5, 5.0].map((kg) => (
                   <button
-                    key={g}
-                    onClick={() => setWeightInput(String(g))}
+                    key={kg}
+                    onClick={() => setWeightInput(String(kg))}
                     className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      weightInput === String(g)
+                      weightInput === String(kg)
                         ? "bg-terracotta text-white"
                         : "bg-cream border border-warm-brown-light/20"
                     }`}
                   >
-                    {formatWeight(g)}
+                    {kg} kg
                   </button>
                 ))}
               </div>
               <input
                 type="number"
+                step="0.1"
                 value={weightInput}
                 onChange={(e) => setWeightInput(e.target.value)}
-                placeholder="Or enter weight in grams"
+                placeholder="Weight in kg (e.g. 3.8)"
                 className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-sm"
               />
               <button
