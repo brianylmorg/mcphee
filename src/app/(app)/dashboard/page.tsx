@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
-import { formatAge, timeSince, median, formatTime } from "@/lib/utils";
+import { formatAge, timeSince, median, formatTime, formatWeight } from "@/lib/utils";
 
 interface Baby {
   id: string;
@@ -41,6 +41,10 @@ export default function DashboardPage() {
   const [pushSupported, setPushSupported] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [latestWeight, setLatestWeight] = useState<number | null>(null);
+  const [weightInput, setWeightInput] = useState("");
+  const [showWeightInput, setShowWeightInput] = useState(false);
+  const [savingWeight, setSavingWeight] = useState(false);
 
   useEffect(() => {
     if ("serviceWorker" in navigator && "PushManager" in window) {
@@ -92,17 +96,19 @@ export default function DashboardPage() {
     if (!householdId) return;
 
     try {
-      const [babiesRes, activitiesRes, householdRes, timersRes] = await Promise.all([
+      const [babiesRes, activitiesRes, householdRes, timersRes, measurementsRes] = await Promise.all([
         fetch("/api/babies"),
         fetch("/api/activities?limit=50"),
         fetch("/api/household"),
         fetch("/api/active-timers"),
+        fetch("/api/measurements"),
       ]);
 
       const babiesData = await babiesRes.json();
       const activitiesData = await activitiesRes.json();
       const householdData = await householdRes.json();
       const timersData = await timersRes.json();
+      const measurementsData = await measurementsRes.json();
 
       if (babiesData.babies?.length > 0) {
         setBaby(babiesData.babies[0]);
@@ -110,6 +116,9 @@ export default function DashboardPage() {
       setActivities(activitiesData.activities || []);
       if (householdData.inviteCode) {
         setInviteCode(householdData.inviteCode);
+      }
+      if (measurementsData.measurement?.weight_g != null) {
+        setLatestWeight(Number(measurementsData.measurement.weight_g));
       }
       if (timersData.timers?.length > 0) {
         setActiveTimer(timersData.timers[0]);
@@ -311,6 +320,84 @@ export default function DashboardPage() {
     }
   };
 
+  const WINDOW_MS = 3 * 60 * 60 * 1000;
+
+  const fullFeedWindow = (() => {
+    if (latestWeight == null) return null;
+
+    const targetMl = Math.round((latestWeight / 1000) * 150 / 8);
+    const feeds = activities
+      .filter((a) => a.type === "bottlefeed" || a.type === "breastfeed")
+      .sort((a, b) => a.started_at - b.started_at);
+
+    if (feeds.length === 0) return { targetMl, windowStart: null, mlConsumed: 0, breastfeedSessions: 0, timeLeftMs: 0, expiresAt: 0, active: false };
+
+    let windowStart = feeds[0].started_at;
+    for (let i = 1; i < feeds.length; i++) {
+      if (feeds[i].started_at - windowStart >= WINDOW_MS) {
+        windowStart = feeds[i].started_at;
+      }
+    }
+
+    const now = Date.now();
+    const windowEnd = windowStart + WINDOW_MS;
+    const active = now < windowEnd;
+
+    const windowFeeds = feeds.filter(
+      (a) => a.started_at >= windowStart && a.started_at < windowEnd
+    );
+
+    let mlConsumed = 0;
+    let breastfeedSessions = 0;
+    for (const f of windowFeeds) {
+      if (f.type === "bottlefeed") {
+        const d = parseDetails(f);
+        const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : 0;
+        mlConsumed += amt;
+      } else if (f.type === "breastfeed") {
+        breastfeedSessions++;
+      }
+    }
+
+    return {
+      targetMl,
+      windowStart,
+      mlConsumed,
+      breastfeedSessions,
+      timeLeftMs: active ? windowEnd - now : 0,
+      expiresAt: windowEnd,
+      active,
+    };
+  })();
+
+  const handleSaveWeight = async () => {
+    if (!baby?.id || !weightInput) return;
+    setSavingWeight(true);
+    try {
+      await fetch("/api/measurements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ babyId: baby.id, weightG: parseInt(weightInput) }),
+      });
+      setLatestWeight(parseInt(weightInput));
+      setShowWeightInput(false);
+      setWeightInput("");
+    } catch (error) {
+      console.error("Save weight error:", error);
+    } finally {
+      setSavingWeight(false);
+    }
+  };
+
+  const formatCountdown = (ms: number): string => {
+    if (ms <= 0) return "0m";
+    const totalMin = Math.floor(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  };
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-cream flex items-center justify-center">
@@ -390,6 +477,93 @@ export default function DashboardPage() {
             </button>
           </div>
         )}
+
+        {/* Full Feed Counter */}
+        <div className="bg-white rounded-2xl border border-warm-brown-light/10 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display text-lg text-terracotta">Full feed</h2>
+            {latestWeight != null && (
+              <button
+                onClick={() => setShowWeightInput(!showWeightInput)}
+                className="text-xs text-warm-brown-light/60 hover:text-terracotta transition-colors"
+              >
+                {formatWeight(latestWeight)}
+              </button>
+            )}
+          </div>
+
+          {showWeightInput || latestWeight == null ? (
+            <div className="space-y-3">
+              <p className="text-sm text-warm-brown-light">
+                {latestWeight == null ? "Enter baby’s weight to calculate feed target" : "Update weight"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[2500, 3000, 3500, 4000, 4500, 5000].map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setWeightInput(String(g))}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      weightInput === String(g)
+                        ? "bg-terracotta text-white"
+                        : "bg-cream border border-warm-brown-light/20"
+                    }`}
+                  >
+                    {formatWeight(g)}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                value={weightInput}
+                onChange={(e) => setWeightInput(e.target.value)}
+                placeholder="Or enter weight in grams"
+                className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-sm"
+              />
+              <button
+                onClick={handleSaveWeight}
+                disabled={!weightInput || savingWeight}
+                className="w-full py-3 bg-terracotta text-white font-medium rounded-xl text-sm hover:bg-terracotta-dark transition-colors disabled:opacity-50"
+              >
+                {savingWeight ? "Saving..." : "Save weight"}
+              </button>
+            </div>
+          ) : fullFeedWindow ? (
+            fullFeedWindow.active && fullFeedWindow.windowStart ? (
+              <div>
+                <div className="flex items-baseline gap-2 mb-2">
+                  <span className="font-display text-2xl text-warm-brown tabular-nums">
+                    {fullFeedWindow.mlConsumed}
+                  </span>
+                  <span className="text-warm-brown-light text-sm">
+                    / {fullFeedWindow.targetMl} ml
+                  </span>
+                  {fullFeedWindow.breastfeedSessions > 0 && (
+                    <span className="text-warm-brown-light text-sm">
+                      + {fullFeedWindow.breastfeedSessions} nursing
+                    </span>
+                  )}
+                </div>
+                <div className="w-full bg-cream rounded-full h-2 mb-3">
+                  <div
+                    className="bg-terracotta h-2 rounded-full transition-all"
+                    style={{ width: `${Math.min(100, (fullFeedWindow.mlConsumed / fullFeedWindow.targetMl) * 100)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-warm-brown-light/60">
+                  <span>{formatCountdown(fullFeedWindow.timeLeftMs)} left</span>
+                  <span>Window ends {formatTime(fullFeedWindow.expiresAt)}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-warm-brown-light">
+                No active window. Next feed starts a new 3h window.
+                <span className="block text-xs text-warm-brown-light/50 mt-1">
+                  Target: {fullFeedWindow.targetMl} ml per window
+                </span>
+              </p>
+            )
+          ) : null}
+        </div>
 
         {/* Activity Cards */}
         <div className="grid grid-cols-2 gap-3">
