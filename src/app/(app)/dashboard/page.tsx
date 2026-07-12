@@ -45,7 +45,6 @@ export default function DashboardPage() {
   const [weightInput, setWeightInput] = useState("");
   const [showWeightInput, setShowWeightInput] = useState(false);
   const [savingWeight, setSavingWeight] = useState(false);
-  const [milkInventory, setMilkInventory] = useState<{ amountMl: number; updatedAt: number | null } | null>(null);
 
   useEffect(() => {
     if ("serviceWorker" in navigator && "PushManager" in window) {
@@ -113,23 +112,6 @@ export default function DashboardPage() {
 
       if (babiesData.babies?.length > 0) {
         setBaby(babiesData.babies[0]);
-        
-        // Fetch milk inventory for the baby
-        try {
-          console.log("[Milk Inventory] Fetching for baby:", babiesData.babies[0].id);
-          const inventoryRes = await fetch(`/api/milk-inventory?babyId=${babiesData.babies[0].id}`);
-          console.log("[Milk Inventory] Response status:", inventoryRes.status);
-          if (inventoryRes.ok) {
-            const inventoryData = await inventoryRes.json();
-            console.log("[Milk Inventory] Data received:", inventoryData);
-            setMilkInventory(inventoryData.inventory);
-          } else {
-            const errorText = await inventoryRes.text();
-            console.error("[Milk Inventory] API error:", errorText);
-          }
-        } catch (e) {
-          console.error("[Milk Inventory] Fetch error:", e);
-        }
       }
       setActivities(activitiesData.activities || []);
       if (householdData.inviteCode) {
@@ -645,19 +627,12 @@ export default function DashboardPage() {
                     Tap again to start
                   </p>
                 ) : last ? (
-                  <>
-                    <p className={`text-lg font-semibold ${overdue ? "text-white" : "text-warm-brown"}`}>
-                      {timeSince(last.started_at)}
-                    </p>
-                    {type === "bottlefeed" && milkInventory && (
-                      <p className={`text-xs mt-1 ${overdue ? "text-white/70" : "text-warm-brown-light"}`}>
-                        🧴 {milkInventory.amountMl}ml waiting
-                      </p>
-                    )}
-                  </>
+                  <p className={`text-lg font-semibold ${overdue ? "text-white" : "text-warm-brown"}`}>
+                    {timeSince(last.started_at)}
+                  </p>
                 ) : (
                   <p className={`text-sm ${overdue ? "text-white/80" : "text-warm-brown-light"}`}>
-                    {isThisBreastfeed ? "Tap to start" : type === "bottlefeed" && milkInventory ? `🧴 ${milkInventory.amountMl}ml waiting` : "No entries yet"}
+                    {isThisBreastfeed ? "Tap to start" : "No entries yet"}
                   </p>
                 )}
               </button>
