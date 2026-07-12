@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ["@libsql/client"],
+  serverExternalPackages: ["@libsql/client"],
+  turbopack: {
+    root: process.cwd(),
   },
 };
 
