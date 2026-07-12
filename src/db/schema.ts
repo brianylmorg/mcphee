@@ -103,7 +103,7 @@ export const paperLogImportRows = sqliteTable("paper_log_import_rows", {
     .notNull()
     .references(() => paperLogImportBatches.id),
   rowIndex: integer("row_index").notNull(),
-  status: text("status").notNull(), // staged | duplicate | committed | skipped
+  status: text("status").notNull(), // staged | reviewed | duplicate | committed | skipped
   sourceRef: text("source_ref"),
   confidence: integer("confidence"),
   type: text("type").notNull(),

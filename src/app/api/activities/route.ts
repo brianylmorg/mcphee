@@ -5,6 +5,26 @@ import { generateId } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
+const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep"]);
+
+function isValidTimestamp(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function validateActivityInput(body: Record<string, unknown>) {
+  if (typeof body.babyId !== "string" || !body.babyId) return "babyId is required";
+  if (typeof body.type !== "string" || !VALID_TYPES.has(body.type)) return "Invalid activity type";
+  if (!isValidTimestamp(body.startedAt)) return "startedAt must be a timestamp";
+  if (body.endedAt != null && !isValidTimestamp(body.endedAt)) return "endedAt must be a timestamp";
+  if (body.endedAt != null && Number(body.endedAt) < Number(body.startedAt)) {
+    return "endedAt must be after startedAt";
+  }
+  if (body.details != null && (typeof body.details !== "object" || Array.isArray(body.details))) {
+    return "details must be an object";
+  }
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   const householdId = request.cookies.get("mcphee_hh")?.value;
 
@@ -54,6 +74,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const inputError = validateActivityInput(body);
+    if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
+
     const db = createDB();
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
@@ -95,6 +118,13 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
+    if (typeof body.id !== "string" || !body.id) {
+      return NextResponse.json({ error: "Activity ID required" }, { status: 400 });
+    }
+
+    const inputError = validateActivityInput(body);
+    if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
+
     const db = createDB();
 
     // Fetch existing activity to merge details and verify household ownership.
@@ -164,10 +194,14 @@ export async function DELETE(request: NextRequest) {
 
     const db = createDB();
 
-    await db.execute({
+    const result = await db.execute({
       sql: `DELETE FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
       args: [activityId, householdId],
     });
+
+    if (result.rowsAffected === 0) {
+      return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

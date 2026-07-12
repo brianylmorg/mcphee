@@ -17,6 +17,7 @@ type ImportRowInput = {
 };
 
 const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep"]);
+const REVIEW_CONFIRMATION = "I reviewed these rows against the source paper logs";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -173,9 +174,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "commit") {
-      const { batchId, createdBy } = body as { batchId?: string; createdBy?: string };
+      const { batchId, createdBy, confirmation } = body as {
+        batchId?: string;
+        createdBy?: string;
+        confirmation?: string;
+      };
       if (!batchId) {
         return NextResponse.json({ error: "batchId is required" }, { status: 400 });
+      }
+      if (confirmation !== REVIEW_CONFIRMATION) {
+        return NextResponse.json(
+          {
+            error: "Review confirmation required before importing paper logs",
+            confirmation: REVIEW_CONFIRMATION,
+          },
+          { status: 400 }
+        );
       }
 
       const batchResult = await db.execute({
@@ -189,10 +203,13 @@ export async function POST(request: NextRequest) {
       const batch = batchResult.rows[0] as unknown as { baby_id: string };
       const rows = await db.execute({
         sql: `SELECT * FROM paper_log_import_rows
-              WHERE batch_id = ? AND status = 'staged'
+              WHERE batch_id = ? AND status = 'reviewed'
               ORDER BY row_index ASC`,
         args: [batchId],
       });
+      if (rows.rows.length === 0) {
+        return NextResponse.json({ error: "No reviewed rows to commit" }, { status: 400 });
+      }
 
       const now = Date.now();
       let committedCount = 0;
@@ -231,6 +248,47 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json({ batchId, committedCount });
+    }
+
+    if (action === "review") {
+      const { batchId, rowUpdates } = body as {
+        batchId?: string;
+        rowUpdates?: Array<{ id?: string; status?: string; note?: string }>;
+      };
+      if (!batchId || !Array.isArray(rowUpdates) || rowUpdates.length === 0) {
+        return NextResponse.json({ error: "batchId and rowUpdates are required" }, { status: 400 });
+      }
+
+      const batch = await db.execute({
+        sql: "SELECT id FROM paper_log_import_batches WHERE id = ? AND status = 'staged'",
+        args: [batchId],
+      });
+      if (batch.rows.length === 0) {
+        return NextResponse.json({ error: "Staged batch not found" }, { status: 404 });
+      }
+
+      let reviewedCount = 0;
+      let skippedCount = 0;
+      for (const update of rowUpdates) {
+        const rowId = update.id;
+        const status = update.status;
+        if (!rowId || (status !== "reviewed" && status !== "skipped")) {
+          return NextResponse.json({ error: "Each row update needs id and status reviewed|skipped" }, { status: 400 });
+        }
+
+        const result = await db.execute({
+          sql: `UPDATE paper_log_import_rows
+                SET status = ?, note = COALESCE(?, note)
+                WHERE id = ? AND batch_id = ? AND status = 'staged' AND duplicate_activity_id IS NULL`,
+          args: [status, update.note ?? null, rowId, batchId],
+        });
+        if (result.rowsAffected > 0) {
+          if (status === "reviewed") reviewedCount++;
+          if (status === "skipped") skippedCount++;
+        }
+      }
+
+      return NextResponse.json({ batchId, reviewedCount, skippedCount });
     }
 
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
