@@ -82,3 +82,37 @@ export const notificationLog = sqliteTable("notification_log", {
   kind: text("kind").notNull(),
   sentAt: integer("sent_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+export const paperLogImportBatches = sqliteTable("paper_log_import_batches", {
+  id: text("id").primaryKey(),
+  householdId: text("household_id")
+    .notNull()
+    .references(() => households.id),
+  babyId: text("baby_id")
+    .notNull()
+    .references(() => babies.id),
+  status: text("status").notNull(), // staged | committed | cancelled
+  sourceNote: text("source_note"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  createdBy: text("created_by"),
+});
+
+export const paperLogImportRows = sqliteTable("paper_log_import_rows", {
+  id: text("id").primaryKey(),
+  batchId: text("batch_id")
+    .notNull()
+    .references(() => paperLogImportBatches.id),
+  rowIndex: integer("row_index").notNull(),
+  status: text("status").notNull(), // staged | duplicate | committed | skipped
+  sourceRef: text("source_ref"),
+  confidence: integer("confidence"),
+  type: text("type").notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+  endedAt: integer("ended_at", { mode: "timestamp_ms" }),
+  details: text("details", { mode: "json" }),
+  note: text("note"),
+  rawText: text("raw_text"),
+  duplicateActivityId: text("duplicate_activity_id").references(() => activities.id),
+  importedActivityId: text("imported_activity_id").references(() => activities.id),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});

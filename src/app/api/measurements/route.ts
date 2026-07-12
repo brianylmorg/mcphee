@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
+import { requireBabyInHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -48,6 +49,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const db = createDB();
+    const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
+    if (babyError) return babyError;
+
     const id = generateId();
 
     await db.execute({

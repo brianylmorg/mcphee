@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
+import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -43,6 +44,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const db = createDB();
+    const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
+    if (babyError) return babyError;
+
     const timerId = generateId();
 
     // Delete any existing timer for this baby
@@ -85,12 +89,20 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const db = createDB();
+    const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
+    if (babyError) return babyError;
 
     // Get current timer to read existing side_switches
     const timerResult = await db.execute({
-      sql: "SELECT side_switches FROM active_timers WHERE baby_id = ?",
-      args: [body.babyId],
+      sql: `SELECT t.side_switches FROM active_timers t
+            JOIN babies b ON b.id = t.baby_id
+            WHERE t.baby_id = ? AND b.household_id = ?`,
+      args: [body.babyId, householdId],
     });
+
+    if (timerResult.rows.length === 0) {
+      return NextResponse.json({ error: "Timer not found" }, { status: 404 });
+    }
 
     let sideSwitches: string[] = [];
     if (timerResult.rows.length > 0) {
@@ -131,12 +143,20 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const timerId = searchParams.get("id");
     const babyId = searchParams.get("babyId");
+    if (!timerId || !babyId) {
+      return NextResponse.json({ error: "Timer ID and baby ID required" }, { status: 400 });
+    }
+
     const db = createDB();
+    const babyError = await requireBabyInHousehold(db, babyId, householdId);
+    if (babyError) return babyError;
 
     // Get timer info before deleting
     const timerResult = await db.execute({
-      sql: "SELECT * FROM active_timers WHERE id = ?",
-      args: [timerId],
+      sql: `SELECT t.* FROM active_timers t
+            JOIN babies b ON b.id = t.baby_id
+            WHERE t.id = ? AND t.baby_id = ? AND b.household_id = ?`,
+      args: [timerId, babyId, householdId],
     });
 
     if (timerResult.rows.length > 0) {
@@ -144,13 +164,7 @@ export async function DELETE(request: NextRequest) {
 
       let createdBy: string | null = null;
       if (timer.started_by) {
-        const userResult = await db.execute({
-          sql: "SELECT name FROM users WHERE id = ?",
-          args: [String(timer.started_by)],
-        });
-        if (userResult.rows.length > 0) {
-          createdBy = (userResult.rows[0] as unknown as { name: string }).name;
-        }
+        createdBy = await userNameForHousehold(db, String(timer.started_by), householdId);
       }
 
       const activityId = generateId();
@@ -170,10 +184,14 @@ export async function DELETE(request: NextRequest) {
       });
     }
 
+    if (timerResult.rows.length === 0) {
+      return NextResponse.json({ error: "Timer not found" }, { status: 404 });
+    }
+
     // Delete the timer
     await db.execute({
-      sql: "DELETE FROM active_timers WHERE id = ?",
-      args: [timerId],
+      sql: "DELETE FROM active_timers WHERE id = ? AND baby_id = ?",
+      args: [timerId, babyId],
     });
 
     return NextResponse.json({ success: true });

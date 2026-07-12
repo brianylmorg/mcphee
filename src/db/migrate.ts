@@ -74,6 +74,34 @@ CREATE TABLE IF NOT EXISTS notification_log (
   kind TEXT NOT NULL,
   sent_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS paper_log_import_batches (
+  id TEXT PRIMARY KEY,
+  household_id TEXT NOT NULL REFERENCES households(id),
+  baby_id TEXT NOT NULL REFERENCES babies(id),
+  status TEXT NOT NULL,
+  source_note TEXT,
+  created_at INTEGER NOT NULL,
+  created_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS paper_log_import_rows (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL REFERENCES paper_log_import_batches(id),
+  row_index INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  source_ref TEXT,
+  confidence INTEGER,
+  type TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  details TEXT,
+  note TEXT,
+  raw_text TEXT,
+  duplicate_activity_id TEXT REFERENCES activities(id),
+  imported_activity_id TEXT REFERENCES activities(id),
+  created_at INTEGER NOT NULL
+);
 `;
 
 async function migrate() {
