@@ -42,9 +42,34 @@ export default function DashboardPage() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
-  const [weightInput, setWeightInput] = useState("");
-  const [showWeightInput, setShowWeightInput] = useState(false);
-  const [savingWeight, setSavingWeight] = useState(false);
+  const [dailyMilkMl, setDailyMilkMl] = useState(0);
+  const [activityDateFilter, setActivityDateFilter] = useState("");
+  const [activityTypeFilter, setActivityTypeFilter] = useState("all");
+  const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
+  const [isActivityFilterLoading, setIsActivityFilterLoading] = useState(false);
+  const [activityFilterRefresh, setActivityFilterRefresh] = useState(0);
+
+  const sgtDateKey = (offsetDays = 0): string => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Singapore",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000));
+    const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "00";
+    return [part("year"), part("month"), part("day")].join("-");
+  };
+
+  const todayDateKey = sgtDateKey(0);
+  const yesterdayDateKey = sgtDateKey(-1);
+  const isActivityFiltered = Boolean(activityDateFilter || activityTypeFilter !== "all");
+  const activityTypeOptions = [
+    { value: "all", label: "All" },
+    { value: "bottlefeed", label: "Bottle" },
+    { value: "breastfeed", label: "Breastfeed" },
+    { value: "diaper", label: "Diaper" },
+    { value: "vomit", label: "Vomit" },
+  ];
 
   useEffect(() => {
     if ("serviceWorker" in navigator && "PushManager" in window) {
@@ -96,33 +121,25 @@ export default function DashboardPage() {
     if (!householdId) return;
 
     try {
-      const [babiesRes, activitiesRes, householdRes, timersRes, measurementsRes] = await Promise.all([
-        fetch("/api/babies"),
-        fetch("/api/activities?limit=50"),
-        fetch("/api/household"),
-        fetch("/api/active-timers"),
-        fetch("/api/measurements"),
-      ]);
+      const res = await fetch("/api/dashboard", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to load dashboard");
 
-      const babiesData = await babiesRes.json();
-      const activitiesData = await activitiesRes.json();
-      const householdData = await householdRes.json();
-      const timersData = await timersRes.json();
-      const measurementsData = await measurementsRes.json();
+      const data = await res.json();
 
-      if (babiesData.babies?.length > 0) {
-        setBaby(babiesData.babies[0]);
+      if (data.babies?.length > 0) {
+        setBaby(data.babies[0]);
       }
-      setActivities(activitiesData.activities || []);
-      if (householdData.inviteCode) {
-        setInviteCode(householdData.inviteCode);
+      setActivities(data.activities || []);
+      if (data.household?.inviteCode) {
+        setInviteCode(data.household.inviteCode);
       }
-      if (measurementsData.measurement?.weight_g != null) {
-        setLatestWeight(Number(measurementsData.measurement.weight_g));
+      if (data.measurement?.weight_g != null) {
+        setLatestWeight(Number(data.measurement.weight_g));
       }
-      if (timersData.timers?.length > 0) {
-        setActiveTimer(timersData.timers[0]);
-        setTimerElapsed(Date.now() - Number(timersData.timers[0].started_at));
+      setDailyMilkMl(Number(data.dailyMilk?.totalMl ?? 0));
+      if (data.timers?.length > 0) {
+        setActiveTimer(data.timers[0]);
+        setTimerElapsed(Date.now() - Number(data.timers[0].started_at));
       } else {
         setActiveTimer(null);
         setTimerElapsed(0);
@@ -149,6 +166,42 @@ export default function DashboardPage() {
       window.removeEventListener("focus", fetchData);
     };
   }, [householdId, router, fetchData]);
+
+  useEffect(() => {
+    if (!householdId) return;
+
+    if (!isActivityFiltered) {
+      setFilteredActivities([]);
+      setIsActivityFilterLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({ limit: "500" });
+    if (activityDateFilter) params.set("date", activityDateFilter);
+    if (activityTypeFilter !== "all") params.set("type", activityTypeFilter);
+
+    setIsActivityFilterLoading(true);
+    fetch("/api/activities?" + params.toString(), {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load activity filter");
+        return res.json();
+      })
+      .then((data) => setFilteredActivities(data.activities || []))
+      .catch((error) => {
+        if ((error as Error).name !== "AbortError") {
+          console.error("Activity filter error:", error);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsActivityFilterLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [householdId, isActivityFiltered, activityDateFilter, activityTypeFilter, activityFilterRefresh]);
 
   // Live timer ticker
   useEffect(() => {
@@ -180,6 +233,7 @@ export default function DashboardPage() {
     try {
       await fetch(`/api/activities?id=${activityId}`, { method: "DELETE" });
       fetchData();
+      setActivityFilterRefresh((value) => value + 1);
     } catch (error) {
       console.error("Delete error:", error);
     }
@@ -320,84 +374,10 @@ export default function DashboardPage() {
     }
   };
 
-  const WINDOW_MS = 3 * 60 * 60 * 1000;
-
-  const fullFeedWindow = (() => {
-    if (latestWeight == null) return null;
-
-    const targetMl = Math.round((latestWeight / 1000) * 150 / 8);
-    const feeds = activities
-      .filter((a) => a.type === "bottlefeed" || a.type === "breastfeed")
-      .sort((a, b) => a.started_at - b.started_at);
-
-    if (feeds.length === 0) return { targetMl, windowStart: null, mlConsumed: 0, breastfeedSessions: 0, timeLeftMs: 0, expiresAt: 0, active: false };
-
-    let windowStart = feeds[0].started_at;
-    for (let i = 1; i < feeds.length; i++) {
-      if (feeds[i].started_at - windowStart >= WINDOW_MS) {
-        windowStart = feeds[i].started_at;
-      }
-    }
-
-    const now = Date.now();
-    const windowEnd = windowStart + WINDOW_MS;
-    const active = now < windowEnd;
-
-    const windowFeeds = feeds.filter(
-      (a) => a.started_at >= windowStart && a.started_at < windowEnd
-    );
-
-    let mlConsumed = 0;
-    let breastfeedSessions = 0;
-    for (const f of windowFeeds) {
-      if (f.type === "bottlefeed") {
-        const d = parseDetails(f);
-        const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : 0;
-        mlConsumed += amt;
-      } else if (f.type === "breastfeed") {
-        breastfeedSessions++;
-      }
-    }
-
-    return {
-      targetMl,
-      windowStart,
-      mlConsumed,
-      breastfeedSessions,
-      timeLeftMs: active ? windowEnd - now : 0,
-      expiresAt: windowEnd,
-      active,
-    };
-  })();
-
-  const handleSaveWeight = async () => {
-    if (!baby?.id || !weightInput) return;
-    setSavingWeight(true);
-    const weightG = Math.round(parseFloat(weightInput) * 1000);
-    try {
-      await fetch("/api/measurements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ babyId: baby.id, weightG }),
-      });
-      setLatestWeight(weightG);
-      setShowWeightInput(false);
-      setWeightInput("");
-    } catch (error) {
-      console.error("Save weight error:", error);
-    } finally {
-      setSavingWeight(false);
-    }
-  };
-
-  const formatCountdown = (ms: number): string => {
-    if (ms <= 0) return "0m";
-    const totalMin = Math.floor(ms / 60000);
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
-  };
+  const expectedDailyMilkMl: number | null = null;
+  const dailyMilkProgress = expectedDailyMilkMl
+    ? Math.min(100, Math.round((dailyMilkMl / expectedDailyMilkMl) * 100))
+    : 0;
 
   if (isLoading) {
     return (
@@ -438,6 +418,52 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
+        {/* Daily Milk Total */}
+        <div className="bg-white rounded-2xl border border-terracotta/20 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/50">
+                Since 00:00 SGT
+              </p>
+              <h2 className="font-display text-lg text-terracotta mt-1">Today&apos;s milk</h2>
+            </div>
+            <span className="text-xs bg-cream text-warm-brown-light px-2 py-1 rounded-full">
+              Bottle feeds
+            </span>
+          </div>
+
+          <div className="mt-4 flex items-end justify-between gap-4">
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="font-display text-4xl text-warm-brown font-semibold tabular-nums">
+                  {dailyMilkMl}
+                </span>
+                <span className="text-warm-brown-light text-base">ml</span>
+              </div>
+              <p className="text-xs text-warm-brown-light/60 mt-1">
+                Breastmilk + formula
+              </p>
+            </div>
+            <div className="bg-cream rounded-xl px-3 py-2 min-w-[118px] text-right">
+              <p className="text-xs text-warm-brown-light/60">Expected</p>
+              <p className="font-display text-lg text-warm-brown tabular-nums">
+                {expectedDailyMilkMl ? expectedDailyMilkMl + " ml" : "-- ml"}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-cream">
+            <div
+              className="h-full rounded-full bg-terracotta transition-all"
+              style={{ width: expectedDailyMilkMl ? dailyMilkProgress + "%" : "0%" }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-xs text-warm-brown-light/50">
+            <span>Total today</span>
+            <span>{expectedDailyMilkMl ? dailyMilkProgress + "%" : "Target pending"}</span>
+          </div>
+        </div>
+
         {/* Live Timer */}
         {activeTimer && (
           <div className="bg-white rounded-2xl border border-terracotta/30 p-5 shadow-sm">
@@ -481,97 +507,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Full Feed Counter */}
-        <div className="bg-white rounded-2xl border border-warm-brown-light/10 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-display text-lg text-terracotta">Full feed</h2>
-            {latestWeight != null && (
-              <button
-                onClick={() => setShowWeightInput(!showWeightInput)}
-                className="text-xs text-warm-brown-light/60 hover:text-terracotta transition-colors"
-              >
-                Update weight
-              </button>
-            )}
-          </div>
-
-          {showWeightInput || latestWeight == null ? (
-            <div className="space-y-3">
-              <p className="text-sm text-warm-brown-light">
-                {latestWeight == null ? "Enter baby’s weight to calculate feed target" : "Update weight"}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {[2.5, 3.0, 3.5, 4.0, 4.5, 5.0].map((kg) => (
-                  <button
-                    key={kg}
-                    onClick={() => setWeightInput(String(kg))}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      weightInput === String(kg)
-                        ? "bg-terracotta text-white"
-                        : "bg-cream border border-warm-brown-light/20"
-                    }`}
-                  >
-                    {kg} kg
-                  </button>
-                ))}
-              </div>
-              <input
-                type="number"
-                step="0.1"
-                value={weightInput}
-                onChange={(e) => setWeightInput(e.target.value)}
-                placeholder="Weight in kg (e.g. 3.8)"
-                className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-sm"
-              />
-              <button
-                onClick={handleSaveWeight}
-                disabled={!weightInput || savingWeight}
-                className="w-full py-3 bg-terracotta text-white font-medium rounded-xl text-sm hover:bg-terracotta-dark transition-colors disabled:opacity-50"
-              >
-                {savingWeight ? "Saving..." : "Save weight"}
-              </button>
-            </div>
-          ) : fullFeedWindow ? (
-            fullFeedWindow.active && fullFeedWindow.windowStart ? (
-              <div>
-                <div className="flex items-baseline gap-2 mb-2">
-                  <span className="font-display text-2xl text-warm-brown tabular-nums">
-                    {fullFeedWindow.mlConsumed}
-                  </span>
-                  <span className="text-warm-brown-light text-sm">
-                    / {fullFeedWindow.targetMl} ml
-                  </span>
-                  {fullFeedWindow.breastfeedSessions > 0 && (
-                    <span className="text-warm-brown-light text-sm">
-                      + {fullFeedWindow.breastfeedSessions} nursing
-                    </span>
-                  )}
-                </div>
-                <div className="w-full bg-cream rounded-full h-2 mb-3">
-                  <div
-                    className="bg-terracotta h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(100, (fullFeedWindow.mlConsumed / fullFeedWindow.targetMl) * 100)}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-warm-brown-light/60">
-                  <span>{formatCountdown(fullFeedWindow.timeLeftMs)} left</span>
-                  <span>Window ends {formatTime(fullFeedWindow.expiresAt)}</span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-warm-brown-light">
-                No active window. Next feed starts a new 3h window.
-                <span className="block text-xs text-warm-brown-light/50 mt-1">
-                  Target: {fullFeedWindow.targetMl} ml per window
-                </span>
-              </p>
-            )
-          ) : null}
-        </div>
-
         {/* Activity Cards */}
         <div className="grid grid-cols-2 gap-3">
-          {["bottlefeed", "breastfeed", "pump", "diaper", "vomit"].map((type) => {
+          {["bottlefeed", "breastfeed", "diaper", "vomit"].map((type) => {
             const last = getLastActivity(type);
             const overdue = isOverdue(type);
             const icons: Record<string, string> = {
@@ -642,14 +580,75 @@ export default function DashboardPage() {
 
         {/* Recent Activity */}
         <section>
-          <h2 className="text-sm font-medium text-warm-brown-light mb-3">
-            Recent Activity
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-warm-brown-light">Recent Activity</h2>
+            {isActivityFiltered && (
+              <button
+                onClick={() => {
+                  setActivityDateFilter("");
+                  setActivityTypeFilter("all");
+                }}
+                className="text-xs text-terracotta hover:text-terracotta-dark transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="bg-white rounded-xl border border-warm-brown-light/10 p-3 mb-3 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setActivityDateFilter("")}
+                className={"px-3 py-2 rounded-lg text-xs font-medium transition-colors " + (!activityDateFilter ? "bg-terracotta text-white" : "bg-cream border border-warm-brown-light/20 text-warm-brown")}
+              >
+                All days
+              </button>
+              <button
+                onClick={() => setActivityDateFilter(todayDateKey)}
+                className={"px-3 py-2 rounded-lg text-xs font-medium transition-colors " + (activityDateFilter === todayDateKey ? "bg-terracotta text-white" : "bg-cream border border-warm-brown-light/20 text-warm-brown")}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setActivityDateFilter(yesterdayDateKey)}
+                className={"px-3 py-2 rounded-lg text-xs font-medium transition-colors " + (activityDateFilter === yesterdayDateKey ? "bg-terracotta text-white" : "bg-cream border border-warm-brown-light/20 text-warm-brown")}
+              >
+                Yesterday
+              </button>
+              <input
+                type="date"
+                value={activityDateFilter}
+                onChange={(e) => setActivityDateFilter(e.target.value)}
+                className="min-w-[144px] flex-1 px-3 py-2 rounded-lg border border-warm-brown-light/20 bg-cream text-xs text-warm-brown outline-none focus:border-terracotta"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {activityTypeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setActivityTypeFilter(option.value)}
+                  className={"px-3 py-2 rounded-lg text-xs font-medium transition-colors " + (activityTypeFilter === option.value ? "bg-terracotta text-white" : "bg-cream border border-warm-brown-light/20 text-warm-brown")}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="space-y-2">
             {(() => {
-              const visible = showHistory ? activities : activities.slice(0, 6);
+              const visible = isActivityFiltered ? filteredActivities : showHistory ? activities : activities.slice(0, 6);
               const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
               const yesterday = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+
+              if (isActivityFilterLoading) {
+                return <p className="text-center text-warm-brown-light py-8">Loading activities...</p>;
+              }
+              if (visible.length === 0) {
+                return (
+                  <p className="text-center text-warm-brown-light py-8">
+                    {isActivityFiltered ? "No activities match these filters." : "No activities yet. Tap a card above to log one!"}
+                  </p>
+                );
+              }
 
               let lastDateKey = "";
               return visible.map((activity) => {
@@ -725,18 +724,13 @@ export default function DashboardPage() {
                 );
               });
             })()}
-            {activities.length > 6 && !showHistory && (
+            {!isActivityFiltered && activities.length > 6 && !showHistory && (
               <button
                 onClick={() => setShowHistory(true)}
                 className="w-full py-3 text-sm text-terracotta hover:text-terracotta-dark transition-colors"
               >
                 View all {activities.length} activities
               </button>
-            )}
-            {activities.length === 0 && (
-              <p className="text-center text-warm-brown-light py-8">
-                No activities yet. Tap a card above to log one!
-              </p>
             )}
           </div>
         </section>
@@ -814,6 +808,7 @@ export default function DashboardPage() {
             setShowLogModal(false);
             setEditingActivity(null);
             fetchData();
+            setActivityFilterRefresh((value) => value + 1);
           }}
         />
       )}
@@ -850,23 +845,27 @@ function LogModal({
   })();
 
   const [when, setWhen] = useState(isEditing ? "custom" : "now");
-  // Convert UTC epoch ms → SGT datetime-local value (YYYY-MM-DDTHH:mm)
-  const toSGTLocal = (epochMs: number): string => {
-    return new Date(epochMs)
-      .toLocaleString("en-CA", {
-        timeZone: "Asia/Singapore",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      })
-      .replace(", ", "T");
+  const pad2 = (value: number) => String(value).padStart(2, "0");
+  const roundToMinuteStep = (minute: number) => Math.min(55, Math.round(minute / 5) * 5);
+  const getSGTParts = (epochMs?: number): { date: string; h: number; m: number } => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Singapore",
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(new Date(epochMs ?? Date.now()));
+    const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "00";
+
+    return {
+      date: [part("year"), part("month"), part("day")].join("-"),
+      h: Number(part("hour")),
+      m: roundToMinuteStep(Number(part("minute"))),
+    };
   };
-  const [customTime, setCustomTime] = useState(
-    isEditing ? toSGTLocal(activity.started_at) : ""
-  );
+  const initialSGT = getSGTParts(isEditing && activity ? activity.started_at : undefined);
   const [amount, setAmount] = useState(() => {
     if (isEditing && detailsObj.amount != null) return String(detailsObj.amount);
     if (type === "bottlefeed" && !isEditing) {
@@ -912,43 +911,12 @@ function LogModal({
   );
   const [isLoading, setIsLoading] = useState(false);
 
-  // Helper to get current SGT hour/minute for default
-  const getSGTNow = (): { h: number; m: number } => {
-    const now = new Date();
-    const sg = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
-    return { h: sg.getHours(), m: Math.round(sg.getMinutes() / 5) * 5 };
-  };
-
   // Custom time picker state (hour/minute as numbers, 24h)
-  const [customHour, setCustomHour] = useState(() => {
-    if (isEditing && activity) {
-      return new Date(activity.started_at).getHours();
-    }
-    return getSGTNow().h;
-  });
-  const [customMinute, setCustomMinute] = useState(() => {
-    if (isEditing && activity) {
-      return Math.round(new Date(activity.started_at).getMinutes() / 5) * 5;
-    }
-    return getSGTNow().m;
-  });
-  const [customDate, setCustomDate] = useState(() => {
-    if (isEditing && activity) {
-      return new Date(activity.started_at).toLocaleDateString("en-CA", {
-        timeZone: "Asia/Singapore",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      });
-    }
-    // Default to today in SGT
-    return new Date().toLocaleDateString("en-CA", {
-      timeZone: "Asia/Singapore",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-  });
+  const [customHour, setCustomHour] = useState(initialSGT.h);
+  const [customMinute, setCustomMinute] = useState(initialSGT.m);
+  const [customDate, setCustomDate] = useState(initialSGT.date);
+  const hourOptions = Array.from({ length: 24 }, (_, hour) => hour);
+  const minuteOptions = Array.from({ length: 12 }, (_, index) => index * 5);
 
   const handleSubmit = async () => {
     setIsLoading(true);
@@ -960,9 +928,12 @@ function LogModal({
     else if (when === "1h") startedAt -= 60 * 60 * 1000;
     else if (when === "2h") startedAt -= 2 * 60 * 60 * 1000;
     else if (when === "custom" && customDate) {
-      // Build epoch from customDate + customHour + customMinute (SGT)
-      const [year, month, day] = customDate.split("-").map(Number);
-      startedAt = new Date(year, month - 1, day, customHour, customMinute, 0, 0).getTime();
+      const parsed = Date.parse(customDate + "T" + pad2(customHour) + ":" + pad2(customMinute) + ":00+08:00");
+      if (!Number.isFinite(parsed)) {
+        setIsLoading(false);
+        return;
+      }
+      startedAt = parsed;
     }
 
     const details: Record<string, unknown> = {};
@@ -983,30 +954,23 @@ function LogModal({
     }
 
     try {
-      if (isEditing && activity) {
-        await fetch("/api/activities", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: activity.id,
-            type,
-            startedAt,
-            details,
-          }),
-        });
-      } else {
-        await fetch("/api/activities", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            babyId,
-            type,
-            startedAt,
-            details,
-            userId,
-          }),
-        });
+      const res = await fetch("/api/activities", {
+        method: isEditing && activity ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(isEditing && activity ? { id: activity.id } : { userId }),
+          babyId,
+          type,
+          startedAt,
+          details,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save activity");
       }
+
       onSuccess();
     } catch (error) {
       console.error("Log error:", error);
@@ -1067,43 +1031,37 @@ function LogModal({
                   onChange={(e) => setCustomDate(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none"
                 />
-                {/* Time: hour + minute spinners (24h) */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <label className="block text-xs text-warm-brown-light mb-1 text-center">Hour</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={23}
+                    <select
                       value={customHour}
-                      onChange={(e) => setCustomHour(Math.max(0, Math.min(23, parseInt(e.target.value) || 0)))}
-                      className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-center text-lg tabular-nums"
-                    />
+                      onChange={(e) => setCustomHour(Number(e.target.value))}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-center text-lg tabular-nums bg-white"
+                    >
+                      {hourOptions.map((hour) => (
+                        <option key={hour} value={hour}>{pad2(hour)}</option>
+                      ))}
+                    </select>
                   </div>
                   <span className="text-2xl text-warm-brown-light pt-4">:</span>
                   <div className="flex-1">
                     <label className="block text-xs text-warm-brown-light mb-1 text-center">Min</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={55}
-                      step={5}
+                    <select
                       value={customMinute}
-                      onChange={(e) => setCustomMinute(Math.max(0, Math.min(55, parseInt(e.target.value) || 0)))}
-                      className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-center text-lg tabular-nums"
-                    />
+                      onChange={(e) => setCustomMinute(Number(e.target.value))}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-center text-lg tabular-nums bg-white"
+                    >
+                      {minuteOptions.map((minute) => (
+                        <option key={minute} value={minute}>{pad2(minute)}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 {/* Preview in SGT */}
                 {customDate && (
                   <p className="text-xs text-warm-brown-light/60 text-center">
-                    {new Date(
-                      parseInt(customDate.split("-")[0]),
-                      parseInt(customDate.split("-")[1]) - 1,
-                      parseInt(customDate.split("-")[2]),
-                      customHour,
-                      customMinute
-                    ).toLocaleString("en-SG", { timeZone: "Asia/Singapore", hour12: false, hour: "2-digit", minute: "2-digit" })} SGT
+                    {customDate} {pad2(customHour)}:{pad2(customMinute)} SGT
                   </p>
                 )}
               </div>

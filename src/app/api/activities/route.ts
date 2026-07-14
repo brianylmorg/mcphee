@@ -36,7 +36,19 @@ export async function GET(request: NextRequest) {
     const db = createDB();
     const { searchParams } = new URL(request.url);
     const babyId = searchParams.get("babyId");
-    const limit = searchParams.get("limit") || "50";
+    const type = searchParams.get("type");
+    const date = searchParams.get("date");
+    const requestedLimit = Number(searchParams.get("limit") || "50");
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(500, Math.floor(requestedLimit)))
+      : 50;
+
+    if (type && !VALID_TYPES.has(type)) {
+      return NextResponse.json({ error: "Invalid activity type" }, { status: 400 });
+    }
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+    }
 
     let sql = `
       SELECT a.*, b.name as baby_name
@@ -44,11 +56,23 @@ export async function GET(request: NextRequest) {
       JOIN babies b ON a.baby_id = b.id
       WHERE b.household_id = ?
     `;
-    const args: string[] = [householdId];
+    const args: Array<string | number> = [householdId];
 
     if (babyId) {
       sql += " AND a.baby_id = ?";
       args.push(babyId);
+    }
+    if (type) {
+      sql += " AND a.type = ?";
+      args.push(type);
+    }
+    if (date) {
+      const dayStart = Date.parse(date + "T00:00:00+08:00");
+      if (!Number.isFinite(dayStart)) {
+        return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+      }
+      sql += " AND a.started_at >= ? AND a.started_at < ?";
+      args.push(dayStart, dayStart + 24 * 60 * 60 * 1000);
     }
 
     sql += " ORDER BY a.started_at DESC LIMIT ?";

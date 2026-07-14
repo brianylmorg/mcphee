@@ -138,14 +138,21 @@ function feedActivities(row, startedAt, reason) {
   return rows;
 }
 
+function parsePeeCount(peeText) {
+  const match = peeText.trim().match(/^x\s*(\d+)\b/i);
+  return match ? Number(match[1]) : null;
+}
+
 function diaperActivities(row, startedAt, reason) {
   const peeText = row.pee_text.trim();
   const poopText = row.poop_text.trim();
   if (!peeText && !poopText) return [];
+  const peeCount = peeText ? parsePeeCount(peeText) : null;
   const details = {
     peeSize: peeText ? "M" : "no",
     poop: poopText ? "M" : "no",
     peeText: peeText || null,
+    peeCount,
     poopText: poopText || null,
   };
   return [{

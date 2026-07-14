@@ -16,6 +16,10 @@ type ImportRowInput = {
   rawText?: string;
 };
 
+type DB = ReturnType<typeof createDB>;
+type BatchStatements = Parameters<DB["batch"]>[0];
+type DuplicateCandidate = { id: string; type: string; started_at: number };
+
 const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep"]);
 const REVIEW_CONFIRMATION = "I reviewed these rows against the source paper logs";
 
@@ -41,21 +45,16 @@ function isValidRow(row: unknown): row is ImportRowInput {
   );
 }
 
-async function findDuplicateActivity(
-  db: ReturnType<typeof createDB>,
-  babyId: string,
+function findDuplicateActivity(
+  candidates: DuplicateCandidate[],
   row: ImportRowInput
-): Promise<string | null> {
-  // ponytail: one-minute fuzzy match is enough for paper import review; tighten if real duplicates become messy.
-  const result = await db.execute({
-    sql: `SELECT id FROM activities
-          WHERE baby_id = ? AND type = ? AND ABS(started_at - ?) <= 60000
-          LIMIT 1`,
-    args: [babyId, row.type, row.startedAt],
-  });
+): string | null {
+  // One-minute fuzzy match is enough for paper import review; tighten if real duplicates become messy.
+  const duplicate = candidates.find(
+    (candidate) => candidate.type === row.type && Math.abs(Number(candidate.started_at) - row.startedAt) <= 60000
+  );
 
-  if (result.rows.length === 0) return null;
-  return String((result.rows[0] as unknown as { id: string }).id);
+  return duplicate ? String(duplicate.id) : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -128,24 +127,41 @@ export async function POST(request: NextRequest) {
 
       const invalidAt = rows.findIndex((row) => !isValidRow(row));
       if (invalidAt >= 0) {
-        return NextResponse.json({ error: `Invalid row at index ${invalidAt}` }, { status: 400 });
+        return NextResponse.json({ error: "Invalid row at index " + invalidAt }, { status: 400 });
       }
+
+      const importRows = rows as ImportRowInput[];
+      let minStartedAt = Number.POSITIVE_INFINITY;
+      let maxStartedAt = 0;
+      for (const row of importRows) {
+        minStartedAt = Math.min(minStartedAt, row.startedAt);
+        maxStartedAt = Math.max(maxStartedAt, row.startedAt);
+      }
+
+      const duplicateCandidatesResult = await db.execute({
+        sql: `SELECT id, type, started_at FROM activities
+              WHERE baby_id = ? AND started_at BETWEEN ? AND ?`,
+        args: [babyId, minStartedAt - 60000, maxStartedAt + 60000],
+      });
+      const duplicateCandidates = duplicateCandidatesResult.rows as unknown as DuplicateCandidate[];
 
       const batchId = generateId();
       const now = Date.now();
-      await db.execute({
-        sql: `INSERT INTO paper_log_import_batches (id, household_id, baby_id, status, source_note, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        args: [batchId, householdId, babyId, "staged", sourceNote ?? null, now, createdBy ?? null],
-      });
+      const statements: BatchStatements = [
+        {
+          sql: `INSERT INTO paper_log_import_batches (id, household_id, baby_id, status, source_note, created_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [batchId, householdId, babyId, "staged", sourceNote ?? null, now, createdBy ?? null],
+        },
+      ];
 
       let duplicateCount = 0;
-      for (let index = 0; index < rows.length; index++) {
-        const row = rows[index] as ImportRowInput;
-        const duplicateActivityId = await findDuplicateActivity(db, babyId, row);
+      for (let index = 0; index < importRows.length; index++) {
+        const row = importRows[index];
+        const duplicateActivityId = findDuplicateActivity(duplicateCandidates, row);
         if (duplicateActivityId) duplicateCount++;
 
-        await db.execute({
+        statements.push({
           sql: `INSERT INTO paper_log_import_rows (
                   id, batch_id, row_index, status, source_ref, confidence, type, started_at, ended_at,
                   details, note, raw_text, duplicate_activity_id, imported_activity_id, created_at
@@ -170,6 +186,8 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      await db.batch(statements, "write");
+
       return NextResponse.json({ batchId, rowCount: rows.length, duplicateCount });
     }
 
@@ -192,62 +210,73 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const batchResult = await db.execute({
-        sql: "SELECT * FROM paper_log_import_batches WHERE id = ? AND status = 'staged'",
-        args: [batchId],
-      });
-      if (batchResult.rows.length === 0) {
-        return NextResponse.json({ error: "Staged batch not found" }, { status: 404 });
-      }
-
-      const batch = batchResult.rows[0] as unknown as { baby_id: string };
-      const rows = await db.execute({
-        sql: `SELECT * FROM paper_log_import_rows
-              WHERE batch_id = ? AND status = 'reviewed'
-              ORDER BY row_index ASC`,
-        args: [batchId],
-      });
-      if (rows.rows.length === 0) {
-        return NextResponse.json({ error: "No reviewed rows to commit" }, { status: 400 });
-      }
-
-      const now = Date.now();
-      let committedCount = 0;
-      for (const row of rows.rows as unknown as Array<{
-        id: string;
-        type: string;
-        started_at: number;
-        ended_at: number | null;
-        details: string | null;
-      }>) {
-        const activityId = generateId();
-        await db.execute({
-          sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            activityId,
-            batch.baby_id,
-            row.type,
-            row.started_at,
-            row.ended_at,
-            row.details ?? "{}",
-            now,
-            createdBy ?? "paper import",
-          ],
+      const tx = await db.transaction("write");
+      try {
+        const batchResult = await tx.execute({
+          sql: "SELECT * FROM paper_log_import_batches WHERE id = ? AND status = ?",
+          args: [batchId, "staged"],
         });
-        await db.execute({
-          sql: "UPDATE paper_log_import_rows SET status = 'committed', imported_activity_id = ? WHERE id = ?",
-          args: [activityId, row.id],
+        if (batchResult.rows.length === 0) {
+          await tx.rollback();
+          return NextResponse.json({ error: "Staged batch not found" }, { status: 404 });
+        }
+
+        const batch = batchResult.rows[0] as unknown as { baby_id: string };
+        const rows = await tx.execute({
+          sql: `SELECT * FROM paper_log_import_rows
+                WHERE batch_id = ? AND status = ?
+                ORDER BY row_index ASC`,
+          args: [batchId, "reviewed"],
         });
-        committedCount++;
+        if (rows.rows.length === 0) {
+          await tx.rollback();
+          return NextResponse.json({ error: "No reviewed rows to commit" }, { status: 400 });
+        }
+
+        const now = Date.now();
+        const statements: BatchStatements = [];
+        for (const row of rows.rows as unknown as Array<{
+          id: string;
+          type: string;
+          started_at: number;
+          ended_at: number | null;
+          details: string | null;
+        }>) {
+          const activityId = generateId();
+          statements.push(
+            {
+              sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              args: [
+                activityId,
+                batch.baby_id,
+                row.type,
+                row.started_at,
+                row.ended_at,
+                row.details ?? "{}",
+                now,
+                createdBy ?? "paper import",
+              ],
+            },
+            {
+              sql: "UPDATE paper_log_import_rows SET status = ?, imported_activity_id = ? WHERE id = ? AND status = ?",
+              args: ["committed", activityId, row.id, "reviewed"],
+            }
+          );
+        }
+
+        statements.push({
+          sql: "UPDATE paper_log_import_batches SET status = ? WHERE id = ? AND status = ?",
+          args: ["committed", batchId, "staged"],
+        });
+
+        await tx.batch(statements);
+        await tx.commit();
+
+        return NextResponse.json({ batchId, committedCount: rows.rows.length });
+      } finally {
+        tx.close();
       }
-
-      await db.execute({
-        sql: "UPDATE paper_log_import_batches SET status = 'committed' WHERE id = ?",
-        args: [batchId],
-      });
-
-      return NextResponse.json({ batchId, committedCount });
     }
 
     if (action === "review") {
@@ -259,34 +288,39 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "batchId and rowUpdates are required" }, { status: 400 });
       }
 
-      const batch = await db.execute({
-        sql: "SELECT id FROM paper_log_import_batches WHERE id = ? AND status = 'staged'",
-        args: [batchId],
-      });
-      if (batch.rows.length === 0) {
-        return NextResponse.json({ error: "Staged batch not found" }, { status: 404 });
-      }
-
-      let reviewedCount = 0;
-      let skippedCount = 0;
+      const updates: Array<{ id: string; status: "reviewed" | "skipped"; note?: string }> = [];
       for (const update of rowUpdates) {
         const rowId = update.id;
         const status = update.status;
         if (!rowId || (status !== "reviewed" && status !== "skipped")) {
           return NextResponse.json({ error: "Each row update needs id and status reviewed|skipped" }, { status: 400 });
         }
-
-        const result = await db.execute({
-          sql: `UPDATE paper_log_import_rows
-                SET status = ?, note = COALESCE(?, note)
-                WHERE id = ? AND batch_id = ? AND status = 'staged' AND duplicate_activity_id IS NULL`,
-          args: [status, update.note ?? null, rowId, batchId],
-        });
-        if (result.rowsAffected > 0) {
-          if (status === "reviewed") reviewedCount++;
-          if (status === "skipped") skippedCount++;
-        }
+        updates.push({ id: rowId, status, note: update.note });
       }
+
+      const batch = await db.execute({
+        sql: "SELECT id FROM paper_log_import_batches WHERE id = ? AND status = ?",
+        args: [batchId, "staged"],
+      });
+      if (batch.rows.length === 0) {
+        return NextResponse.json({ error: "Staged batch not found" }, { status: 404 });
+      }
+
+      const results = await db.batch(updates.map((update) => ({
+        sql: `UPDATE paper_log_import_rows
+              SET status = ?, note = COALESCE(?, note)
+              WHERE id = ? AND batch_id = ? AND status = ? AND duplicate_activity_id IS NULL`,
+        args: [update.status, update.note ?? null, update.id, batchId, "staged"],
+      })), "write");
+
+      let reviewedCount = 0;
+      let skippedCount = 0;
+      results.forEach((result, index) => {
+        if (result.rowsAffected > 0) {
+          if (updates[index].status === "reviewed") reviewedCount++;
+          if (updates[index].status === "skipped") skippedCount++;
+        }
+      });
 
       return NextResponse.json({ batchId, reviewedCount, skippedCount });
     }
