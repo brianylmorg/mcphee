@@ -13,6 +13,14 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { subscription, label } = body;
+    if (
+      !subscription?.endpoint ||
+      !subscription?.keys?.p256dh ||
+      !subscription?.keys?.auth
+    ) {
+      return NextResponse.json({ error: "Invalid subscription" }, { status: 400 });
+    }
+
     const db = createDB();
 
     const existing = await db.execute({
@@ -22,12 +30,13 @@ export async function POST(request: NextRequest) {
 
     if (existing.rows.length > 0) {
       await db.execute({
-        sql: "UPDATE push_subscriptions SET p256dh = ?, auth = ?, label = ? WHERE id = ?",
+        sql: "UPDATE push_subscriptions SET p256dh = ?, auth = ?, label = ? WHERE id = ? AND household_id = ?",
         args: [
           subscription.keys.p256dh,
           subscription.keys.auth,
           label || null,
           (existing.rows[0] as unknown as { id: string }).id,
+          householdId,
         ],
       });
       return NextResponse.json({ updated: true });
@@ -55,6 +64,10 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const endpoint = searchParams.get("endpoint");
+    if (!endpoint) {
+      return NextResponse.json({ error: "Endpoint required" }, { status: 400 });
+    }
+
     const db = createDB();
 
     await db.execute({

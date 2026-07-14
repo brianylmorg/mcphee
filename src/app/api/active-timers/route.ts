@@ -43,16 +43,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    if (typeof body.babyId !== "string" || !body.babyId) {
+      return NextResponse.json({ error: "babyId is required" }, { status: 400 });
+    }
+    if (body.type !== "breastfeed") {
+      return NextResponse.json({ error: "Invalid timer type" }, { status: 400 });
+    }
+
     const db = createDB();
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
 
     const timerId = generateId();
 
-    // Delete any existing timer for this baby
+    // Delete any existing timer for this baby inside the authenticated household.
     await db.execute({
-      sql: "DELETE FROM active_timers WHERE baby_id = ?",
-      args: [body.babyId],
+      sql: `DELETE FROM active_timers
+            WHERE baby_id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+      args: [body.babyId, householdId],
     });
 
     await db.execute({
@@ -118,8 +126,9 @@ export async function PUT(request: NextRequest) {
     sideSwitches.push(body.side);
 
     await db.execute({
-      sql: `UPDATE active_timers SET current_side = ?, side_switches = ? WHERE baby_id = ?`,
-      args: [body.side, JSON.stringify(sideSwitches), body.babyId],
+      sql: `UPDATE active_timers SET current_side = ?, side_switches = ?
+            WHERE baby_id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+      args: [body.side, JSON.stringify(sideSwitches), body.babyId, householdId],
     });
 
     return NextResponse.json({ success: true });
@@ -190,8 +199,9 @@ export async function DELETE(request: NextRequest) {
 
     // Delete the timer
     await db.execute({
-      sql: "DELETE FROM active_timers WHERE id = ? AND baby_id = ?",
-      args: [timerId, babyId],
+      sql: `DELETE FROM active_timers
+            WHERE id = ? AND baby_id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+      args: [timerId, babyId, householdId],
     });
 
     return NextResponse.json({ success: true });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
+import { householdExists } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -7,16 +8,17 @@ export const runtime = "nodejs";
 // GET /api/users/me - get current user
 export async function GET(request: NextRequest) {
   const userId = request.cookies.get("mcphee_user")?.value;
+  const householdId = request.cookies.get("mcphee_hh")?.value;
 
-  if (!userId) {
+  if (!userId || !householdId) {
     return NextResponse.json({ user: null });
   }
 
   try {
     const db = createDB();
     const result = await db.execute({
-      sql: "SELECT * FROM users WHERE id = ?",
-      args: [userId],
+      sql: "SELECT * FROM users WHERE id = ? AND household_id = ?",
+      args: [userId, householdId],
     });
 
     if (result.rows.length === 0) {
@@ -47,6 +49,10 @@ export async function POST(request: NextRequest) {
     const householdId = request.cookies.get("mcphee_hh")?.value;
     if (!householdId) {
       return NextResponse.json({ error: "No household found" }, { status: 401 });
+    }
+
+    if (!(await householdExists(db, householdId))) {
+      return NextResponse.json({ error: "Household not found" }, { status: 404 });
     }
 
     // If user already exists with this household cookie, return existing
@@ -93,18 +99,27 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   const userId = request.cookies.get("mcphee_user")?.value;
-  if (!userId) {
+  const householdId = request.cookies.get("mcphee_hh")?.value;
+  if (!userId || !householdId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const body = await request.json();
+    if (typeof body.name !== "string" || body.name.trim().length === 0) {
+      return NextResponse.json({ error: "Name required" }, { status: 400 });
+    }
+
     const db = createDB();
 
-    await db.execute({
-      sql: "UPDATE users SET name = ? WHERE id = ?",
-      args: [body.name, userId],
+    const result = await db.execute({
+      sql: "UPDATE users SET name = ? WHERE id = ? AND household_id = ?",
+      args: [body.name.trim(), userId, householdId],
     });
+
+    if (result.rowsAffected === 0) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

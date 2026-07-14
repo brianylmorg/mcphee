@@ -39,15 +39,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    if (typeof body.name !== "string" || body.name.trim().length === 0) {
+      return NextResponse.json({ error: "Name required" }, { status: 400 });
+    }
+
     const db = createDB();
     const babyId = generateId();
 
     await db.execute({
       sql: "INSERT INTO babies (id, household_id, name, birth_date, created_at) VALUES (?, ?, ?, ?, ?)",
-      args: [babyId, householdId, body.name, body.birthDate || null, Date.now()],
+      args: [babyId, householdId, body.name.trim(), body.birthDate || null, Date.now()],
     });
 
-    return NextResponse.json({ id: babyId, name: body.name, birthDate: body.birthDate });
+    return NextResponse.json({ id: babyId, name: body.name.trim(), birthDate: body.birthDate });
   } catch (error) {
     console.error("Create baby error:", error);
     return NextResponse.json(
@@ -65,12 +69,23 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
+    if (typeof body.id !== "string" || !body.id) {
+      return NextResponse.json({ error: "Baby ID required" }, { status: 400 });
+    }
+    if (typeof body.name !== "string" || body.name.trim().length === 0) {
+      return NextResponse.json({ error: "Name required" }, { status: 400 });
+    }
+
     const db = createDB();
 
-    await db.execute({
+    const result = await db.execute({
       sql: "UPDATE babies SET name = ? WHERE id = ? AND household_id = ?",
-      args: [body.name, body.id, householdId],
+      args: [body.name.trim(), body.id, householdId],
     });
+
+    if (result.rowsAffected === 0) {
+      return NextResponse.json({ error: "Baby not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

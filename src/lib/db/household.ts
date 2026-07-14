@@ -44,3 +44,12 @@ export async function userNameForHousehold(
   if (result.rows.length === 0) return null;
   return (result.rows[0] as unknown as { name: string }).name;
 }
+
+export async function householdExists(db: DB, householdId: string): Promise<boolean> {
+  const result = await db.execute({
+    sql: "SELECT id FROM households WHERE id = ? LIMIT 1",
+    args: [householdId],
+  });
+
+  return result.rows.length > 0;
+}

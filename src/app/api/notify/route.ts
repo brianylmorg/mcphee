@@ -92,7 +92,10 @@ async function handleNotify(request: NextRequest) {
         );
       } catch (err: unknown) {
         if ((err as { statusCode?: number }).statusCode === 410) {
-          await db.execute({ sql: "DELETE FROM push_subscriptions WHERE endpoint = ?", args: [sub.endpoint] });
+          await db.execute({
+            sql: "DELETE FROM push_subscriptions WHERE household_id = ? AND endpoint = ?",
+            args: [hhId, sub.endpoint],
+          });
         }
       }
     }
