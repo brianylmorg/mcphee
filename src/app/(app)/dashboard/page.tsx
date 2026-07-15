@@ -43,6 +43,7 @@ export default function DashboardPage() {
   const [pushLoading, setPushLoading] = useState(false);
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [dailyMilkMl, setDailyMilkMl] = useState(0);
+  const [expectedDailyMilkMl, setExpectedDailyMilkMl] = useState<number | null>(null);
   const [activityDateFilter, setActivityDateFilter] = useState("");
   const [activityTypeFilter, setActivityTypeFilter] = useState("all");
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
@@ -137,6 +138,8 @@ export default function DashboardPage() {
         setLatestWeight(Number(data.measurement.weight_g));
       }
       setDailyMilkMl(Number(data.dailyMilk?.totalMl ?? 0));
+      const expectedMilk = Number(data.dailyMilk?.expectedMl);
+      setExpectedDailyMilkMl(Number.isFinite(expectedMilk) ? expectedMilk : null);
       if (data.timers?.length > 0) {
         setActiveTimer(data.timers[0]);
         setTimerElapsed(Date.now() - Number(data.timers[0].started_at));
@@ -374,7 +377,6 @@ export default function DashboardPage() {
     }
   };
 
-  const expectedDailyMilkMl: number | null = null;
   const dailyMilkProgress = expectedDailyMilkMl
     ? Math.min(100, Math.round((dailyMilkMl / expectedDailyMilkMl) * 100))
     : 0;

@@ -77,11 +77,20 @@ export async function GET(request: NextRequest) {
       try {
         const details = JSON.parse(String((row as unknown as { details: string | null }).details ?? "{}"));
         const amount = Number(details.amount);
-        return Number.isFinite(amount) ? total + amount : total;
+        const formulaAmount = Number(details.formulaAmount);
+        return (
+          total +
+          (Number.isFinite(amount) ? amount : 0) +
+          (Number.isFinite(formulaAmount) ? formulaAmount : 0)
+        );
       } catch {
         return total;
       }
     }, 0);
+    const latestWeightG = Number((measurements.rows[0] as { weight_g?: unknown } | undefined)?.weight_g);
+    const expectedMilkMl = Number.isFinite(latestWeightG)
+      ? Math.round((latestWeightG / 1000) * 150)
+      : null;
 
     return NextResponse.json({
       babies: babies.rows,
@@ -98,7 +107,7 @@ export async function GET(request: NextRequest) {
       dailyMilk: {
         date: sgtDate,
         totalMl: dailyMilkMl,
-        expectedMl: null,
+        expectedMl: expectedMilkMl,
       },
     });
   } catch (error) {
