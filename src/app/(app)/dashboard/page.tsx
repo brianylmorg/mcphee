@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -404,6 +405,12 @@ export default function DashboardPage() {
                 {latestWeight ? formatWeight(latestWeight) : ""}
               </p>
             )}
+            <Link
+              href="/weight"
+              className="mt-2 inline-flex items-center rounded-full bg-terracotta/10 px-3 py-1 text-xs font-medium text-terracotta"
+            >
+              Weight details
+            </Link>
             {userName && (
               <p className="text-xs text-warm-brown-light/70 mt-1">
                 You are {userName}

@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const db = createDB();
     const { searchParams } = new URL(request.url);
     const babyId = searchParams.get("babyId");
+    const history = searchParams.get("history") === "1";
 
     let sql = `
       SELECT m.* FROM measurements m
@@ -28,12 +29,13 @@ export async function GET(request: NextRequest) {
       args.push(babyId);
     }
 
-    sql += " ORDER BY m.measured_at DESC LIMIT 1";
+    sql += history ? " ORDER BY m.measured_at ASC" : " ORDER BY m.measured_at DESC LIMIT 1";
 
     const result = await db.execute({ sql, args });
-    return NextResponse.json({
-      measurement: result.rows.length > 0 ? result.rows[0] : null,
-    });
+    return NextResponse.json(history
+      ? { measurements: result.rows }
+      : { measurement: result.rows.length > 0 ? result.rows[0] : null }
+    );
   } catch (error) {
     console.error("Measurements API error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -52,12 +54,18 @@ export async function POST(request: NextRequest) {
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
 
+    const measuredAt = Number(body.measuredAt || Date.now());
+    const weightG = Math.round(Number(body.weightG));
+    if (!Number.isFinite(measuredAt) || !Number.isFinite(weightG) || weightG <= 0) {
+      return NextResponse.json({ error: "Invalid measurement" }, { status: 400 });
+    }
+
     const id = generateId();
 
     await db.execute({
       sql: `INSERT INTO measurements (id, baby_id, measured_at, weight_g, created_at)
             VALUES (?, ?, ?, ?, ?)`,
-      args: [id, body.babyId, body.measuredAt || Date.now(), body.weightG, Date.now()],
+      args: [id, body.babyId, measuredAt, weightG, Date.now()],
     });
 
     return NextResponse.json({ id });
