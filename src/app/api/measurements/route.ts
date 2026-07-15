@@ -29,7 +29,9 @@ export async function GET(request: NextRequest) {
       args.push(babyId);
     }
 
-    sql += history ? " ORDER BY m.measured_at ASC" : " ORDER BY m.measured_at DESC LIMIT 1";
+    sql += history
+      ? " ORDER BY m.measured_at ASC, m.created_at ASC"
+      : " ORDER BY m.measured_at DESC, m.created_at DESC LIMIT 1";
 
     const result = await db.execute({ sql, args });
     return NextResponse.json(history

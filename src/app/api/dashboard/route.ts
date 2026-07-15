@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
         sql: `SELECT m.* FROM measurements m
               JOIN babies b ON m.baby_id = b.id
               WHERE b.household_id = ? AND m.weight_g IS NOT NULL
-              ORDER BY m.measured_at DESC LIMIT 1`,
+              ORDER BY m.measured_at DESC, m.created_at DESC LIMIT 1`,
         args: [householdId],
       },
       {
