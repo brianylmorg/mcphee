@@ -47,19 +47,29 @@ export function HouseholdProvider({
   );
   const [userId, setUserIdState] = useState<string | null>(initialUserId || null);
   const [userName, setUserNameState] = useState<string | null>(initialUserName || null);
+  const [profileRevision, setProfileRevision] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    if (userId && !userName) {
-      fetch("/api/users")
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.user?.name) setUserNameState(data.user.name);
-        })
-        .catch(() => {});
+    let cancelled = false;
+
+    if (!userId) {
+      setUserNameState(null);
+      return;
     }
-  }, [userId, userName]);
+
+    fetch("/api/users", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setUserNameState(data.user?.name ?? null);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, profileRevision]);
 
   const setHouseholdId = (id: string | null) => {
     setHouseholdIdState(id);
@@ -69,6 +79,7 @@ export function HouseholdProvider({
   const setUserId = (id: string | null, name: string | null) => {
     setUserIdState(id);
     setUserNameState(name);
+    setProfileRevision((revision) => revision + 1);
   };
 
   return (

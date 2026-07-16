@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
+import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,84 @@ function validateActivityInput(body: Record<string, unknown>) {
     return "details must be an object";
   }
   return null;
+}
+
+type MilkVolumes = { breastmilkMl: number; formulaMl: number };
+type DB = ReturnType<typeof createDB>;
+
+function parseDetails(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function numericMl(value: unknown): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function bottleVolumes(details: Record<string, unknown>): MilkVolumes {
+  const feeds = details.feeds;
+  if (Array.isArray(feeds)) {
+    return feeds.reduce<MilkVolumes>((total, item) => {
+      if (!item || typeof item !== "object") return total;
+      const feed = item as Record<string, unknown>;
+      const amount = numericMl(feed.amount);
+      if (feed.milkType === "formula") total.formulaMl += amount;
+      else if (feed.milkType === "breastmilk") total.breastmilkMl += amount;
+      return total;
+    }, { breastmilkMl: 0, formulaMl: 0 });
+  }
+
+  const amount = numericMl(details.amount);
+  const breastmilkAmount = numericMl(details.breastmilkAmount);
+  const formulaAmount = numericMl(details.formulaAmount);
+  if (breastmilkAmount || formulaAmount) {
+    return {
+      breastmilkMl: breastmilkAmount || (details.milkType === "breastmilk" ? amount : 0),
+      formulaMl: formulaAmount || (details.milkType === "formula" ? amount : 0),
+    };
+  }
+
+  if (details.milkType === "formula") return { breastmilkMl: 0, formulaMl: amount };
+  return { breastmilkMl: amount, formulaMl: 0 };
+}
+
+function pumpAmount(details: Record<string, unknown>): number {
+  return numericMl(details.amount);
+}
+
+async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: string, excludeActivityId?: string): Promise<number> {
+  let sql = `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
+             WHERE a.baby_id = ?
+               AND a.baby_id IN (SELECT id FROM babies WHERE household_id = ?)
+               AND a.type IN (?, ?)`;
+  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed"];
+  if (excludeActivityId) {
+    sql += " AND a.id != ?";
+    args.push(excludeActivityId);
+  }
+  sql += " ORDER BY a.started_at ASC, a.created_at ASC";
+
+  const result = await db.execute({ sql, args });
+  const walletMl = result.rows.reduce((balance, row) => {
+    const typedRow = row as unknown as { type: string; details: string | null };
+    const details = parseDetails(typedRow.details);
+    if (typedRow.type === "pump") {
+      return balance + pumpAmount(details);
+    }
+    if (typedRow.type === "bottlefeed") {
+      return Math.max(0, balance - bottleBreastmilkLibraryDeduction(details));
+    }
+    return balance;
+  }, 0);
+
+  return Math.max(0, walletMl);
 }
 
 export async function GET(request: NextRequest) {
@@ -105,6 +184,17 @@ export async function POST(request: NextRequest) {
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
 
+    if (body.type === "bottlefeed") {
+      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseDetails(body.details));
+      const availableBreastmilkMl = await breastmilkLibraryForBaby(db, body.babyId, householdId);
+      if (requestedBreastmilkMl > availableBreastmilkMl) {
+        return NextResponse.json(
+          { error: "Breastmilk amount exceeds available breastmilk library" },
+          { status: 400 }
+        );
+      }
+    }
+
     const activityId = generateId();
     const createdBy = await userNameForHousehold(db, body.userId, householdId);
 
@@ -174,6 +264,17 @@ export async function PUT(request: NextRequest) {
 
     // Merge new details on top of existing
     mergedDetails = { ...mergedDetails, ...body.details };
+
+    if (body.type === "bottlefeed") {
+      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseDetails(mergedDetails));
+      const availableBreastmilkMl = await breastmilkLibraryForBaby(db, body.babyId, householdId, body.id);
+      if (requestedBreastmilkMl > availableBreastmilkMl) {
+        return NextResponse.json(
+          { error: "Breastmilk amount exceeds available breastmilk library" },
+          { status: 400 }
+        );
+      }
+    }
 
     await db.execute({
       sql: `UPDATE activities SET 

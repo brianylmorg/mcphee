@@ -32,10 +32,13 @@ export default async function RootLayout({
   const userId = cookieStore.get("mcphee_user")?.value;
 
   let userName: string | undefined;
-  if (userId) {
+  if (userId && householdId) {
     try {
       const db = createDB();
-      const result = await db.execute({ sql: "SELECT name FROM users WHERE id = ?", args: [userId] });
+      const result = await db.execute({
+        sql: "SELECT name FROM users WHERE id = ? AND household_id = ? LIMIT 1",
+        args: [userId, householdId],
+      });
       if (result.rows.length > 0) {
         userName = (result.rows[0] as unknown as { name: string }).name;
       }

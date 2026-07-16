@@ -49,12 +49,14 @@ export function timeSince(timestamp: number): string {
 }
 
 export function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString("en-SG", {
+  const parts = new Intl.DateTimeFormat("en-SG", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
     timeZone: "Asia/Singapore",
-  });
+    hourCycle: "h23",
+  }).formatToParts(new Date(timestamp));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "00";
+  return `${part("hour")}:${part("minute")} hrs`;
 }
 
 export function formatDate(timestamp: number): string {

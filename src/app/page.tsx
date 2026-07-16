@@ -17,7 +17,7 @@ export default function WelcomePage() {
     inviteCode?: string;
     babyId?: string;
   } | null>(null);
-  const { householdId, setHouseholdId } = useHousehold();
+  const { householdId, setHouseholdId, setUserId } = useHousehold();
   const router = useRouter();
 
   useEffect(() => {
@@ -98,6 +98,8 @@ export default function WelcomePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
+      const user = data.user || data;
+      setUserId(user.id || null, user.name || yourName.trim());
       setHouseholdId(householdResult!.householdId);
       router.push("/dashboard");
     } catch (err) {

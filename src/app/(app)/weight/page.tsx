@@ -54,6 +54,8 @@ export default function WeightPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [deleteMeasurement, setDeleteMeasurement] = useState<Measurement | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!householdId) return;
@@ -165,6 +167,29 @@ export default function WeightPage() {
     }
   }
 
+  async function confirmDeleteMeasurement() {
+    if (!deleteMeasurement) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/measurements?id=${encodeURIComponent(deleteMeasurement.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to delete weight");
+
+      const remaining = measurements.filter((item) => item.id !== deleteMeasurement.id);
+      setMeasurements(remaining);
+      setSelectedId(remaining[remaining.length - 1]?.id ?? null);
+      setDeleteMeasurement(null);
+    } catch (error) {
+      console.error("Delete weight error:", error);
+      alert(error instanceof Error ? error.message : "Could not delete weight. Try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <main className="min-h-screen bg-cream flex items-center justify-center">
@@ -226,14 +251,9 @@ export default function WeightPage() {
         </form>
 
         <section className="bg-white rounded-2xl border border-terracotta/20 p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/50">WHO boys standard</p>
-              <h2 className="font-display text-lg text-terracotta mt-1">Weight history</h2>
-            </div>
-            <span className="text-xs bg-cream text-warm-brown-light px-2 py-1 rounded-full">
-              Scroll →
-            </span>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/50">WHO boys standard</p>
+            <h2 className="font-display text-lg text-terracotta mt-1">Weight history</h2>
           </div>
 
           {chart.points.length === 0 ? (
@@ -287,12 +307,58 @@ export default function WeightPage() {
                     Percentile uses WHO boys weight-for-age LMS standards, not an ethnicity-specific Asian standard.
                     {!baby?.birth_date ? " Add birth date to calculate percentile." : ""}
                   </p>
+                  <div className="mt-3 flex justify-end border-t border-warm-brown-light/10 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteMeasurement(selectedPoint)}
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200"
+                    >
+                      <span aria-hidden="true">×</span>
+                      Delete measurement
+                    </button>
+                  </div>
                 </div>
               )}
             </>
           )}
         </section>
       </div>
+
+      {deleteMeasurement && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-4 sm:items-center sm:pb-0"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-weight-title"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+            <h2 id="delete-weight-title" className="font-display text-xl text-warm-brown">
+              Delete this weight?
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-warm-brown-light">
+              {formatWeight(Number(deleteMeasurement.weight_g))} from {formatDate(Number(deleteMeasurement.measured_at))} will be permanently removed.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteMeasurement(null)}
+                disabled={isDeleting}
+                className="rounded-xl border border-warm-brown-light/20 px-4 py-3 text-sm font-semibold text-warm-brown disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteMeasurement}
+                disabled={isDeleting}
+                className="rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

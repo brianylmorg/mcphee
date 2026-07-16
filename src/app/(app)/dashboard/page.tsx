@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
+import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk-calculation";
 
 interface Baby {
   id: string;
@@ -32,8 +33,11 @@ export default function DashboardPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [inviteCode, setInviteCode] = useState("");
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showActivityMenu, setShowActivityMenu] = useState(false);
   const [logType, setLogType] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [deleteActivity, setDeleteActivity] = useState<Activity | null>(null);
+  const [isDeletingActivity, setIsDeletingActivity] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
@@ -44,6 +48,9 @@ export default function DashboardPage() {
   const [pushLoading, setPushLoading] = useState(false);
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [dailyMilkMl, setDailyMilkMl] = useState(0);
+  const [breastmilkLibraryMl, setBreastmilkLibraryMl] = useState(0);
+  const [lastPumpedMl, setLastPumpedMl] = useState(0);
+  const [lastPumpedAt, setLastPumpedAt] = useState<number | null>(null);
   const [expectedDailyMilkMl, setExpectedDailyMilkMl] = useState<number | null>(null);
   const [activityDateFilter, setActivityDateFilter] = useState("");
   const [activityTypeFilter, setActivityTypeFilter] = useState("all");
@@ -65,10 +72,20 @@ export default function DashboardPage() {
   const todayDateKey = sgtDateKey(0);
   const yesterdayDateKey = sgtDateKey(-1);
   const isActivityFiltered = Boolean(activityDateFilter || activityTypeFilter !== "all");
+  const activityActionTypes = ["bottlefeed", "breastfeed", "pump", "diaper", "vomit"];
+  const activityIcons: Record<string, string> = {
+    bottlefeed: "🍼",
+    breastfeed: "🤱",
+    pump: "🧴",
+    diaper: "🧷",
+    vomit: "🤮",
+  };
+
   const activityTypeOptions = [
     { value: "all", label: "All" },
-    { value: "bottlefeed", label: "Bottle" },
+    { value: "bottlefeed", label: "Bottlefeed" },
     { value: "breastfeed", label: "Breastfeed" },
+    { value: "pump", label: "Pump" },
     { value: "diaper", label: "Diaper" },
     { value: "vomit", label: "Vomit" },
   ];
@@ -139,6 +156,10 @@ export default function DashboardPage() {
         setLatestWeight(Number(data.measurement.weight_g));
       }
       setDailyMilkMl(Number(data.dailyMilk?.totalMl ?? 0));
+      setBreastmilkLibraryMl(Number(data.pumpedMilk?.walletMl ?? 0));
+      setLastPumpedMl(Number(data.pumpedMilk?.lastPumpMl ?? 0));
+      const lastPumpAt = Number(data.pumpedMilk?.lastPumpAt);
+      setLastPumpedAt(Number.isFinite(lastPumpAt) && lastPumpAt > 0 ? lastPumpAt : null);
       const expectedMilk = Number(data.dailyMilk?.expectedMl);
       setExpectedDailyMilkMl(Number.isFinite(expectedMilk) ? expectedMilk : null);
       if (data.timers?.length > 0) {
@@ -232,14 +253,19 @@ export default function DashboardPage() {
     }
   };
 
-  const handleDelete = async (activityId: string) => {
-    if (!confirm("Delete this activity?")) return;
+  const handleDelete = async () => {
+    if (!deleteActivity) return;
+    setIsDeletingActivity(true);
     try {
-      await fetch(`/api/activities?id=${activityId}`, { method: "DELETE" });
+      const res = await fetch(`/api/activities?id=${deleteActivity.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete activity");
+      setDeleteActivity(null);
       fetchData();
       setActivityFilterRefresh((value) => value + 1);
     } catch (error) {
       console.error("Delete error:", error);
+    } finally {
+      setIsDeletingActivity(false);
     }
   };
 
@@ -289,6 +315,26 @@ export default function DashboardPage() {
     }
   };
 
+  const handleActivityAction = (type: string) => {
+    if (type === "breastfeed" && !activeTimer) {
+      if (!breastfeedPromptShown) {
+        setBreastfeedPromptShown(true);
+        return;
+      }
+
+      setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
+      setTimerElapsed(0);
+      setBreastfeedPromptShown(false);
+      setShowActivityMenu(false);
+      handleStartTimer("breastfeed", "L");
+      return;
+    }
+
+    setLogType(type);
+    setShowLogModal(true);
+    setShowActivityMenu(false);
+  };
+
   const formatElapsed = (ms: number): string => {
     const totalSec = Math.floor(ms / 1000);
     const h = Math.floor(totalSec / 3600);
@@ -324,20 +370,6 @@ export default function DashboardPage() {
     return elapsed > medianInterval * 1.2;
   };
 
-  const userColors = (() => {
-    const palette = [
-      { bg: "bg-terracotta/15", text: "text-terracotta", dot: "bg-terracotta" },
-      { bg: "bg-blue-100", text: "text-blue-700", dot: "bg-blue-500" },
-      { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
-      { bg: "bg-violet-100", text: "text-violet-700", dot: "bg-violet-500" },
-    ];
-    const names = [...new Set(activities.map((a) => a.created_by).filter(Boolean))] as string[];
-    const map: Record<string, typeof palette[0]> = {};
-    names.forEach((name, i) => {
-      map[name] = palette[i % palette.length];
-    });
-    return map;
-  })();
 
   const parseDetails = (activity: Activity): Record<string, unknown> => {
     if (!activity.details) return {};
@@ -346,24 +378,117 @@ export default function DashboardPage() {
     catch { return {}; }
   };
 
-  const formatActivityDetails = (activity: Activity): string => {
+  const getActivityComment = (activity: Activity): string => {
+    const details = parseDetails(activity);
+    const calculations: string[] = [];
+
+    if (activity.type === "bottlefeed" && Array.isArray(details.feeds)) {
+      details.feeds.forEach((item) => {
+        if (!item || typeof item !== "object") return;
+        const feed = item as Record<string, unknown>;
+        const expression = typeof feed.amountExpression === "string" ? feed.amountExpression.trim() : "";
+        if (!expression) return;
+        const label = details.feeds && Array.isArray(details.feeds) && details.feeds.length > 1
+          ? milkTypeLabel(feed.milkType) + ": "
+          : "";
+        calculations.push(label + expression + " ml");
+      });
+    } else if ((activity.type === "bottlefeed" || activity.type === "pump") && typeof details.amountExpression === "string") {
+      const expression = details.amountExpression.trim();
+      if (expression) calculations.push(expression + " ml");
+    }
+
+    const note = typeof details.notes === "string" ? details.notes.trim() : "";
+    return [...calculations, note].filter(Boolean).join(" · ");
+  };
+
+  const activityTitle = (type: string): string => {
+    if (type === "bottlefeed") return "Bottlefeed";
+    if (type === "breastfeed") return "Breastfeed";
+    if (type === "diaper") return "Diaper";
+    if (type === "vomit") return "Vomit";
+    if (type === "pump") return "Pump";
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  };
+
+  const milkTypeLabel = (value: unknown): string => {
+    if (value === "formula") return "Formula";
+    if (value === "breastmilk") return "Breast milk";
+    return "";
+  };
+
+  const sideLabel = (value: unknown): string => {
+    if (value === "L") return "Left side";
+    if (value === "R") return "Right side";
+    if (value === "both") return "Both sides";
+    return typeof value === "string" && value ? value : "";
+  };
+
+  const peeUnitsLabel = (value: unknown): string => {
+    const raw = typeof value === "number" ? String(value) : typeof value === "string" ? value : "";
+    if (/^[1-5]$/.test(raw)) return `${raw} unit${raw === "1" ? "" : "s"}`;
+    if (raw === "M") return "3 units";
+    if (raw === "L") return "5 units";
+    return "";
+  };
+
+  const getActivityDisplay = (activity: Activity): { title: string; subcategory: string; quantity: string } => {
     const d = parseDetails(activity);
     switch (activity.type) {
       case "bottlefeed": {
-        const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : null;
-        return amt != null ? `${amt} ml ${d.milkType === "formula" ? "formula" : "breastmilk"}` : "—";
+        let breastmilkAmount = 0;
+        let formulaAmount = 0;
+        if (Array.isArray(d.feeds)) {
+          d.feeds.forEach((item) => {
+            if (!item || typeof item !== "object") return;
+            const feed = item as Record<string, unknown>;
+            const amount = Number(feed.amount);
+            if (!Number.isFinite(amount) || amount <= 0) return;
+            if (feed.milkType === "formula") formulaAmount += amount;
+            else if (feed.milkType === "breastmilk") breastmilkAmount += amount;
+          });
+        } else {
+          const amount = d.amount != null && d.amount !== "" ? Number(d.amount) : 0;
+          const storedBreastmilk = Number(d.breastmilkAmount);
+          const storedFormula = Number(d.formulaAmount);
+          if (Number.isFinite(storedBreastmilk) && storedBreastmilk > 0) breastmilkAmount = storedBreastmilk;
+          if (Number.isFinite(storedFormula) && storedFormula > 0) formulaAmount = storedFormula;
+          if (breastmilkAmount === 0 && formulaAmount === 0 && Number.isFinite(amount) && amount > 0) {
+            if (d.milkType === "formula") formulaAmount = amount;
+            else breastmilkAmount = amount;
+          }
+        }
+
+        const quantityParts = [
+          breastmilkAmount > 0 ? "Breast milk " + breastmilkAmount + " ml" : "",
+          formulaAmount > 0 ? "Formula " + formulaAmount + " ml" : "",
+        ].filter(Boolean);
+        return {
+          title: "Bottlefeed",
+          subcategory: breastmilkAmount > 0 && formulaAmount > 0 ? "Breast milk + formula" : breastmilkAmount > 0 ? "Breast milk" : formulaAmount > 0 ? "Formula" : milkTypeLabel(d.milkType),
+          quantity: quantityParts.join(" · "),
+        };
       }
       case "breastfeed":
-        return d.side ? `${d.side} side` : "—";
+        return { title: "Breastfeed", subcategory: sideLabel(d.side), quantity: "" };
       case "pump": {
-        const amt = d.amount != null && d.amount !== "" ? Number(d.amount) : null;
-        return amt != null ? `${amt} ml` : "—";
+        const amount = d.amount != null && d.amount !== "" ? Number(d.amount) : null;
+        return {
+          title: "Pump",
+          subcategory: sideLabel(d.side),
+          quantity: amount != null && Number.isFinite(amount) ? `${amount} ml` : "",
+        };
       }
       case "diaper": {
-        const parts: string[] = [];
-        if (d.poop === "M" || d.poop === "L") parts.push(`poop ${d.poop}`);
-        if (d.peeSize === "M" || d.peeSize === "L") parts.push(`pee ${d.peeSize}`);
-        return parts.length > 0 ? parts.join(", ") : "—";
+        const peeUnits = peeUnitsLabel(d.peeUnits ?? d.peeSize);
+        const poopSize = d.poop === "M" || d.poop === "L" ? String(d.poop) : "";
+        const hasPee = Boolean(peeUnits);
+        const hasPoop = Boolean(poopSize);
+        return {
+          title: "Diaper",
+          subcategory: hasPee && hasPoop ? "Pee + poop" : hasPee ? "Pee" : hasPoop ? "Poop" : "Diaper change",
+          quantity: [hasPee ? peeUnits : "", hasPoop ? `poop ${poopSize}` : ""].filter(Boolean).join(" · "),
+        };
       }
       case "vomit": {
         const labels: Record<string, string> = {
@@ -371,11 +496,22 @@ export default function DashboardPage() {
           "dribble-milk": "Dribble milk",
           "dribble-beancurd": "Dribble beancurd",
         };
-        return labels[d.vomitType as string] || "—";
+        return { title: "Vomit", subcategory: labels[d.vomitType as string] || "", quantity: "" };
       }
       default:
-        return "";
+        return { title: activityTitle(activity.type), subcategory: "", quantity: "" };
     }
+  };
+
+
+  const formatHourMark = (timestamp: number): string => {
+    const parts = new Intl.DateTimeFormat("en-SG", {
+      hour: "2-digit",
+      timeZone: "Asia/Singapore",
+      hourCycle: "h23",
+    }).formatToParts(new Date(timestamp));
+    const hour = parts.find((item) => item.type === "hour")?.value ?? "00";
+    return `${hour.padStart(2, "0")}:00 hrs`;
   };
 
   const dailyMilkProgress = expectedDailyMilkMl
@@ -391,7 +527,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-cream pb-24">
+    <main className="min-h-screen bg-cream pb-32">
       <header className="bg-white border-b border-warm-brown-light/10 px-6 py-4">
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <div>
@@ -407,8 +543,9 @@ export default function DashboardPage() {
             )}
             <Link
               href="/weight"
-              className="mt-2 inline-flex items-center rounded-full bg-terracotta/10 px-3 py-1 text-xs font-medium text-terracotta"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-terracotta/20 bg-terracotta/10 px-3 py-1.5 text-xs font-semibold text-terracotta shadow-sm transition-colors hover:bg-terracotta/15"
             >
+              <span aria-hidden="true">⚖</span>
               Weight details
             </Link>
             {userName && (
@@ -429,16 +566,11 @@ export default function DashboardPage() {
       <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
         {/* Daily Milk Total */}
         <div className="bg-white rounded-2xl border border-terracotta/20 p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/50">
-                Since 00:00 SGT
-              </p>
-              <h2 className="font-display text-lg text-terracotta mt-1">Today&apos;s milk</h2>
-            </div>
-            <span className="text-xs bg-cream text-warm-brown-light px-2 py-1 rounded-full">
-              Bottle feeds
-            </span>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/50">
+              Since 00:00 hrs SGT
+            </p>
+            <h2 className="font-display text-lg text-terracotta mt-1">Today&apos;s milk consumption</h2>
           </div>
 
           <div className="mt-4 flex items-end justify-between gap-4">
@@ -450,12 +582,12 @@ export default function DashboardPage() {
                 <span className="text-warm-brown-light text-base">ml</span>
               </div>
               <p className="text-xs text-warm-brown-light/60 mt-1">
-                Breastmilk + formula
+                Breast milk + formula consumed
               </p>
             </div>
-            <div className="bg-cream rounded-xl px-3 py-2 min-w-[118px] text-right">
-              <p className="text-xs text-warm-brown-light/60">Expected</p>
-              <p className="font-display text-lg text-warm-brown tabular-nums">
+            <div className="rounded-lg bg-cream px-2.5 py-1.5 text-right">
+              <p className="text-[10px] text-warm-brown-light/60">Expected</p>
+              <p className="font-display text-base text-warm-brown tabular-nums">
                 {expectedDailyMilkMl ? expectedDailyMilkMl + " ml" : "-- ml"}
               </p>
             </div>
@@ -470,6 +602,11 @@ export default function DashboardPage() {
           <div className="mt-2 flex items-center justify-between text-xs text-warm-brown-light/50">
             <span>Total today</span>
             <span>{expectedDailyMilkMl ? dailyMilkProgress + "%" : "Target pending"}</span>
+          </div>
+          <div className="mt-3 rounded-lg bg-cream px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-warm-brown-light/50">Breastmilk library</p>
+            <p className="mt-0.5 font-display text-base text-warm-brown tabular-nums">{breastmilkLibraryMl} ml</p>
+            <p className="mt-0.5 text-[11px] text-warm-brown-light/55">Available pumped breast milk for bottlefeeds</p>
           </div>
         </div>
 
@@ -516,92 +653,33 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Activity Cards */}
-        <div className="grid grid-cols-2 gap-3">
-          {["bottlefeed", "breastfeed", "diaper", "vomit"].map((type) => {
-            const last = getLastActivity(type);
-            const overdue = isOverdue(type);
-            const icons: Record<string, string> = {
-              bottlefeed: "🍼",
-              breastfeed: "🤱",
-              pump: "🧴",
-              diaper: "🧷",
-              vomit: "🤮",
-            };
-
-            const isBreastfeeding = activeTimer?.type === "breastfeed";
-            const isThisBreastfeed = type === "breastfeed";
-
-            return (
-              <button
-                key={type}
-                onClick={() => {
-                  if (isThisBreastfeed && !activeTimer) {
-                    if (!breastfeedPromptShown) {
-                      setBreastfeedPromptShown(true);
-                    } else {
-                      // Start timer
-                      setActiveTimer({ type: "breastfeed", started_at: Date.now(), current_side: "L" });
-                      setTimerElapsed(0);
-                      setBreastfeedPromptShown(false);
-                      handleStartTimer("breastfeed", "L");
-                    }
-                  } else {
-                    setLogType(type);
-                    setShowLogModal(true);
-                  }
-                }}
-                className={`p-4 rounded-2xl text-left transition-all ${
-                  isThisBreastfeed && isBreastfeeding
-                    ? "bg-terracotta text-white"
-                    : overdue
-                    ? "bg-terracotta text-white"
-                    : "bg-white border border-warm-brown-light/10"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span>{icons[type]}</span>
-                  <span className="text-sm font-medium capitalize">
-                    {type === "bottlefeed" ? "Bottle" : type === "vomit" ? "Vomit" : type}
-                  </span>
-                </div>
-                {isThisBreastfeed && isBreastfeeding ? (
-                  <p className="text-sm font-semibold animate-pulse">
-                    Feeding...
-                  </p>
-                ) : isThisBreastfeed && !activeTimer && breastfeedPromptShown ? (
-                  <p className="text-sm font-semibold text-terracotta">
-                    Tap again to start
-                  </p>
-                ) : last ? (
-                  <p className={`text-lg font-semibold ${overdue ? "text-white" : "text-warm-brown"}`}>
-                    {timeSince(last.started_at)}
-                  </p>
-                ) : (
-                  <p className={`text-sm ${overdue ? "text-white/80" : "text-warm-brown-light"}`}>
-                    {isThisBreastfeed ? "Tap to start" : "No entries yet"}
-                  </p>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
         {/* Recent Activity */}
         <section>
-          <div className="flex items-center justify-between mb-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium text-warm-brown-light">Recent Activity</h2>
-            {isActivityFiltered && (
-              <button
-                onClick={() => {
-                  setActivityDateFilter("");
-                  setActivityTypeFilter("all");
-                }}
-                className="text-xs text-terracotta hover:text-terracotta-dark transition-colors"
-              >
-                Clear
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {baby?.id && (
+                <a
+                  href={`/api/activities/export?babyId=${encodeURIComponent(baby.id)}`}
+                  download
+                  className="inline-flex items-center gap-1.5 rounded-full border border-terracotta/20 bg-white px-3 py-1.5 text-xs font-semibold text-terracotta shadow-sm transition-colors hover:bg-terracotta/10"
+                >
+                  <span aria-hidden="true">↓</span>
+                  Export CSV
+                </a>
+              )}
+              {isActivityFiltered && (
+                <button
+                  onClick={() => {
+                    setActivityDateFilter("");
+                    setActivityTypeFilter("all");
+                  }}
+                  className="text-xs text-terracotta hover:text-terracotta-dark transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
           <div className="bg-white rounded-xl border border-warm-brown-light/10 p-3 mb-3 space-y-3">
             <div className="flex flex-wrap gap-2">
@@ -654,27 +732,35 @@ export default function DashboardPage() {
               if (visible.length === 0) {
                 return (
                   <p className="text-center text-warm-brown-light py-8">
-                    {isActivityFiltered ? "No activities match these filters." : "No activities yet. Tap a card above to log one!"}
+                    {isActivityFiltered ? "No activities match these filters." : "No activities yet. Tap + to log one."}
                   </p>
                 );
               }
 
               let lastDateKey = "";
+              let lastHourKey = "";
               return visible.map((activity) => {
                 const dateKey = new Date(activity.started_at).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
-                const showHeader = dateKey !== lastDateKey;
+                const hourKey = formatHourMark(activity.started_at);
+                const showDateHeader = dateKey !== lastDateKey;
+                const showHourHeader = showDateHeader || hourKey !== lastHourKey;
                 lastDateKey = dateKey;
+                lastHourKey = hourKey;
 
                 const dateLabel = dateKey === today ? "Today" : dateKey === yesterday ? "Yesterday" : formatDate(activity.started_at);
-                const displayType = activity.type === "bottlefeed" ? "Bottle" : activity.type === "vomit" ? "Vomit" : activity.type.charAt(0).toUpperCase() + activity.type.slice(1);
-                const details = formatActivityDetails(activity);
-                const color = activity.created_by ? userColors[activity.created_by] : null;
+                const display = getActivityDisplay(activity);
+                const comment = getActivityComment(activity);
 
                 return (
                   <div key={activity.id}>
-                    {showHeader && (
+                    {showDateHeader && (
                       <p className="text-xs font-medium text-warm-brown-light/50 uppercase tracking-wide pt-3 pb-1 first:pt-0">
                         {dateLabel}
+                      </p>
+                    )}
+                    {showHourHeader && (
+                      <p className="pt-2 pb-1 font-display text-base text-terracotta tabular-nums">
+                        {hourKey}
                       </p>
                     )}
                     <div
@@ -685,44 +771,38 @@ export default function DashboardPage() {
                       }}
                       className="bg-white p-4 rounded-xl border border-warm-brown-light/10 cursor-pointer hover:border-terracotta/30 transition-colors"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-xl shrink-0">
-                            {{
-                              bottlefeed: "🍼",
-                              breastfeed: "🤱",
-                              pump: "🧴",
-                              diaper: "🧷",
-                              vomit: "🤮",
-                            }[activity.type]}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-sm text-warm-brown">
-                              <span className="font-medium">{displayType}</span>
-                              {details && details !== "—" && (
-                                <span className="text-warm-brown-light"> {details}</span>
-                              )}
-                            </p>
-                            <p className="text-xs text-warm-brown-light/60 mt-0.5">
-                              {timeSince(activity.started_at)} at {formatTime(activity.started_at)}
-                              {activity.created_by && (
-                                <>
-                                  {" · "}
-                                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${color?.bg || "bg-warm-brown-light/10"} ${color?.text || "text-warm-brown-light/60"}`}>
-                                    <span className={`w-1.5 h-1.5 rounded-full ${color?.dot || "bg-warm-brown-light/40"}`} />
-                                    {activity.created_by}
-                                  </span>
-                                </>
-                              )}
-                            </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/60 tabular-nums">
+                            {formatTime(activity.started_at)} · {timeSince(activity.started_at)}
+                          </p>
+                          <div className="mt-1 flex min-w-0 items-center gap-2">
+                            <span className="text-xl shrink-0">{activityIcons[activity.type]}</span>
+                            <p className="truncate text-lg font-semibold text-warm-brown">{display.title}</p>
                           </div>
+                          {display.subcategory && (
+                            <p className="mt-1 text-sm text-warm-brown-light">{display.subcategory}</p>
+                          )}
+                          {display.quantity && (
+                            <p className="mt-0.5 text-sm font-medium text-warm-brown tabular-nums">{display.quantity}</p>
+                          )}
+                          {comment && (
+                            <p className="mt-2 border-l-2 border-terracotta/20 pl-2 text-xs leading-relaxed text-warm-brown-light">
+                              {comment}
+                            </p>
+                          )}
+                          {activity.created_by && (
+                            <p className="mt-2 text-[11px] text-warm-brown-light/45">Entered by {activity.created_by}</p>
+                          )}
                         </div>
                         <button
+                          type="button"
+                          aria-label="Delete activity"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDelete(activity.id);
+                            setDeleteActivity(activity);
                           }}
-                          className="text-warm-brown-light/40 hover:text-red-500 transition-colors text-xs shrink-0 ml-2"
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-warm-brown-light/40 transition-colors hover:bg-red-50 hover:text-red-500"
                           title="Delete"
                         >
                           ×
@@ -752,12 +832,15 @@ export default function DashboardPage() {
             label="Your name"
             value={userName || ""}
             onSave={async (name) => {
-              await fetch("/api/users", {
+              const res = await fetch("/api/users", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name }),
               });
-              setUserId(userId, name);
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.error || "Failed to save user name");
+              setUserId(data.user?.id || userId, data.user?.name || name);
+              router.refresh();
             }}
           />
 
@@ -801,6 +884,77 @@ export default function DashboardPage() {
         </section>
       </div>
 
+      {/* Floating Add Activity Menu */}
+      <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
+        {showActivityMenu && (
+          <div className="w-[min(320px,calc(100vw-2.5rem))] rounded-2xl border border-warm-brown-light/10 bg-white p-2 shadow-xl">
+            {activityActionTypes.map((type) => {
+              const last = getLastActivity(type);
+              const overdue = isOverdue(type);
+              const isBreastfeeding = activeTimer?.type === "breastfeed";
+              const isBreastfeed = type === "breastfeed";
+              const label = type === "bottlefeed" ? "Bottlefeed" : type === "vomit" ? "Vomit" : type.charAt(0).toUpperCase() + type.slice(1);
+              const meta = isBreastfeed && isBreastfeeding
+                ? "Feeding..."
+                : isBreastfeed && !activeTimer && breastfeedPromptShown
+                ? "Tap again to start"
+                : last
+                ? timeSince(last.started_at)
+                : "No entries yet";
+
+              return (
+                <button
+                  key={type}
+                  onClick={() => handleActivityAction(type)}
+                  className={"flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors " + (overdue ? "bg-terracotta text-white" : "hover:bg-cream text-warm-brown")}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="text-xl">{activityIcons[type]}</span>
+                    <span className="text-sm font-medium">{label}</span>
+                  </span>
+                  <span className={"shrink-0 text-xs tabular-nums " + (overdue ? "text-white/80" : "text-warm-brown-light/70")}>{meta}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <button
+          onClick={() => setShowActivityMenu((value) => !value)}
+          aria-label="Add activity"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-terracotta text-3xl leading-none text-white shadow-lg transition-colors hover:bg-terracotta-dark"
+        >
+          {showActivityMenu ? "×" : "+"}
+        </button>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteActivity && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
+          <div className="w-full max-w-lg rounded-t-3xl bg-cream p-6 shadow-xl">
+            <h2 className="font-display text-xl text-terracotta">Delete activity?</h2>
+            <p className="mt-2 text-sm text-warm-brown-light">
+              This will remove the selected log entry permanently.
+            </p>
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={() => setDeleteActivity(null)}
+                disabled={isDeletingActivity}
+                className="flex-1 rounded-xl border border-warm-brown-light/20 bg-white py-3 text-sm font-medium text-warm-brown"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeletingActivity}
+                className="flex-1 rounded-xl bg-red-600 py-3 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {isDeletingActivity ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Log Modal */}
       {showLogModal && (
         <LogModal
@@ -809,6 +963,9 @@ export default function DashboardPage() {
           userId={userId}
           activity={editingActivity}
           activities={activities}
+          breastmilkLibraryMl={breastmilkLibraryMl}
+          lastPumpedMl={lastPumpedMl}
+          lastPumpedAt={lastPumpedAt}
           onClose={() => {
             setShowLogModal(false);
             setEditingActivity(null);
@@ -832,6 +989,9 @@ function LogModal({
   userId,
   activity,
   activities,
+  breastmilkLibraryMl,
+  lastPumpedMl,
+  lastPumpedAt,
   onClose,
   onSuccess,
 }: {
@@ -840,6 +1000,9 @@ function LogModal({
   userId: string | null;
   activity?: Activity | null;
   activities: Activity[];
+  breastmilkLibraryMl: number;
+  lastPumpedMl: number;
+  lastPumpedAt: number | null;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -875,27 +1038,56 @@ function LogModal({
     };
   };
   const initialSGT = getSGTParts(isEditing && activity ? activity.started_at : undefined);
-  const [amount, setAmount] = useState(() => {
-    if (isEditing && detailsObj.amount != null) return String(detailsObj.amount);
-    if (type === "bottlefeed" && !isEditing) {
-      const lastPump = activities.find((a) => {
-        if (a.type !== "pump") return false;
-        const d = typeof a.details === "object" ? a.details : (() => { try { return JSON.parse(a.details as string); } catch { return {}; } })();
-        return d && (d as Record<string, unknown>).amount != null;
-      });
-      if (lastPump) {
-        const d = typeof lastPump.details === "object" ? lastPump.details : (() => { try { return JSON.parse(lastPump.details as string); } catch { return {}; } })();
-        const pumpAmt = (d as Record<string, unknown>)?.amount;
-        if (pumpAmt != null) return String(pumpAmt);
-      }
+  type BottleFeedLine = { milkType: "breastmilk" | "formula"; amount: string };
+  const existingBreastmilkAmount = isEditing && type === "bottlefeed"
+    ? bottleBreastmilkLibraryDeduction(detailsObj)
+    : 0;
+  const availableBreastmilkMl = Math.max(0, Math.floor(breastmilkLibraryMl + existingBreastmilkAmount));
+  const suggestedBottleAmount = !isEditing && type === "bottlefeed" && availableBreastmilkMl > 0
+    ? String(availableBreastmilkMl)
+    : "";
+  const normalizeBottleMilkType = (value: unknown): BottleFeedLine["milkType"] => value === "formula" ? "formula" : "breastmilk";
+  const numberString = (value: unknown): string => {
+    const amount = Number(value);
+    return Number.isFinite(amount) && amount > 0 ? String(amount) : "";
+  };
+  const buildBottleFeeds = (): BottleFeedLine[] => {
+    if (Array.isArray(detailsObj.feeds)) {
+      const feeds = detailsObj.feeds
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+        .map((item) => ({
+          milkType: normalizeBottleMilkType(item.milkType),
+          amount: typeof item.amountExpression === "string" ? item.amountExpression : numberString(item.amount),
+        }));
+      if (feeds.length > 0) return feeds;
     }
-    return "";
+
+    const breastmilkAmount = numberString(detailsObj.breastmilkAmount);
+    const formulaAmount = numberString(detailsObj.formulaAmount);
+    if (isEditing && (breastmilkAmount || formulaAmount)) {
+      const feeds: BottleFeedLine[] = [];
+      if (breastmilkAmount) feeds.push({ milkType: "breastmilk", amount: breastmilkAmount });
+      if (formulaAmount) feeds.push({ milkType: "formula", amount: formulaAmount });
+      if (feeds.length > 0) return feeds;
+    }
+
+    if (isEditing) {
+      return [{
+        milkType: normalizeBottleMilkType(detailsObj.milkType),
+        amount: typeof detailsObj.amountExpression === "string" ? detailsObj.amountExpression : numberString(detailsObj.amount),
+      }];
+    }
+
+    return [{ milkType: "breastmilk", amount: suggestedBottleAmount }];
+  };
+  const [amount, setAmount] = useState(() => {
+    if (!isEditing || type !== "pump") return "";
+    if (typeof detailsObj.amountExpression === "string") return detailsObj.amountExpression;
+    return detailsObj.amount != null ? String(detailsObj.amount) : "";
   });
-  const [milkType, setMilkType] = useState(
-    isEditing && detailsObj.milkType ? String(detailsObj.milkType) : "formula"
-  );
+  const [bottleFeeds, setBottleFeeds] = useState<BottleFeedLine[]>(buildBottleFeeds);
   const [side, setSide] = useState(
-    isEditing && detailsObj.side ? String(detailsObj.side) : "L"
+    isEditing && detailsObj.side ? String(detailsObj.side) : type === "pump" ? "both" : "L"
   );
   const [vomitType, setVomitType] = useState(
     isEditing && detailsObj.vomitType ? String(detailsObj.vomitType) : "projectile"
@@ -910,14 +1102,22 @@ function LogModal({
       return v === "M" || v === "L" ? String(v) : "no";
     }
   );
-  const [diaperPoopSize] = useState("M");
-  const [diaperPeeSize, setDiaperPeeSize] = useState(
+  const [diaperPeeUnits, setDiaperPeeUnits] = useState(
     () => {
-      if (!isEditing) return "M";
-      const v = detailsObj.peeSize;
-      return v === "M" || v === "L" ? String(v) : "M";
+      if (!isEditing) return "3";
+      const v = detailsObj.peeUnits ?? detailsObj.peeSize;
+      if (typeof v === "number" && v >= 1 && v <= 5) return String(v);
+      if (typeof v === "string" && /^[1-5]$/.test(v)) return v;
+      if (v === "M") return "3";
+      if (v === "L") return "5";
+      return "3";
     }
   );
+  const [notes, setNotes] = useState(() => {
+    if (typeof detailsObj.notes === "string") return detailsObj.notes;
+    if (typeof detailsObj.note === "string") return detailsObj.note;
+    return "";
+  });
   const [isLoading, setIsLoading] = useState(false);
 
   // Custom time picker state (hour/minute as numbers, 24h)
@@ -926,8 +1126,59 @@ function LogModal({
   const [customDate, setCustomDate] = useState(initialSGT.date);
   const hourOptions = Array.from({ length: 24 }, (_, hour) => hour);
   const minuteOptions = Array.from({ length: 12 }, (_, index) => index * 5);
+  const amountPresets = [30, 60, 90, 120, 150, 180];
+  const suggestedPreset = Number(suggestedBottleAmount);
+  const bottleAmountOptions = suggestedPreset > 0
+    ? [suggestedPreset, ...amountPresets.filter((ml) => ml !== suggestedPreset)]
+    : amountPresets;
+  const normalizeMlExpression = (value: string): string =>
+    parseMlCalculation(value)?.normalized ?? value.trim().replace(/\s+/g, "").replace(/ml$/i, "");
+  const evaluateMlExpression = (value: string): number | null => parseMlCalculation(value)?.effectiveMl ?? null;
+  const hasMlCalculation = (value: string): boolean => parseMlCalculation(value)?.hasCalculation ?? false;
+  const breastmilkLibraryDeductionForFeeds = (feeds: BottleFeedLine[]) => feeds.reduce((total, feed) => {
+    if (feed.milkType !== "breastmilk") return total;
+    return total + (parseMlCalculation(feed.amount)?.libraryDeductionMl ?? 0);
+  }, 0);
+  const setBottleFeedMilkType = (index: number, milkType: BottleFeedLine["milkType"]) => {
+    setBottleFeeds((feeds) => feeds.map((feed, i) => i === index ? { ...feed, milkType } : feed));
+  };
+  const setBottleFeedAmount = (index: number, value: string) => {
+    const cleaned = value.replace(/[^\d.+\-\s]/g, "");
+    setBottleFeeds((feeds) => feeds.map((feed, i) => i === index ? { ...feed, amount: cleaned } : feed));
+  };
+  const addBottleFeedSupplement = () => {
+    setBottleFeeds((feeds) => [...feeds, { milkType: "formula", amount: "" }]);
+  };
+  const removeBottleFeed = (index: number) => {
+    setBottleFeeds((feeds) => feeds.filter((_, i) => i !== index));
+  };
+  const bottleBreastmilkLibraryDeductionMl = breastmilkLibraryDeductionForFeeds(bottleFeeds);
+  const bottlefeedHasInvalidAmount = type === "bottlefeed" && bottleFeeds.some((feed) =>
+    feed.amount.trim() !== "" && evaluateMlExpression(feed.amount) == null
+  );
+  const bottlefeedBreastmilkOverLimit = type === "bottlefeed" && bottleBreastmilkLibraryDeductionMl > availableBreastmilkMl;
+  const pumpEffectiveAmount = type === "pump" ? evaluateMlExpression(amount) : null;
+  const pumpHasInvalidAmount = type === "pump" && amount.trim() !== "" && pumpEffectiveAmount == null;
+  const pumpAgeLabel = (timestamp: number | null) => {
+    if (!timestamp) return "";
+    const hours = Math.max(0, (Date.now() - timestamp) / (60 * 60 * 1000));
+    if (hours < 1) return "<1h ago";
+    const roundedHours = hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours);
+    return roundedHours + "h ago";
+  };
+  const lastPumpHint = !isEditing && type === "pump" && lastPumpedMl > 0
+    ? "Last pump: " + Math.round(lastPumpedMl) + " ml" + (lastPumpedAt ? " · " + pumpAgeLabel(lastPumpedAt) : "")
+    : "Enter amount in ml";
 
   const handleSubmit = async () => {
+    if (bottlefeedHasInvalidAmount || pumpHasInvalidAmount) {
+      alert("Enter a valid amount, such as 90 or 90-50.");
+      return;
+    }
+    if (bottlefeedBreastmilkOverLimit) {
+      alert("Breastmilk amount exceeds the available breastmilk library.");
+      return;
+    }
     setIsLoading(true);
 
     let startedAt = Date.now();
@@ -948,19 +1199,46 @@ function LogModal({
     const details: Record<string, unknown> = {};
 
     if (type === "bottlefeed") {
-      details.amount = amount ? parseInt(amount) : null;
-      details.milkType = milkType;
+      const feeds = bottleFeeds.map((feed) => {
+        const calculation = parseMlCalculation(feed.amount);
+        return {
+          milkType: feed.milkType,
+          amount: calculation?.effectiveMl ?? null,
+          ...(calculation?.hasCalculation ? { amountExpression: calculation.normalized } : {}),
+          ...(calculation && calculation.wastedMl > 0 ? { wastedAmount: calculation.wastedMl } : {}),
+          ...(feed.milkType === "breastmilk" && calculation
+            ? { libraryDeductionAmount: calculation.libraryDeductionMl }
+            : {}),
+        };
+      });
+      const breastmilkAmount = feeds.reduce((total, feed) => {
+        const amount = Number(feed.amount);
+        return total + (feed.milkType === "breastmilk" && Number.isFinite(amount) && amount > 0 ? amount : 0);
+      }, 0);
+      const formulaAmount = feeds.reduce((total, feed) => {
+        const amount = Number(feed.amount);
+        return total + (feed.milkType === "formula" && Number.isFinite(amount) && amount > 0 ? amount : 0);
+      }, 0);
+      const totalAmount = breastmilkAmount + formulaAmount;
+      details.feeds = feeds;
+      details.amount = totalAmount > 0 ? totalAmount : null;
+      details.milkType = breastmilkAmount > 0 && formulaAmount > 0 ? "mixed" : formulaAmount > 0 ? "formula" : "breastmilk";
+      details.breastmilkAmount = breastmilkAmount;
+      details.formulaAmount = formulaAmount;
     } else if (type === "breastfeed") {
       details.side = side;
     } else if (type === "pump") {
-      details.amount = amount ? parseInt(amount) : null;
+      details.amount = pumpEffectiveAmount;
+      if (hasMlCalculation(amount)) details.amountExpression = normalizeMlExpression(amount);
+      else details.amountExpression = null;
       details.side = side;
     } else if (type === "diaper") {
       details.poop = diaperPoop;
-      details.peeSize = diaperPeeSize;
+      details.peeUnits = diaperPeeUnits;
     } else if (type === "vomit") {
       details.vomitType = vomitType;
     }
+    details.notes = notes.trim() || null;
 
     try {
       const res = await fetch("/api/activities", {
@@ -1003,7 +1281,7 @@ function LogModal({
       <div className="bg-cream w-full max-w-lg rounded-t-3xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-display text-xl text-terracotta capitalize">
-            {isEditing ? "Edit" : "Log"} {type === "bottlefeed" ? "Bottle" : type}
+            {isEditing ? "Edit" : "Log"} {type === "bottlefeed" ? "Bottlefeed" : type}
           </h2>
           <button onClick={onClose} className="text-warm-brown-light text-2xl">
             ×
@@ -1079,55 +1357,105 @@ function LogModal({
 
           {/* Type-specific fields */}
           {type === "bottlefeed" && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-warm-brown-light mb-2">
-                  Milk type
-                </label>
-                <div className="flex gap-2">
-                  {["formula", "breastmilk"].map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setMilkType(t)}
-                      className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
-                        milkType === t
-                          ? "bg-terracotta text-white"
-                          : "bg-white border border-warm-brown-light/20"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
+            <div className="space-y-4">
+              {bottleFeeds.map((feed, index) => (
+                <div key={index} className="rounded-2xl border border-warm-brown-light/10 bg-white/60 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <label className="text-sm font-medium text-warm-brown-light">
+                      {index === 0 ? "Bottlefeed" : "Bottlefeed supplement"}
+                    </label>
+                    {bottleFeeds.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeBottleFeed(index)}
+                        className="text-xs text-warm-brown-light/60 hover:text-red-500"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: "breastmilk", label: "Breast milk" },
+                      { value: "formula", label: "Formula" },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setBottleFeedMilkType(index, option.value as BottleFeedLine["milkType"])}
+                        className={
+                          "py-3 rounded-xl text-sm font-medium transition-colors " +
+                          (feed.milkType === option.value
+                            ? "bg-terracotta text-white"
+                            : "bg-white border border-warm-brown-light/20")
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-warm-brown-light mb-2">
+                      Amount (ml)
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {bottleAmountOptions.map((ml) => (
+                        <button
+                          key={ml}
+                          type="button"
+                          onClick={() => setBottleFeedAmount(index, String(ml))}
+                          className={
+                            "px-4 py-2 rounded-lg text-sm font-medium transition-colors " +
+                            (feed.amount === String(ml)
+                              ? "bg-terracotta text-white"
+                              : "bg-white border border-warm-brown-light/20")
+                          }
+                        >
+                          {ml}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={feed.amount}
+                      onChange={(e) => setBottleFeedAmount(index, e.target.value)}
+                      placeholder={index === 0 && suggestedBottleAmount ? "Breastmilk library amount" : "Enter amount or calculation"}
+                      className="mt-2 w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none"
+                    />
+                    {hasMlCalculation(feed.amount) && evaluateMlExpression(feed.amount) != null && (
+                      <p className="mt-1.5 text-xs font-medium text-terracotta">
+                        Consumed: {evaluateMlExpression(feed.amount)} ml
+                        {(parseMlCalculation(feed.amount)?.wastedMl ?? 0) > 0 && (
+                          <> · {parseMlCalculation(feed.amount)?.wastedMl} ml wasted</>
+                        )}
+                      </p>
+                    )}
+                    {feed.amount.trim() !== "" && evaluateMlExpression(feed.amount) == null && (
+                      <p className="mt-1.5 text-xs font-medium text-red-600">Use a valid amount, such as 90 or 90-50.</p>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-warm-brown-light mb-2">
-                  Amount (ml)
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {[30, 60, 90, 120, 150, 180].map((ml) => (
-                    <button
-                      key={ml}
-                      onClick={() => setAmount(String(ml))}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        amount === String(ml)
-                          ? "bg-terracotta text-white"
-                          : "bg-white border border-warm-brown-light/20"
-                      }`}
-                    >
-                      {ml}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Or enter custom amount"
-                  className="mt-2 w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none"
-                />
-              </div>
-            </>
+              ))}
+
+              <p className="text-xs text-warm-brown-light/60">
+                Breastmilk library: {availableBreastmilkMl} ml available
+              </p>
+              {bottlefeedBreastmilkOverLimit && (
+                <p className="text-xs font-medium text-red-600">
+                  This feed removes more breastmilk than the library contains, including waste.
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={addBottleFeedSupplement}
+                className="w-full rounded-xl border border-terracotta/20 bg-white px-4 py-3 text-sm font-semibold text-terracotta transition-colors hover:bg-terracotta/10"
+              >
+                + Add bottlefeed supplement
+              </button>
+            </div>
           )}
 
           {type === "pump" && (
@@ -1137,12 +1465,18 @@ function LogModal({
                   Amount (ml)
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Enter amount in ml"
+                  onChange={(e) => setAmount(e.target.value.replace(/[^\d.+\-\s]/g, ""))}
+                  placeholder={lastPumpHint}
                   className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none"
                 />
+                {hasMlCalculation(amount) && pumpEffectiveAmount != null && (
+                  <p className="mt-1.5 text-xs font-medium text-terracotta">Effective amount: {pumpEffectiveAmount} ml</p>
+                )}
+                {pumpHasInvalidAmount && (
+                  <p className="mt-1.5 text-xs font-medium text-red-600">Use a valid amount, such as 90 or 90-50.</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-warm-brown-light mb-2">
@@ -1206,32 +1540,30 @@ function LogModal({
               {/* Pee */}
               <div>
                 <label className="block text-sm font-medium text-warm-brown-light mb-2">
-                  Pee
+                  Pee units
                 </label>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => {
-                      setDiaperPeeSize("no");
-                    }}
-                    className={`flex-[3] py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
-                      diaperPeeSize === "no"
+                    onClick={() => setDiaperPeeUnits("no")}
+                    className={`flex-[2] py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
+                      diaperPeeUnits === "no"
                         ? "bg-terracotta text-white"
                         : "bg-white border border-warm-brown-light/20"
                     }`}
                   >
                     No
                   </button>
-                  {["M", "L"].map((s) => (
+                  {["1", "2", "3", "4", "5"].map((units) => (
                     <button
-                      key={s}
-                      onClick={() => setDiaperPeeSize(s)}
-                      className={`flex-1 py-3 rounded-xl text-sm font-medium capitalize transition-colors ${
-                        diaperPeeSize === s
+                      key={units}
+                      onClick={() => setDiaperPeeUnits(units)}
+                      className={`flex-1 py-3 rounded-xl text-sm font-medium transition-colors ${
+                        diaperPeeUnits === units
                           ? "bg-terracotta text-white"
                           : "bg-white border border-warm-brown-light/20"
                       }`}
                     >
-                      {s}
+                      {units}
                     </button>
                   ))}
                 </div>
@@ -1255,7 +1587,7 @@ function LogModal({
                         : "bg-white border border-warm-brown-light/20"
                     }`}
                   >
-                    {s}
+                    {s === "both" ? "Both" : s}
                   </button>
                 ))}
               </div>
@@ -1289,9 +1621,23 @@ function LogModal({
             </div>
           )}
 
+          <div>
+            <label className="block text-sm font-medium text-warm-brown-light mb-2">
+              Notes
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="Add a note (optional)"
+              className="w-full resize-none rounded-xl border-2 border-warm-brown-light/20 bg-white px-4 py-3 text-sm text-warm-brown outline-none transition-colors focus:border-terracotta"
+            />
+          </div>
+
           <button
             onClick={handleSubmit}
-            disabled={isLoading}
+            disabled={isLoading || bottlefeedBreastmilkOverLimit || bottlefeedHasInvalidAmount || pumpHasInvalidAmount}
             className="w-full py-4 bg-terracotta text-white font-medium rounded-2xl text-lg hover:bg-terracotta-dark transition-colors disabled:opacity-50"
           >
             {isLoading ? "Saving..." : isEditing ? "Save changes" : "Log activity"}
@@ -1353,9 +1699,15 @@ function SettingsField({
           onClick={async () => {
             if (!draft.trim()) return;
             setSaving(true);
-            await onSave(draft.trim());
-            setSaving(false);
-            setEditing(false);
+            try {
+              await onSave(draft.trim());
+              setEditing(false);
+            } catch (error) {
+              console.error("Save setting error:", error);
+              alert(error instanceof Error ? error.message : "Could not save. Please try again.");
+            } finally {
+              setSaving(false);
+            }
           }}
           disabled={!draft.trim() || saving}
           className="flex-1 py-2 rounded-lg text-sm bg-terracotta text-white font-medium disabled:opacity-50"

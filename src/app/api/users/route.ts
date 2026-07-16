@@ -118,10 +118,42 @@ export async function PUT(request: NextRequest) {
     });
 
     if (result.rowsAffected === 0) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      if (!(await householdExists(db, householdId))) {
+        return NextResponse.json({ error: "Household not found" }, { status: 404 });
+      }
+
+      const repairedUserId = generateId();
+      await db.execute({
+        sql: "INSERT INTO users (id, household_id, name, created_at) VALUES (?, ?, ?, ?)",
+        args: [repairedUserId, householdId, body.name.trim(), Date.now()],
+      });
+
+      const response = NextResponse.json({
+        success: true,
+        user: { id: repairedUserId, name: body.name.trim(), householdId },
+      });
+      response.cookies.set("mcphee_user", repairedUserId, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+      return response;
     }
 
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({
+      success: true,
+      user: { id: userId, name: body.name.trim(), householdId },
+    });
+    response.cookies.set("mcphee_user", userId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    return response;
   } catch (error) {
     console.error("Update user error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
