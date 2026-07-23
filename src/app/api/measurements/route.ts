@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB, syncDb } from "@/db";
+import { createDB } from "@/db";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 
@@ -67,7 +67,6 @@ export async function DELETE(request: NextRequest) {
     if (result.rowsAffected === 0) {
       return NextResponse.json({ error: "Measurement not found" }, { status: 404 });
     }
-    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -101,7 +100,6 @@ export async function POST(request: NextRequest) {
             VALUES (?, ?, ?, ?, ?)`,
       args: [id, body.babyId, measuredAt, weightG, Date.now()],
     });
-    await syncDb();
 
     return NextResponse.json({ id });
   } catch (error) {
