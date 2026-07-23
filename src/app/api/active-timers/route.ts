@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB, syncDb } from "@/db";
+import { createDB } from "@/db";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     const timerId = generateId();
     const now = Date.now();
-    const startedBy = request.cookies.get("mcphee_user")?.value ?? null;
+    const startedBy = typeof body.startedBy === "string" ? body.startedBy : null;
 
     await db.batch([
       {
@@ -81,9 +81,8 @@ export async function POST(request: NextRequest) {
         args: [timerId, body.babyId, body.type, now, side, JSON.stringify([]), startedBy],
       },
     ], "write");
-    await syncDb();
 
-    return NextResponse.json({ id: timerId, startedAt: now, side });
+    return NextResponse.json({ id: timerId });
   } catch (error) {
     console.error("Create timer error:", error);
     return NextResponse.json(
@@ -143,7 +142,6 @@ export async function PUT(request: NextRequest) {
             WHERE baby_id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
       args: [body.side, JSON.stringify(sideSwitches), body.babyId, householdId],
     });
-    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -166,8 +164,8 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const timerId = searchParams.get("id");
     const babyId = searchParams.get("babyId");
-    if (!babyId) {
-      return NextResponse.json({ error: "Baby ID required" }, { status: 400 });
+    if (!timerId || !babyId) {
+      return NextResponse.json({ error: "Timer ID and baby ID required" }, { status: 400 });
     }
 
     const db = createDB();
@@ -179,9 +177,8 @@ export async function DELETE(request: NextRequest) {
       const timerResult = await tx.execute({
         sql: `SELECT t.* FROM active_timers t
               JOIN babies b ON b.id = t.baby_id
-              WHERE t.baby_id = ? AND b.household_id = ? AND (? IS NULL OR t.id = ?)
-              ORDER BY t.started_at DESC LIMIT 1`,
-        args: [babyId, householdId, timerId, timerId],
+              WHERE t.id = ? AND t.baby_id = ? AND b.household_id = ?`,
+        args: [timerId, babyId, householdId],
       });
 
       if (timerResult.rows.length === 0) {
@@ -220,14 +217,13 @@ export async function DELETE(request: NextRequest) {
       await tx.execute({
         sql: `DELETE FROM active_timers
               WHERE id = ? AND baby_id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
-        args: [String(timer.id), babyId, householdId],
+        args: [timerId, babyId, householdId],
       });
 
       await tx.commit();
     } finally {
       tx.close();
     }
-    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {

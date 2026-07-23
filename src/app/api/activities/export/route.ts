@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
-import { normalizeActivityCreators } from "@/lib/activity-creators";
 
 export const runtime = "nodejs";
 
@@ -25,21 +24,19 @@ function parseDetails(value: unknown): Record<string, unknown> {
   }
 }
 
-const sgtExportFormatter = new Intl.DateTimeFormat("en-SG", {
-  timeZone: "Asia/Singapore",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hourCycle: "h23",
-});
-
 function formatSgt(timestamp: unknown): string {
   const value = Number(timestamp);
   if (!Number.isFinite(value) || value <= 0) return "";
-  const parts = sgtExportFormatter.formatToParts(new Date(value));
+  const parts = new Intl.DateTimeFormat("en-SG", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(value));
   const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "00";
   return part("year") + "-" + part("month") + "-" + part("day") + " " + part("hour") + ":" + part("minute") + ":" + part("second") + " SGT";
 }
@@ -192,17 +189,10 @@ export async function GET(request: NextRequest) {
     const babyError = await requireBabyInHousehold(db, babyId, householdId);
     if (babyError) return babyError;
 
-    const [result, users] = await db.batch([
-      {
-        sql: "SELECT a.*, b.name as baby_name FROM activities a JOIN babies b ON a.baby_id = b.id WHERE b.household_id = ? AND a.baby_id = ? ORDER BY a.started_at ASC, a.created_at ASC",
-        args: [householdId, babyId],
-      },
-      { sql: "SELECT name FROM users WHERE household_id = ?", args: [householdId] },
-    ], "read");
-    const activityRows = normalizeActivityCreators(
-      result.rows as unknown as Array<ActivityRow & { created_by?: unknown }>,
-      users.rows as unknown as Array<{ name?: unknown }>,
-    );
+    const result = await db.execute({
+      sql: "SELECT a.*, b.name as baby_name FROM activities a JOIN babies b ON a.baby_id = b.id WHERE b.household_id = ? AND a.baby_id = ? ORDER BY a.started_at ASC, a.created_at ASC",
+      args: [householdId, babyId],
+    });
 
     const headers = [
       "baby_name",
@@ -230,7 +220,7 @@ export async function GET(request: NextRequest) {
       "raw_details",
     ];
 
-    const rows = activityRows.map((row: ActivityRow) => {
+    const rows = result.rows.map((row: ActivityRow) => {
       const details = parseDetails(row.details);
       const display = displayFields(row.type, details);
       return [
@@ -260,7 +250,7 @@ export async function GET(request: NextRequest) {
       ].map(csvCell).join(",");
     });
 
-    const babyName = activityRows[0]?.baby_name ?? "baby";
+    const babyName = result.rows[0]?.baby_name ?? "baby";
     const csv = [headers.map(csvCell).join(","), ...rows].join("\n") + "\n";
 
     return new NextResponse(csv, {
