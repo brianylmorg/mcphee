@@ -5,13 +5,63 @@
 @tailwind utilities;
 
 :root {
-  --color-cream: #FDF8F3;
-  --color-terracotta: #C4785A;
-  --color-terracotta-dark: #A85D3F;
-  --color-warm-brown: #3D2B1F;
+  --rgb-canvas: 248 244 239;
+  --rgb-surface: 255 253 250;
+  --rgb-surface-muted: 241 234 228;
+  --rgb-accent: 196 120 90;
+  --rgb-accent-strong: 168 93 63;
+  --rgb-text: 61 43 31;
+  --rgb-text-muted: 103 81 70;
+  --rgb-border: 217 204 195;
+  --rgb-success: 39 103 73;
+  --rgb-danger: 180 35 24;
+  --rgb-warning: 138 90 20;
+  --rgb-info: 47 107 103;
+
+  --color-canvas: rgb(var(--rgb-canvas));
+  --color-surface: rgb(var(--rgb-surface));
+  --color-surface-muted: rgb(var(--rgb-surface-muted));
+  --color-terracotta: rgb(var(--rgb-accent));
+  --color-terracotta-dark: rgb(var(--rgb-accent-strong));
+  --color-warm-brown: rgb(var(--rgb-text));
+  --color-text-muted: rgb(var(--rgb-text-muted));
+  --color-border: rgb(var(--rgb-border));
+  --color-focus: rgb(var(--rgb-accent-strong));
+  --color-info: rgb(var(--rgb-info));
+  --color-warning: rgb(var(--rgb-warning));
+}
+
+html,
+body {
+  overflow-x: clip;
 }
 
 body {
-  background-color: var(--color-cream);
+  background-color: var(--color-canvas);
+  color: var(--color-warm-brown);
   font-family: "Instrument Sans", sans-serif;
+}
+
+:is(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+:is(button, [role="button"]):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+:is(button, input, textarea, select):disabled {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

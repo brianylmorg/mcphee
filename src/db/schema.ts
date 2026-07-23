@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { index, sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 
 export const households = sqliteTable("households", {
   id: text("id").primaryKey(),
@@ -13,7 +13,9 @@ export const users = sqliteTable("users", {
     .references(() => households.id),
   name: text("name").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("idx_users_household_id").on(table.householdId),
+]);
 
 export const babies = sqliteTable("babies", {
   id: text("id").primaryKey(),
@@ -23,7 +25,9 @@ export const babies = sqliteTable("babies", {
   name: text("name").notNull(),
   birthDate: integer("birth_date", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("idx_babies_household_id").on(table.householdId),
+]);
 
 export const activities = sqliteTable("activities", {
   id: text("id").primaryKey(),
@@ -36,7 +40,10 @@ export const activities = sqliteTable("activities", {
   details: text("details", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   createdBy: text("created_by"),
-});
+}, (table) => [
+  index("idx_activities_baby_started_at").on(table.babyId, table.startedAt, table.createdAt),
+  index("idx_activities_baby_type_started_at").on(table.babyId, table.type, table.startedAt, table.createdAt),
+]);
 
 export const activeTimers = sqliteTable("active_timers", {
   id: text("id").primaryKey(),
@@ -48,7 +55,9 @@ export const activeTimers = sqliteTable("active_timers", {
   currentSide: text("current_side"),
   sideSwitches: text("side_switches", { mode: "json" }),
   startedBy: text("started_by"),
-});
+}, (table) => [
+  index("idx_active_timers_baby_id").on(table.babyId),
+]);
 
 export const measurements = sqliteTable("measurements", {
   id: text("id").primaryKey(),
@@ -61,7 +70,9 @@ export const measurements = sqliteTable("measurements", {
   headMm: integer("head_mm"),
   note: text("note"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("idx_measurements_baby_measured_at").on(table.babyId, table.measuredAt, table.createdAt),
+]);
 
 export const pushSubscriptions = sqliteTable("push_subscriptions", {
   id: text("id").primaryKey(),

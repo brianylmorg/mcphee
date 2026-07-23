@@ -112,31 +112,33 @@ export default function WelcomePage() {
   // Name step after household created/joined
   if (householdResult) {
     return (
-      <main className="min-h-screen bg-cream flex items-center justify-center p-6">
+      <main className="min-h-dvh bg-cream flex items-start justify-center px-6 py-10 sm:items-center sm:py-16">
         <div className="w-full max-w-md">
-          <div className="text-center mb-12">
+          <div className="mb-10 text-left">
             <h1 className="font-display text-4xl text-terracotta mb-2">What&apos;s your name?</h1>
             <p className="text-warm-brown-light">Just a name — no account needed</p>
           </div>
 
           <form onSubmit={handleSetName} className="space-y-6">
             <div>
+              <label htmlFor="caregiver-name" className="mb-2 block text-sm font-medium text-muted">Your name</label>
               <input
+                id="caregiver-name"
                 type="text"
                 value={yourName}
                 onChange={(e) => setYourName(e.target.value)}
                 placeholder="Your name"
                 autoFocus
-                className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-lg bg-white text-center"
+                className="w-full px-4 py-3 rounded-lg border border-border focus:border-accent-strong outline-none text-lg bg-surface"
               />
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <button
               type="submit"
               disabled={isLoading || !yourName.trim()}
-              className="w-full py-4 px-6 bg-terracotta text-white font-medium rounded-2xl text-lg hover:bg-terracotta-dark transition-colors disabled:opacity-50"
+              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
             >
-              {isLoading ? "Saving..." : "Continue"}
+              {isLoading ? "Saving…" : "Continue"}
             </button>
           </form>
         </div>
@@ -145,9 +147,9 @@ export default function WelcomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-cream flex items-center justify-center p-6">
+    <main className="min-h-dvh bg-cream flex items-start justify-center px-6 py-10 sm:items-center sm:py-16">
       <div className="w-full max-w-md">
-        <div className="text-center mb-12">
+        <div className="mb-10 text-left">
           <h1 className="font-display text-5xl text-terracotta mb-2">mcphee</h1>
           <p className="text-warm-brown-light text-lg">Track baby activities together</p>
         </div>
@@ -156,13 +158,13 @@ export default function WelcomePage() {
           <div className="space-y-4">
             <button
               onClick={() => setMode("create")}
-              className="w-full py-4 px-6 bg-terracotta text-white font-medium rounded-2xl text-lg hover:bg-terracotta-dark transition-colors"
+              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors"
             >
               Create a household
             </button>
             <button
               onClick={() => setMode("join")}
-              className="w-full py-4 px-6 bg-white text-terracotta font-medium rounded-2xl text-lg border-2 border-terracotta hover:bg-cream transition-colors"
+              className="w-full py-4 px-6 bg-surface text-accent-strong font-medium rounded-lg text-lg border border-accent-strong hover:bg-cream transition-colors"
             >
               Join with invite code
             </button>
@@ -172,35 +174,37 @@ export default function WelcomePage() {
         {mode === "create" && (
           <form onSubmit={handleCreate} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-warm-brown-light mb-2">
+              <label htmlFor="baby-name" className="block text-sm font-medium text-warm-brown-light mb-2">
                 Baby&apos;s name (optional)
               </label>
               <input
+                id="baby-name"
                 type="text"
                 value={babyName}
                 onChange={(e) => setBabyName(e.target.value)}
                 placeholder="What should we call baby?"
-                className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-lg bg-white"
+                className="w-full px-4 py-3 rounded-lg border border-border focus:border-accent-strong outline-none text-lg bg-surface"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-warm-brown-light mb-2">
+              <label htmlFor="birth-date" className="block text-sm font-medium text-warm-brown-light mb-2">
                 Birth date (optional)
               </label>
               <input
+                id="birth-date"
                 type="date"
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-lg bg-white"
+                className="w-full px-4 py-3 rounded-lg border border-border focus:border-accent-strong outline-none text-lg bg-surface"
               />
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-4 px-6 bg-terracotta text-white font-medium rounded-2xl text-lg hover:bg-terracotta-dark transition-colors disabled:opacity-50"
+              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
             >
-              {isLoading ? "Creating..." : "Create household"}
+              {isLoading ? "Creating…" : "Create household"}
             </button>
             <button
               type="button"
@@ -215,25 +219,26 @@ export default function WelcomePage() {
         {mode === "join" && (
           <form onSubmit={handleJoin} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-warm-brown-light mb-2">
+              <label htmlFor="invite-code" className="block text-sm font-medium text-warm-brown-light mb-2">
                 6-character invite code
               </label>
               <input
+                id="invite-code"
                 type="text"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                 placeholder="ABC123"
                 maxLength={6}
-                className="w-full px-4 py-3 rounded-xl border-2 border-warm-brown-light/20 focus:border-terracotta outline-none text-lg bg-white text-center tracking-widest font-mono"
+                className="w-full px-4 py-3 rounded-lg border border-border focus:border-accent-strong outline-none text-lg bg-surface text-center font-mono"
               />
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <button
               type="submit"
               disabled={isLoading || inviteCode.length !== 6}
-              className="w-full py-4 px-6 bg-terracotta text-white font-medium rounded-2xl text-lg hover:bg-terracotta-dark transition-colors disabled:opacity-50"
+              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
             >
-              {isLoading ? "Joining..." : "Join household"}
+              {isLoading ? "Joining…" : "Join household"}
             </button>
             <button
               type="button"

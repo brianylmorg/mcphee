@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useHousehold } from "@/lib/context/household-context";
 import { ageMonthsAt, whoBoysWeightForAgePercentile } from "@/lib/who/percentile";
@@ -56,6 +57,7 @@ export default function WeightPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [deleteMeasurement, setDeleteMeasurement] = useState<Measurement | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const chartScrollRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     if (!householdId) return;
@@ -107,7 +109,9 @@ export default function WeightPage() {
     const leftPad = 28;
     const rightPad = 28;
     const pointGap = 72;
-    const width = Math.max(360, leftPad + rightPad + Math.max(1, measurements.length - 1) * pointGap);
+    const visiblePointCount = 6;
+    const viewportWidth = leftPad + rightPad + (visiblePointCount - 1) * pointGap;
+    const width = Math.max(viewportWidth, leftPad + rightPad + Math.max(1, measurements.length - 1) * pointGap);
 
     const points: ChartPoint[] = measurements.map((item, index) => {
       const weight = Number(item.weight_g ?? 0);
@@ -126,6 +130,7 @@ export default function WeightPage() {
       points,
       width,
       height,
+      viewportWidth,
       path: points.map((point) => `${point.x},${point.y}`).join(" "),
       top,
       bottom,
@@ -134,6 +139,15 @@ export default function WeightPage() {
 
   const selectedPoint = chart.points.find((point) => point.id === selectedId) ?? chart.points[chart.points.length - 1] ?? null;
   const latestWeight = measurements[measurements.length - 1]?.weight_g ?? null;
+
+  useEffect(() => {
+    const container = chartScrollRef.current;
+    if (!container || measurements.length <= 6) return;
+    const frame = window.requestAnimationFrame(() => {
+      container.scrollLeft = container.scrollWidth;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [measurements.length]);
 
   async function saveWeight(event: React.FormEvent) {
     event.preventDefault();
@@ -192,19 +206,19 @@ export default function WeightPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-cream flex items-center justify-center">
-        <p className="text-warm-brown-light">Loading weight history...</p>
+      <main className="min-h-dvh bg-cream flex items-center justify-center">
+        <p className="text-warm-brown-light">Loading weight history…</p>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-cream pb-24">
-      <header className="bg-white border-b border-warm-brown-light/10 px-6 py-4">
+    <main className="min-h-dvh bg-cream pb-24">
+      <header className="bg-surface border-b border-border px-6 py-4">
         <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
           <div>
-            <Link href="/dashboard" className="text-xs text-terracotta">← Dashboard</Link>
-            <h1 className="font-display text-2xl text-terracotta mt-1">Weight details</h1>
+            <Link href="/dashboard" className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-accent-strong"><ArrowLeft aria-hidden="true" className="h-4 w-4" />Dashboard</Link>
+            <h1 className="font-display text-2xl text-accent-strong mt-1">Weight details</h1>
             <p className="text-sm text-warm-brown-light">
               {baby?.name || "Baby"}{latestWeight ? ` · ${formatWeight(Number(latestWeight))}` : ""}
             </p>
@@ -213,12 +227,11 @@ export default function WeightPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
-        <form onSubmit={saveWeight} className="bg-white rounded-2xl border border-terracotta/20 p-5 shadow-sm space-y-4">
+        <form onSubmit={saveWeight} className="bg-surface rounded-lg border border-terracotta/20 p-5 shadow-sm space-y-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/50">Update weight</p>
-            <h2 className="font-display text-lg text-terracotta mt-1">Add dated measurement</h2>
+            <h2 className="font-display text-lg text-accent-strong mt-1">Add dated measurement</h2>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="space-y-1">
               <span className="text-xs text-warm-brown-light">Weight, kg</span>
               <input
@@ -228,7 +241,7 @@ export default function WeightPage() {
                 value={weightKg}
                 onChange={(event) => setWeightKg(event.target.value)}
                 placeholder="6.300"
-                className="w-full rounded-xl border border-warm-brown-light/20 bg-cream px-3 py-2 text-warm-brown outline-none focus:border-terracotta"
+                className="min-h-11 w-full rounded-lg border border-border bg-cream px-3 py-2 text-warm-brown outline-none focus:border-accent-strong focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2"
               />
             </label>
             <label className="space-y-1">
@@ -237,33 +250,40 @@ export default function WeightPage() {
                 type="date"
                 value={measuredDate}
                 onChange={(event) => setMeasuredDate(event.target.value)}
-                className="w-full rounded-xl border border-warm-brown-light/20 bg-cream px-3 py-2 text-warm-brown outline-none focus:border-terracotta"
+                className="min-h-11 w-full rounded-lg border border-border bg-cream px-3 py-2 text-warm-brown outline-none focus:border-accent-strong focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2"
               />
             </label>
           </div>
           <button
             type="submit"
             disabled={isSaving || !baby?.id}
-            className="w-full rounded-xl bg-terracotta px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+            className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 disabled:opacity-50"
           >
-            {isSaving ? "Saving..." : "Save weight"}
+            {isSaving ? "Saving…" : "Save weight"}
           </button>
         </form>
 
-        <section className="bg-white rounded-2xl border border-terracotta/20 p-5 shadow-sm">
+        <section className="bg-surface rounded-lg border border-terracotta/20 p-5 shadow-sm">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-warm-brown-light/50">WHO boys standard</p>
-            <h2 className="font-display text-lg text-terracotta mt-1">Weight history</h2>
+            <h2 className="font-display text-lg text-accent-strong">Weight history</h2>
+            <p className="mt-1 text-xs text-muted">WHO boys standard</p>
           </div>
 
           {chart.points.length === 0 ? (
             <p className="mt-4 text-sm text-warm-brown-light">No weights logged yet.</p>
           ) : (
             <>
-              <div className="mt-4 overflow-x-auto rounded-xl bg-cream p-3">
-                <svg width={chart.width} height={chart.height} role="img" aria-label="Baby weight history line chart">
-                  <line x1="0" y1="196" x2={chart.width} y2="196" stroke="rgba(96, 70, 54, 0.18)" />
-                  <polyline fill="none" stroke="#C4785A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chart.path} />
+              <div ref={chartScrollRef} className="mt-4 overflow-x-auto overscroll-x-contain border-y border-border py-3 touch-pan-x">
+                <svg
+                  className="block max-w-none"
+                  style={{ width: `${Math.max(100, chart.width / chart.viewportWidth * 100)}%` }}
+                  height={chart.height}
+                  viewBox={`0 0 ${chart.width} ${chart.height}`}
+                  role="img"
+                  aria-label="Baby weight history line chart"
+                >
+                  <line x1="0" y1="196" x2={chart.width} y2="196" stroke="var(--color-warm-brown)" strokeOpacity="0.18" />
+                  <polyline fill="none" stroke="var(--color-terracotta)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chart.path} />
                   {chart.points.map((point) => (
                     <g key={point.id}>
                       <circle
@@ -275,13 +295,23 @@ export default function WeightPage() {
                         tabIndex={0}
                         className="cursor-pointer"
                         onClick={() => setSelectedId(point.id)}
+                        onFocus={() => setSelectedId(point.id)}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") setSelectedId(point.id);
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedId(point.id);
+                          }
                         }}
                         aria-label={`${formatWeight(Number(point.weight_g))} on ${formatDate(Number(point.measured_at))}`}
                       />
-                      <circle cx={point.x} cy={point.y} r={point.id === selectedPoint?.id ? "6" : "4"} fill={point.id === selectedPoint?.id ? "#8B4A34" : "#C4785A"} />
-                      <text x={point.x} y="214" textAnchor="middle" fontSize="10" fill="rgba(96, 70, 54, 0.58)">
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r={point.id === selectedPoint?.id ? "6" : "4"}
+                        fill={point.id === selectedPoint?.id ? "var(--color-warm-brown)" : "var(--color-terracotta)"}
+                        pointerEvents="none"
+                      />
+                      <text x={point.x} y="214" textAnchor="middle" fontSize="12" fill="var(--color-text-muted)">
                         {sgtDateInput(Number(point.measured_at)).slice(5)}
                       </text>
                     </g>
@@ -290,30 +320,30 @@ export default function WeightPage() {
               </div>
 
               {selectedPoint && (
-                <div className="mt-4 rounded-xl border border-warm-brown-light/10 bg-cream px-4 py-3">
+                <div className="mt-4 border-t border-border pt-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs text-warm-brown-light/60">Selected</p>
+                      <p className="text-xs text-muted">Selected</p>
                       <p className="font-display text-2xl text-warm-brown tabular-nums">
                         {formatWeight(Number(selectedPoint.weight_g))}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-warm-brown-light/60">{formatDate(Number(selectedPoint.measured_at))}</p>
-                      <p className="font-medium text-terracotta">{percentileLabel(selectedPoint.percentile)}</p>
+                      <p className="text-xs text-muted">{formatDate(Number(selectedPoint.measured_at))}</p>
+                      <p className="font-medium text-accent-strong">{percentileLabel(selectedPoint.percentile)}</p>
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-warm-brown-light/60">
+                  <p className="mt-2 text-xs text-muted">
                     Percentile uses WHO boys weight-for-age LMS standards, not an ethnicity-specific Asian standard.
                     {!baby?.birth_date ? " Add birth date to calculate percentile." : ""}
                   </p>
-                  <div className="mt-3 flex justify-end border-t border-warm-brown-light/10 pt-3">
+                  <div className="mt-3 flex justify-end border-t border-border pt-3">
                     <button
                       type="button"
                       onClick={() => setDeleteMeasurement(selectedPoint)}
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-danger transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200"
                     >
-                      <span aria-hidden="true">×</span>
+                      <Trash2 aria-hidden="true" className="h-4 w-4" />
                       Delete measurement
                     </button>
                   </div>
@@ -326,12 +356,12 @@ export default function WeightPage() {
 
       {deleteMeasurement && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-4 sm:items-center sm:pb-0"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-warm-brown/55 px-4 pb-4 sm:items-center sm:pb-0"
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-weight-title"
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+          <div className="w-full max-w-sm rounded-lg bg-surface p-5 shadow-xl">
             <h2 id="delete-weight-title" className="font-display text-xl text-warm-brown">
               Delete this weight?
             </h2>
@@ -342,8 +372,9 @@ export default function WeightPage() {
               <button
                 type="button"
                 onClick={() => setDeleteMeasurement(null)}
+                autoFocus
                 disabled={isDeleting}
-                className="rounded-xl border border-warm-brown-light/20 px-4 py-3 text-sm font-semibold text-warm-brown disabled:opacity-50"
+                className="min-h-11 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-semibold text-warm-brown disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -351,9 +382,9 @@ export default function WeightPage() {
                 type="button"
                 onClick={confirmDeleteMeasurement}
                 disabled={isDeleting}
-                className="rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                className="min-h-11 rounded-lg bg-danger px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-warm-brown disabled:opacity-50"
               >
-                {isDeleting ? "Deleting..." : "Delete"}
+                {isDeleting ? "Deleting…" : "Delete"}
               </button>
             </div>
           </div>

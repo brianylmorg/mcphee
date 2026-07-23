@@ -1,3 +1,17 @@
+const sgtTimeFormatter = new Intl.DateTimeFormat("en-SG", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Asia/Singapore",
+  hourCycle: "h23",
+});
+
+const sgtDateFormatter = new Intl.DateTimeFormat("en-SG", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  timeZone: "Asia/Singapore",
+});
+
 export function generateId(): string {
   return Math.random().toString(36).substring(2, 15) +
     Math.random().toString(36).substring(2, 15);
@@ -49,23 +63,13 @@ export function timeSince(timestamp: number): string {
 }
 
 export function formatTime(timestamp: number): string {
-  const parts = new Intl.DateTimeFormat("en-SG", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Singapore",
-    hourCycle: "h23",
-  }).formatToParts(new Date(timestamp));
+  const parts = sgtTimeFormatter.formatToParts(new Date(timestamp));
   const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "00";
   return `${part("hour")}:${part("minute")} hrs`;
 }
 
 export function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString("en-SG", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "Asia/Singapore",
-  });
+  return sgtDateFormatter.format(new Date(timestamp));
 }
 
 export function median(values: number[]): number {

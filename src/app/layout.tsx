@@ -8,6 +8,14 @@ export const metadata: Metadata = {
   title: "mcphee — Baby Activity Tracker",
   description: "Track your baby's activities together",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon.svg", sizes: "any", type: "image/svg+xml" },
+      { url: "/favicon-64.png", sizes: "64x64", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -19,7 +27,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#C4785A",
+  themeColor: "#A85D3F",
 };
 
 export default async function RootLayout({
@@ -48,7 +56,6 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="apple-touch-icon" href="/icon.svg" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
       <body className="bg-cream text-warm-brown antialiased">

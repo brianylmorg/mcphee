@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS paper_log_import_rows (
   imported_activity_id TEXT REFERENCES activities(id),
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_users_household_id ON users(household_id);
+CREATE INDEX IF NOT EXISTS idx_babies_household_id ON babies(household_id);
+CREATE INDEX IF NOT EXISTS idx_activities_baby_started_at ON activities(baby_id, started_at DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_baby_type_started_at ON activities(baby_id, type, started_at DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_active_timers_baby_id ON active_timers(baby_id);
+CREATE INDEX IF NOT EXISTS idx_measurements_baby_measured_at ON measurements(baby_id, measured_at DESC, created_at DESC);
 `;
 
 export async function GET(request: NextRequest) {

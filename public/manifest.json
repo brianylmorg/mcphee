@@ -4,15 +4,33 @@
   "description": "Track your baby's activities together",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#FDF8F3",
-  "theme_color": "#C4785A",
+  "background_color": "#F8F4EF",
+  "theme_color": "#A85D3F",
   "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
