@@ -1,58 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
+import { normalizeActivityCreators } from "@/lib/activity-creators";
+import { bottleVolumes, parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
+
+const BREASTMILK_BATCH_TTL_MS = 4 * 60 * 60 * 1000;
+// Batches older than the TTL are expired regardless of consumption, and feeds before
+// that point can only have consumed expired batches, so the live ledger is unaffected
+// by older history. One extra TTL of margin keeps recently-expired batches visible
+// in the UI (expiry badge, last-pump hint).
+const LEDGER_HISTORY_MS = 2 * BREASTMILK_BATCH_TTL_MS;
+
+const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Singapore",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+type PumpedMilkBatch = {
+  id: string;
+  pumpedAt: number;
+  amountMl: number;
+  remainingMl: number;
+  expiresAt: number;
+  isExpired: boolean;
+};
 
 export const runtime = "nodejs";
 
-type MilkVolumes = { breastmilkMl: number; formulaMl: number };
-
-function parseDetails(value: unknown): Record<string, unknown> {
-  if (!value) return {};
-  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(String(value));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
-}
-
-function numericMl(value: unknown): number {
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount > 0 ? amount : 0;
-}
-
-function bottleVolumes(details: Record<string, unknown>): MilkVolumes {
-  const feeds = details.feeds;
-  if (Array.isArray(feeds)) {
-    return feeds.reduce<MilkVolumes>((total, item) => {
-      if (!item || typeof item !== "object") return total;
-      const feed = item as Record<string, unknown>;
-      const amount = numericMl(feed.amount);
-      if (feed.milkType === "formula") total.formulaMl += amount;
-      else if (feed.milkType === "breastmilk") total.breastmilkMl += amount;
-      return total;
-    }, { breastmilkMl: 0, formulaMl: 0 });
-  }
-
-  const amount = numericMl(details.amount);
-  const breastmilkAmount = numericMl(details.breastmilkAmount);
-  const formulaAmount = numericMl(details.formulaAmount);
-
-  if (breastmilkAmount || formulaAmount) {
-    return {
-      breastmilkMl: breastmilkAmount || (details.milkType === "breastmilk" ? amount : 0),
-      formulaMl: formulaAmount || (details.milkType === "formula" ? amount : 0),
-    };
-  }
-
-  if (details.milkType === "formula") return { breastmilkMl: 0, formulaMl: amount };
-  return { breastmilkMl: amount, formulaMl: 0 };
-}
-
-function pumpAmount(details: Record<string, unknown>): number {
-  return numericMl(details.amount);
-}
 
 export async function GET(request: NextRequest) {
   const householdId = request.cookies.get("mcphee_hh")?.value;
@@ -70,18 +46,14 @@ export async function GET(request: NextRequest) {
   try {
     const db = createDB();
     const now = new Date();
-    const sgtParts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Singapore",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(now);
+    const sgtParts = sgtDateFormatter.formatToParts(now);
     const sgtPart = (type: string) => sgtParts.find((part) => part.type === type)?.value ?? "00";
     const sgtDate = [sgtPart("year"), sgtPart("month"), sgtPart("day")].join("-");
     const dayStart = Date.parse(sgtDate + "T00:00:00+08:00");
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const ledgerCutoff = now.getTime() - LEDGER_HISTORY_MS;
 
-    const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger] = await db.batch([
+    const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger, users] = await db.batch([
       {
         sql: "SELECT * FROM babies WHERE household_id = ?",
         args: [householdId],
@@ -122,19 +94,24 @@ export async function GET(request: NextRequest) {
         args: [householdId, "bottlefeed", "pump", dayStart, dayEnd],
       },
       {
-        sql: `SELECT a.type, a.details, a.started_at, a.created_at FROM activities a
+        sql: `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
               JOIN babies b ON a.baby_id = b.id
               WHERE b.household_id = ?
                 AND a.type IN (?, ?)
+                AND a.started_at >= ?
               ORDER BY a.started_at ASC, a.created_at ASC`,
-        args: [householdId, "bottlefeed", "pump"],
+        args: [householdId, "bottlefeed", "pump", ledgerCutoff],
       },
-    ], "write");
+      {
+        sql: "SELECT name FROM users WHERE household_id = ?",
+        args: [householdId],
+      },
+    ], "read");
 
     const householdRow = household.rows[0];
     const dailyMilkTotals = dailyMilk.rows.reduce((total, row) => {
       const typedRow = row as unknown as { type: string; details: string | null; started_at?: number };
-      const details = parseDetails(typedRow.details);
+      const details = parseActivityDetails(typedRow.details);
       if (typedRow.type === "pump") {
         total.pumpedMl += pumpAmount(details);
         return total;
@@ -148,25 +125,39 @@ export async function GET(request: NextRequest) {
     const dailyMilkMl = dailyMilkTotals.breastmilkMl + dailyMilkTotals.formulaMl;
 
     const pumpedTotals = pumpedLedger.rows.reduce((total, row) => {
-      const typedRow = row as unknown as { type: string; details: string | null; started_at?: number };
-      const details = parseDetails(typedRow.details);
+      const typedRow = row as unknown as { id: string; type: string; details: string | null; started_at?: number; created_at?: number };
+      const details = parseActivityDetails(typedRow.details);
       if (typedRow.type === "pump") {
         const amount = pumpAmount(details);
-        total.walletMl += amount;
+        const pumpedAt = Number(typedRow.started_at) || Number(typedRow.created_at) || 0;
         total.pumpedMl += amount;
-        if (amount > 0) {
+        if (amount > 0 && pumpedAt > 0) {
+          total.batches.push({
+            id: typedRow.id,
+            pumpedAt,
+            amountMl: amount,
+            remainingMl: amount,
+            expiresAt: pumpedAt + BREASTMILK_BATCH_TTL_MS,
+            isExpired: pumpedAt + BREASTMILK_BATCH_TTL_MS <= now.getTime(),
+          });
           total.lastPumpMl = amount;
-          total.lastPumpAt = Number(typedRow.started_at) || null;
+          total.lastPumpAt = pumpedAt;
         }
         return total;
       }
 
-      const deductedMl = Math.min(total.walletMl, bottleBreastmilkLibraryDeduction(details));
-      total.walletMl -= deductedMl;
-      total.breastmilkConsumedMl += deductedMl;
+      let remainingDeductionMl = bottleBreastmilkLibraryDeduction(details);
+      for (const batch of total.batches) {
+        if (remainingDeductionMl <= 0) break;
+        const deductedMl = Math.min(batch.remainingMl, remainingDeductionMl);
+        batch.remainingMl -= deductedMl;
+        remainingDeductionMl -= deductedMl;
+        total.breastmilkConsumedMl += deductedMl;
+      }
       return total;
-    }, { walletMl: 0, pumpedMl: 0, breastmilkConsumedMl: 0, lastPumpMl: 0, lastPumpAt: null as number | null });
-    const pumpedWalletMl = Math.max(0, pumpedTotals.walletMl);
+    }, { pumpedMl: 0, breastmilkConsumedMl: 0, lastPumpMl: 0, lastPumpAt: null as number | null, batches: [] as PumpedMilkBatch[] });
+    const pumpedMilkBatches = pumpedTotals.batches.filter((batch) => batch.remainingMl > 0);
+    const pumpedWalletMl = pumpedMilkBatches.reduce((total, batch) => total + batch.remainingMl, 0);
     const latestWeightG = Number((measurements.rows[0] as { weight_g?: unknown } | undefined)?.weight_g);
     const expectedMilkMl = Number.isFinite(latestWeightG)
       ? Math.round((latestWeightG / 1000) * 150)
@@ -174,7 +165,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       babies: babies.rows,
-      activities: activities.rows,
+      activities: normalizeActivityCreators(
+        activities.rows as unknown as Array<Record<string, unknown> & { created_by?: unknown }>,
+        users.rows as unknown as Array<{ name?: unknown }>,
+      ),
       household: householdRow
         ? {
             id: householdRow.id,
@@ -198,6 +192,7 @@ export async function GET(request: NextRequest) {
         breastmilkConsumedMl: pumpedTotals.breastmilkConsumedMl,
         lastPumpMl: pumpedTotals.lastPumpMl,
         lastPumpAt: pumpedTotals.lastPumpAt,
+        batches: pumpedMilkBatches,
       },
     });
   } catch (error) {

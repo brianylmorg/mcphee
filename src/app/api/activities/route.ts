@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB } from "@/db";
+import { createDB, syncDb } from "@/db";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
+import { normalizeActivityCreators } from "@/lib/activity-creators";
+import { parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 
 export const runtime = "nodejs";
 
 const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep"]);
+
+const BREASTMILK_BATCH_TTL_MS = 4 * 60 * 60 * 1000;
+// Ledger replay only needs recent history: batches older than the TTL are expired
+// regardless of consumption, and feeds before that point can only have consumed
+// expired batches. One extra TTL of margin matches the dashboard ledger window.
+const LEDGER_HISTORY_MS = 2 * BREASTMILK_BATCH_TTL_MS;
 
 function isValidTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -26,62 +34,15 @@ function validateActivityInput(body: Record<string, unknown>) {
   return null;
 }
 
-type MilkVolumes = { breastmilkMl: number; formulaMl: number };
 type DB = ReturnType<typeof createDB>;
-
-function parseDetails(value: unknown): Record<string, unknown> {
-  if (!value) return {};
-  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(String(value));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
-}
-
-function numericMl(value: unknown): number {
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount > 0 ? amount : 0;
-}
-
-function bottleVolumes(details: Record<string, unknown>): MilkVolumes {
-  const feeds = details.feeds;
-  if (Array.isArray(feeds)) {
-    return feeds.reduce<MilkVolumes>((total, item) => {
-      if (!item || typeof item !== "object") return total;
-      const feed = item as Record<string, unknown>;
-      const amount = numericMl(feed.amount);
-      if (feed.milkType === "formula") total.formulaMl += amount;
-      else if (feed.milkType === "breastmilk") total.breastmilkMl += amount;
-      return total;
-    }, { breastmilkMl: 0, formulaMl: 0 });
-  }
-
-  const amount = numericMl(details.amount);
-  const breastmilkAmount = numericMl(details.breastmilkAmount);
-  const formulaAmount = numericMl(details.formulaAmount);
-  if (breastmilkAmount || formulaAmount) {
-    return {
-      breastmilkMl: breastmilkAmount || (details.milkType === "breastmilk" ? amount : 0),
-      formulaMl: formulaAmount || (details.milkType === "formula" ? amount : 0),
-    };
-  }
-
-  if (details.milkType === "formula") return { breastmilkMl: 0, formulaMl: amount };
-  return { breastmilkMl: amount, formulaMl: 0 };
-}
-
-function pumpAmount(details: Record<string, unknown>): number {
-  return numericMl(details.amount);
-}
 
 async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: string, excludeActivityId?: string): Promise<number> {
   let sql = `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
              WHERE a.baby_id = ?
                AND a.baby_id IN (SELECT id FROM babies WHERE household_id = ?)
-               AND a.type IN (?, ?)`;
-  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed"];
+               AND a.type IN (?, ?)
+               AND a.started_at >= ?`;
+  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed", Date.now() - LEDGER_HISTORY_MS];
   if (excludeActivityId) {
     sql += " AND a.id != ?";
     args.push(excludeActivityId);
@@ -91,7 +52,7 @@ async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: str
   const result = await db.execute({ sql, args });
   const walletMl = result.rows.reduce((balance, row) => {
     const typedRow = row as unknown as { type: string; details: string | null };
-    const details = parseDetails(typedRow.details);
+    const details = parseActivityDetails(typedRow.details);
     if (typedRow.type === "pump") {
       return balance + pumpAmount(details);
     }
@@ -115,14 +76,16 @@ export async function GET(request: NextRequest) {
     const db = createDB();
     const { searchParams } = new URL(request.url);
     const babyId = searchParams.get("babyId");
-    const type = searchParams.get("type");
+    const types = [...new Set(searchParams.getAll("type").filter(Boolean))];
     const date = searchParams.get("date");
-    const requestedLimit = Number(searchParams.get("limit") || "50");
+    const limitParam = searchParams.get("limit") || "50";
+    const unlimited = limitParam === "all";
+    const requestedLimit = Number(limitParam);
     const limit = Number.isFinite(requestedLimit)
       ? Math.max(1, Math.min(500, Math.floor(requestedLimit)))
       : 50;
 
-    if (type && !VALID_TYPES.has(type)) {
+    if (types.some((type) => !VALID_TYPES.has(type))) {
       return NextResponse.json({ error: "Invalid activity type" }, { status: 400 });
     }
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -141,9 +104,9 @@ export async function GET(request: NextRequest) {
       sql += " AND a.baby_id = ?";
       args.push(babyId);
     }
-    if (type) {
-      sql += " AND a.type = ?";
-      args.push(type);
+    if (types.length > 0) {
+      sql += ` AND a.type IN (${types.map(() => "?").join(", ")})`;
+      args.push(...types);
     }
     if (date) {
       const dayStart = Date.parse(date + "T00:00:00+08:00");
@@ -154,11 +117,21 @@ export async function GET(request: NextRequest) {
       args.push(dayStart, dayStart + 24 * 60 * 60 * 1000);
     }
 
-    sql += " ORDER BY a.started_at DESC LIMIT ?";
-    args.push(limit);
+    sql += " ORDER BY a.started_at DESC";
+    if (!unlimited) {
+      sql += " LIMIT ?";
+      args.push(limit);
+    }
 
-    const result = await db.execute({ sql, args });
-    return NextResponse.json({ activities: result.rows });
+    const [result, users] = await db.batch([
+      { sql, args },
+      { sql: "SELECT name FROM users WHERE household_id = ?", args: [householdId] },
+    ], "read");
+    const normalizedActivities = normalizeActivityCreators(
+      result.rows as unknown as Array<Record<string, unknown> & { created_by?: unknown }>,
+      users.rows as unknown as Array<{ name?: unknown }>,
+    );
+    return NextResponse.json({ activities: normalizedActivities });
   } catch (error) {
     console.error("Activities API error:", error);
     return NextResponse.json(
@@ -181,22 +154,27 @@ export async function POST(request: NextRequest) {
     if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
 
     const db = createDB();
-    const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
+    const isBottlefeed = body.type === "bottlefeed";
+    const [babyError, availableBreastmilkMl, createdBy] = await Promise.all([
+      requireBabyInHousehold(db, body.babyId, householdId),
+      isBottlefeed
+        ? breastmilkLibraryForBaby(db, body.babyId, householdId)
+        : Promise.resolve(0),
+      userNameForHousehold(db, request.cookies.get("mcphee_user")?.value, householdId),
+    ]);
     if (babyError) return babyError;
 
-    if (body.type === "bottlefeed") {
-      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseDetails(body.details));
-      const availableBreastmilkMl = await breastmilkLibraryForBaby(db, body.babyId, householdId);
+    if (isBottlefeed) {
+      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(body.details));
       if (requestedBreastmilkMl > availableBreastmilkMl) {
         return NextResponse.json(
-          { error: "Breastmilk amount exceeds available breastmilk library" },
+          { error: "Breastmilk amount exceeds available breastmilk bank" },
           { status: 400 }
         );
       }
     }
 
     const activityId = generateId();
-    const createdBy = await userNameForHousehold(db, body.userId, householdId);
 
     await db.execute({
       sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by) 
@@ -212,6 +190,7 @@ export async function POST(request: NextRequest) {
         createdBy,
       ],
     });
+    await syncDb();
 
     return NextResponse.json({ id: activityId });
   } catch (error) {
@@ -243,7 +222,7 @@ export async function PUT(request: NextRequest) {
 
     // Fetch existing activity to merge details and verify household ownership.
     const existing = await db.execute({
-      sql: "SELECT details FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
+      sql: "SELECT type, details, ended_at FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
       args: [body.id, householdId],
     });
 
@@ -255,22 +234,30 @@ export async function PUT(request: NextRequest) {
     if (babyError) return babyError;
 
     let mergedDetails = {};
-    const existingDetails = (existing.rows[0] as unknown as { details: string | null }).details;
+    const existingRow = existing.rows[0] as unknown as { type: string; details: string | null; ended_at: number | null };
+    const existingDetails = existingRow.details;
     if (existingDetails) {
       try {
         mergedDetails = JSON.parse(existingDetails);
       } catch {}
     }
 
+    const existingBreastmilkMl = existingRow.type === "bottlefeed"
+      ? bottleBreastmilkLibraryDeduction(parseActivityDetails(mergedDetails))
+      : 0;
+
     // Merge new details on top of existing
     mergedDetails = { ...mergedDetails, ...body.details };
 
     if (body.type === "bottlefeed") {
-      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseDetails(mergedDetails));
-      const availableBreastmilkMl = await breastmilkLibraryForBaby(db, body.babyId, householdId, body.id);
-      if (requestedBreastmilkMl > availableBreastmilkMl) {
+      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(mergedDetails));
+      const extraBreastmilkMl = Math.max(0, requestedBreastmilkMl - existingBreastmilkMl);
+      const availableBreastmilkMl = extraBreastmilkMl > 0
+        ? await breastmilkLibraryForBaby(db, body.babyId, householdId, body.id)
+        : 0;
+      if (extraBreastmilkMl > availableBreastmilkMl) {
         return NextResponse.json(
-          { error: "Breastmilk amount exceeds available breastmilk library" },
+          { error: "Breastmilk amount exceeds available breastmilk bank" },
           { status: 400 }
         );
       }
@@ -286,12 +273,13 @@ export async function PUT(request: NextRequest) {
       args: [
         body.type,
         body.startedAt,
-        body.endedAt ?? null,
+        "endedAt" in body ? body.endedAt ?? null : existingRow.ended_at,
         JSON.stringify(mergedDetails),
         body.id,
         householdId,
       ],
     });
+    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -319,14 +307,36 @@ export async function DELETE(request: NextRequest) {
 
     const db = createDB();
 
-    const result = await db.execute({
-      sql: `DELETE FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+    const ownedActivity = await db.execute({
+      sql: `SELECT id FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
       args: [activityId, householdId],
     });
 
-    if (result.rowsAffected === 0) {
+    if (ownedActivity.rows.length === 0) {
       return NextResponse.json({ error: "Activity not found" }, { status: 404 });
     }
+
+    await db.batch([
+      {
+        sql: `UPDATE paper_log_import_rows
+              SET duplicate_activity_id = NULL
+              WHERE duplicate_activity_id = ?
+                AND batch_id IN (SELECT id FROM paper_log_import_batches WHERE household_id = ?)`,
+        args: [activityId, householdId],
+      },
+      {
+        sql: `UPDATE paper_log_import_rows
+              SET imported_activity_id = NULL
+              WHERE imported_activity_id = ?
+                AND batch_id IN (SELECT id FROM paper_log_import_batches WHERE household_id = ?)`,
+        args: [activityId, householdId],
+      },
+      {
+        sql: "DELETE FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
+        args: [activityId, householdId],
+      },
+    ], "write");
+    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {
