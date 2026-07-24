@@ -78,7 +78,8 @@ export default function WeightPage() {
       });
       if (!measurementRes.ok) throw new Error("Failed to load weights");
       const measurementData = await measurementRes.json();
-      const history = (measurementData.measurements || []) as Measurement[];
+      const history = ((measurementData.measurements || []) as Measurement[])
+        .filter((item) => item.weight_g != null);
       setMeasurements(history);
       setSelectedId((current) => current ?? history[history.length - 1]?.id ?? null);
     } catch (error) {

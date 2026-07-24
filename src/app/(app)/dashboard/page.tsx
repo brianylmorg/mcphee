@@ -359,7 +359,7 @@ export default function DashboardPage() {
     if (!householdId || !baby?.id) return;
 
     const controller = new AbortController();
-    const params = new URLSearchParams({ limit: "all", babyId: baby.id });
+    const params = new URLSearchParams({ limit: "500", babyId: baby.id });
     if (activityDateFilter) {
       params.set("date", activityDateFilter);
     } else if (!showHistory) {
@@ -486,7 +486,7 @@ export default function DashboardPage() {
   const handleReconcileBank = async (event: React.FormEvent) => {
     event.preventDefault();
     const targetBankMl = Number(reconcileBankMl);
-    if (!Number.isFinite(targetBankMl) || targetBankMl < 0) {
+    if (reconcileBankMl.trim() === "" || !Number.isFinite(targetBankMl) || targetBankMl < 0) {
       alert("Enter the actual amount of milk on hand, in ml.");
       return;
     }
@@ -531,6 +531,9 @@ export default function DashboardPage() {
       const timer = await handleStartTimer("breastfeed", "L");
       if (timer) {
         setActiveTimer(timer);
+        // Refresh immediately: aborts any in-flight poll whose stale
+        // timers:[] would otherwise hide the live-timer card for up to 30s.
+        await fetchData();
       } else {
         setBreastfeedPromptShown(true);
         alert("Could not start the breastfeeding timer. Try again.");
@@ -1068,6 +1071,7 @@ export default function DashboardPage() {
                     setActivityDateFilter("");
                     setActivityTypeFilters([]);
                     setShowHistory(false);
+                    setSelectedMilkDate(todayDateKey);
                   }}
                   className="min-h-11 px-2 text-xs font-semibold text-accent-strong transition-colors hover:text-warm-brown"
                 >
@@ -1080,21 +1084,21 @@ export default function DashboardPage() {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => { setActivityDateFilter(""); setShowHistory(true); }}
+                onClick={() => { setActivityDateFilter(""); setShowHistory(true); setSelectedMilkDate(todayDateKey); }}
                 className={"min-h-11 w-full rounded-lg px-2 py-2 text-xs font-medium transition-colors " + (showHistory && !activityDateFilter ? "bg-terracotta-dark text-white" : "bg-cream border border-border text-warm-brown")}
               >
                 All days
               </button>
               <button
                 type="button"
-                onClick={() => { setActivityDateFilter(todayDateKey); setShowHistory(false); }}
+                onClick={() => { setActivityDateFilter(todayDateKey); setShowHistory(false); setSelectedMilkDate(todayDateKey); }}
                 className={"min-h-11 w-full rounded-lg px-2 py-2 text-xs font-medium transition-colors " + (!showHistory && (!activityDateFilter || activityDateFilter === todayDateKey) ? "bg-terracotta-dark text-white" : "bg-cream border border-border text-warm-brown")}
               >
                 Today
               </button>
               <button
                 type="button"
-                onClick={() => { setActivityDateFilter(yesterdayDateKey); setShowHistory(false); }}
+                onClick={() => { setActivityDateFilter(yesterdayDateKey); setShowHistory(false); setSelectedMilkDate(yesterdayDateKey); }}
                 className={"min-h-11 w-full rounded-lg px-2 py-2 text-xs font-medium transition-colors " + (activityDateFilter === yesterdayDateKey ? "bg-terracotta-dark text-white" : "bg-cream border border-border text-warm-brown")}
               >
                 Yesterday
@@ -1106,7 +1110,7 @@ export default function DashboardPage() {
                 type="date"
                 placeholder="select date"
                 value={activityDateFilter}
-                onChange={(e) => { setActivityDateFilter(e.target.value); setShowHistory(false); }}
+                onChange={(e) => { setActivityDateFilter(e.target.value); setShowHistory(false); setSelectedMilkDate(e.target.value || todayDateKey); }}
                 className={"min-h-11 w-full rounded-lg border border-border bg-cream px-3 py-2 text-xs outline-none focus:border-accent-strong " + (activityDateFilter ? "text-warm-brown" : "text-transparent")}
               />
               {!activityDateFilter && (

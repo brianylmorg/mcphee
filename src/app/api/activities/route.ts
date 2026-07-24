@@ -52,12 +52,19 @@ function replayBankBalance(rows: Array<unknown>): number {
   return Math.max(0, balance);
 }
 
-async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: string, excludeActivityId?: string): Promise<number> {
-  let sql = `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
-             WHERE a.baby_id = ?
-               AND a.baby_id IN (SELECT id FROM babies WHERE household_id = ?)
-               AND a.type IN (?, ?, ?)`;
-  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed", "bankadjust"];
+// Household-wide lifetime balance (pumped minus fed, plus bankadjust
+// corrections, over full history), matching what the dashboard bank card
+// shows. Feed sufficiency checks and reconciliation both use this household
+// scope so the bank, validation, and reconciliation can never disagree.
+async function breastmilkLibraryForHousehold(
+  db: Pick<DB, "execute">,
+  householdId: string,
+  excludeActivityId?: string,
+): Promise<number> {
+  let sql = `SELECT a.type, a.details FROM activities a
+             JOIN babies b ON b.id = a.baby_id
+             WHERE b.household_id = ? AND a.type IN (?, ?, ?)`;
+  const args: Array<string | number> = [householdId, "pump", "bottlefeed", "bankadjust"];
   if (excludeActivityId) {
     sql += " AND a.id != ?";
     args.push(excludeActivityId);
@@ -65,18 +72,6 @@ async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: str
   sql += " ORDER BY a.started_at ASC, a.created_at ASC";
 
   const result = await db.execute({ sql, args });
-  return replayBankBalance(result.rows);
-}
-
-// Household-wide balance, matching what the dashboard bank card shows.
-async function breastmilkLibraryForHousehold(db: DB, householdId: string): Promise<number> {
-  const result = await db.execute({
-    sql: `SELECT a.type, a.details FROM activities a
-          JOIN babies b ON b.id = a.baby_id
-          WHERE b.household_id = ? AND a.type IN (?, ?, ?)
-          ORDER BY a.started_at ASC, a.created_at ASC`,
-    args: [householdId, "pump", "bottlefeed", "bankadjust"],
-  });
   return replayBankBalance(result.rows);
 }
 
@@ -173,7 +168,7 @@ export async function POST(request: NextRequest) {
     const [babyError, availableBreastmilkMl, createdBy] = await Promise.all([
       requireBabyInHousehold(db, body.babyId, householdId),
       isBottlefeed
-        ? breastmilkLibraryForBaby(db, body.babyId, householdId)
+        ? breastmilkLibraryForHousehold(db, householdId)
         : Promise.resolve(0),
       userNameForHousehold(db, request.cookies.get("mcphee_user")?.value, householdId),
     ]);
@@ -181,40 +176,50 @@ export async function POST(request: NextRequest) {
 
     // Bank reconciliation: the client sends the actual amount on hand; the
     // server computes the signed correction against its own replay so the
-    // bank lands exactly on the target (repeat submissions are no-ops).
+    // bank lands exactly on the target (repeat submissions are no-ops). The
+    // replay + insert run in one write transaction so concurrent reconciles
+    // from two devices serialize instead of double-applying the delta.
     if (body.type === "bankadjust") {
       const targetBankMl = Number(parseActivityDetails(body.details).targetBankMl);
       if (!Number.isFinite(targetBankMl) || targetBankMl < 0) {
         return NextResponse.json({ error: "targetBankMl must be a non-negative number" }, { status: 400 });
       }
 
-      const currentBankMl = await breastmilkLibraryForHousehold(db, householdId);
-      const deltaMl = Math.round((targetBankMl - currentBankMl) * 100) / 100;
-      if (deltaMl === 0) {
-        return NextResponse.json({ id: null, deltaMl: 0, bankMl: currentBankMl });
+      const tx = await db.transaction("write");
+      try {
+        const currentBankMl = await breastmilkLibraryForHousehold(tx, householdId);
+        const deltaMl = Math.round((targetBankMl - currentBankMl) * 100) / 100;
+        if (deltaMl === 0) {
+          await tx.commit();
+          return NextResponse.json({ id: null, deltaMl: 0, bankMl: currentBankMl });
+        }
+
+        const activityId = generateId();
+        await tx.execute({
+          sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            activityId,
+            body.babyId,
+            body.type,
+            body.startedAt,
+            null,
+            JSON.stringify({
+              ...parseActivityDetails(body.details),
+              amount: deltaMl,
+              bankBeforeMl: currentBankMl,
+            }),
+            Date.now(),
+            createdBy,
+          ],
+        });
+        await tx.commit();
+
+        return NextResponse.json({ id: activityId, deltaMl, bankMl: targetBankMl });
+      } catch (error) {
+        try { await tx.rollback(); } catch {}
+        throw error;
       }
-
-      const activityId = generateId();
-      await db.execute({
-        sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          activityId,
-          body.babyId,
-          body.type,
-          body.startedAt,
-          null,
-          JSON.stringify({
-            ...parseActivityDetails(body.details),
-            amount: deltaMl,
-            bankBeforeMl: currentBankMl,
-          }),
-          Date.now(),
-          createdBy,
-        ],
-      });
-
-      return NextResponse.json({ id: activityId, deltaMl, bankMl: targetBankMl });
     }
 
     if (isBottlefeed) {
@@ -299,7 +304,7 @@ export async function PUT(request: NextRequest) {
 
     if (body.type === "bottlefeed") {
       const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(mergedDetails));
-      const availableBreastmilkMl = await breastmilkLibraryForBaby(db, body.babyId, householdId, body.id);
+      const availableBreastmilkMl = await breastmilkLibraryForHousehold(db, householdId, body.id);
       if (requestedBreastmilkMl > availableBreastmilkMl) {
         return NextResponse.json(
           { error: "Breastmilk amount exceeds available breastmilk bank" },
