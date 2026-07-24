@@ -10,12 +10,6 @@ export const runtime = "nodejs";
 
 const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep"]);
 
-const BREASTMILK_BATCH_TTL_MS = 4 * 60 * 60 * 1000;
-// Ledger replay only needs recent history: batches older than the TTL are expired
-// regardless of consumption, and feeds before that point can only have consumed
-// expired batches. One extra TTL of margin matches the dashboard ledger window.
-const LEDGER_HISTORY_MS = 2 * BREASTMILK_BATCH_TTL_MS;
-
 function isValidTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
@@ -36,13 +30,14 @@ function validateActivityInput(body: Record<string, unknown>) {
 
 type DB = ReturnType<typeof createDB>;
 
+// Lifetime running balance (pumped minus fed over full history), matching the
+// dashboard's breastmilk bank so the two never disagree.
 async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: string, excludeActivityId?: string): Promise<number> {
   let sql = `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
              WHERE a.baby_id = ?
                AND a.baby_id IN (SELECT id FROM babies WHERE household_id = ?)
-               AND a.type IN (?, ?)
-               AND a.started_at >= ?`;
-  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed", Date.now() - LEDGER_HISTORY_MS];
+               AND a.type IN (?, ?)`;
+  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed"];
   if (excludeActivityId) {
     sql += " AND a.id != ?";
     args.push(excludeActivityId);

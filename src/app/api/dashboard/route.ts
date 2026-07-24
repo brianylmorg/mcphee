@@ -5,11 +5,9 @@ import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { bottleVolumes, parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
 
 const BREASTMILK_BATCH_TTL_MS = 4 * 60 * 60 * 1000;
-// Batches older than the TTL are expired regardless of consumption, and feeds before
-// that point can only have consumed expired batches, so the live ledger is unaffected
-// by older history. One extra TTL of margin keeps recently-expired batches visible
-// in the UI (expiry badge, last-pump hint).
-const LEDGER_HISTORY_MS = 2 * BREASTMILK_BATCH_TTL_MS;
+// The bank is a lifetime tally: pumped minus fed over full history, replayed as
+// FIFO batches so the batch list always sums to the bank total. The TTL only
+// drives the per-batch expiry badge — it does not remove milk from the bank.
 
 const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Singapore",
@@ -51,7 +49,6 @@ export async function GET(request: NextRequest) {
     const sgtDate = [sgtPart("year"), sgtPart("month"), sgtPart("day")].join("-");
     const dayStart = Date.parse(sgtDate + "T00:00:00+08:00");
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-    const ledgerCutoff = now.getTime() - LEDGER_HISTORY_MS;
 
     const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger, users] = await db.batch([
       {
@@ -98,9 +95,8 @@ export async function GET(request: NextRequest) {
               JOIN babies b ON a.baby_id = b.id
               WHERE b.household_id = ?
                 AND a.type IN (?, ?)
-                AND a.started_at >= ?
               ORDER BY a.started_at ASC, a.created_at ASC`,
-        args: [householdId, "bottlefeed", "pump", ledgerCutoff],
+        args: [householdId, "bottlefeed", "pump"],
       },
       {
         sql: "SELECT name FROM users WHERE household_id = ?",
