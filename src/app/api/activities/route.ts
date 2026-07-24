@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB } from "@/db";
+import { createDB, syncDb } from "@/db";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
@@ -185,6 +185,7 @@ export async function POST(request: NextRequest) {
         createdBy,
       ],
     });
+    await syncDb();
 
     return NextResponse.json({ id: activityId });
   } catch (error) {
@@ -266,6 +267,7 @@ export async function PUT(request: NextRequest) {
         householdId,
       ],
     });
+    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -322,6 +324,7 @@ export async function DELETE(request: NextRequest) {
         args: [activityId, householdId],
       },
     ], "write");
+    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {

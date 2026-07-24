@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB } from "@/db";
+import { createDB, syncDb } from "@/db";
 import { generateId } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
           householdId,
         ],
       });
+      await syncDb();
       return NextResponse.json({ updated: true });
     }
 
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
       sql: "INSERT INTO push_subscriptions (id, household_id, endpoint, p256dh, auth, label) VALUES (?, ?, ?, ?, ?, ?)",
       args: [id, householdId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, label || null],
     });
+    await syncDb();
 
     return NextResponse.json({ id });
   } catch (error) {
@@ -74,6 +76,7 @@ export async function DELETE(request: NextRequest) {
       sql: "DELETE FROM push_subscriptions WHERE household_id = ? AND endpoint = ?",
       args: [householdId, endpoint],
     });
+    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {

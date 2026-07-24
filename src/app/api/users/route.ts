@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB } from "@/db";
+import { createDB, syncDb } from "@/db";
 import { householdExists } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 
@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
         sql: "INSERT INTO users (id, household_id, name, created_at) VALUES (?, ?, ?, ?)",
         args: [newUserId, householdId, body.name, Date.now()],
       });
+      await syncDb();
 
       const response = NextResponse.json({ id: newUserId, name: body.name, householdId });
       response.cookies.set("mcphee_user", newUserId, {
@@ -127,6 +128,7 @@ export async function PUT(request: NextRequest) {
         sql: "INSERT INTO users (id, household_id, name, created_at) VALUES (?, ?, ?, ?)",
         args: [repairedUserId, householdId, body.name.trim(), Date.now()],
       });
+      await syncDb();
 
       const response = NextResponse.json({
         success: true,
@@ -141,6 +143,7 @@ export async function PUT(request: NextRequest) {
       });
       return response;
     }
+    await syncDb();
 
     const response = NextResponse.json({
       success: true,

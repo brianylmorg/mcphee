@@ -7,6 +7,8 @@
 - **Auth:** Household-code model (6-char invite code + signed HTTP-only cookie)
 - **Stack:** Next.js 15 App Router + TypeScript, Tailwind, Drizzle ORM, Turso, pnpm
 - **Timezone:** Asia/Singapore (SGT), all timestamps stored as UTC epoch ms integers
+- **Database access:** reads are served from a local embedded replica (30s sync interval) with explicit sync-after-write on mutations; queries wait for the initial sync, and if the replica handshake fails the app falls back to direct Turso reads
+- **Env:** `DB_REPLICA_PATH` sets the replica file path (default `/tmp/mcphee-replica.db`); `DB_REPLICA=off` disables the replica and talks to Turso directly (local dev/debugging)
 
 ## Conventions
 - Branch naming: `claude/<slug>`
