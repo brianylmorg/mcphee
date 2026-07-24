@@ -49,6 +49,10 @@ const sgtHourFormatter = new Intl.DateTimeFormat("en-SG", {
   hourCycle: "h23",
 });
 
+// The milk charts show a recent window, not the full history (which now spans
+// months); the day-by-day navigation still uses the complete milkHistory.
+const MILK_CHART_WINDOW_DAYS = 14;
+
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);
@@ -721,7 +725,7 @@ export default function DashboardPage() {
   const chartMilkDays = [
     ...milkHistory.filter((day) => day.date !== todayDateKey),
     { date: todayDateKey, totalMl: dailyMilkMl, breastmilkMl: dailyBreastmilkMl, formulaMl: dailyFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: dailyMilkMl },
-  ].sort((a, b) => a.date.localeCompare(b.date));
+  ].sort((a, b) => a.date.localeCompare(b.date)).slice(-MILK_CHART_WINDOW_DAYS);
 
   const asOfMilkDays = chartMilkDays.filter((day) => day.date <= todayDateKey);
 
@@ -1268,7 +1272,7 @@ export default function DashboardPage() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 id="milk-history-title" className="font-display text-xl text-warm-brown">Milk consumption charts</h2>
-                <p className="mt-1 text-sm text-muted">Full-day totals and same-time comparisons</p>
+                <p className="mt-1 text-sm text-muted">Last {MILK_CHART_WINDOW_DAYS} days — full-day totals and same-time comparisons</p>
               </div>
               <button
                 type="button"
