@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
-import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
+import { bottleBreastmilkLibraryDeduction, bankAdjustmentMl } from "@/lib/milk-calculation";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { bottleVolumes, parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
 
@@ -23,6 +23,7 @@ type PumpedMilkBatch = {
   remainingMl: number;
   expiresAt: number;
   isExpired: boolean;
+  isAdjustment?: boolean;
 };
 
 export const runtime = "nodejs";
@@ -94,9 +95,9 @@ export async function GET(request: NextRequest) {
         sql: `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
               JOIN babies b ON a.baby_id = b.id
               WHERE b.household_id = ?
-                AND a.type IN (?, ?)
+                AND a.type IN (?, ?, ?)
               ORDER BY a.started_at ASC, a.created_at ASC`,
-        args: [householdId, "bottlefeed", "pump"],
+        args: [householdId, "bottlefeed", "pump", "bankadjust"],
       },
       {
         sql: "SELECT name FROM users WHERE household_id = ?",
@@ -142,7 +143,38 @@ export async function GET(request: NextRequest) {
         return total;
       }
 
-      let remainingDeductionMl = bottleBreastmilkLibraryDeduction(details);
+      let remainingDeductionMl: number;
+      if (typedRow.type === "bankadjust") {
+        const deltaMl = bankAdjustmentMl(details);
+        if (deltaMl > 0) {
+          const adjustedAt = Number(typedRow.started_at) || Number(typedRow.created_at) || 0;
+          if (adjustedAt > 0) {
+            // Virtual batch from a reconciliation top-up; feeds drain it FIFO
+            // like real milk, but it never gets an expiry badge.
+            total.batches.push({
+              id: typedRow.id,
+              pumpedAt: adjustedAt,
+              amountMl: deltaMl,
+              remainingMl: deltaMl,
+              expiresAt: adjustedAt + BREASTMILK_BATCH_TTL_MS,
+              isExpired: false,
+              isAdjustment: true,
+            });
+          }
+          return total;
+        }
+        // Negative correction: drain batches FIFO, but it is not consumption.
+        remainingDeductionMl = -deltaMl;
+        for (const batch of total.batches) {
+          if (remainingDeductionMl <= 0) break;
+          const deductedMl = Math.min(batch.remainingMl, remainingDeductionMl);
+          batch.remainingMl -= deductedMl;
+          remainingDeductionMl -= deductedMl;
+        }
+        return total;
+      }
+
+      remainingDeductionMl = bottleBreastmilkLibraryDeduction(details);
       for (const batch of total.batches) {
         if (remainingDeductionMl <= 0) break;
         const deductedMl = Math.min(batch.remainingMl, remainingDeductionMl);

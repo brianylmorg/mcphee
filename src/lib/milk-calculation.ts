@@ -69,3 +69,10 @@ export function bottleBreastmilkLibraryDeduction(details: Record<string, unknown
   const calculatedDeductionMl = parseMlCalculation(details.amountExpression)?.libraryDeductionMl ?? 0;
   return Math.max(consumedMl + wastedMl, storedDeductionMl, calculatedDeductionMl);
 }
+
+// Signed correction from a bankadjust activity (reconciliation): positive adds
+// milk to the bank, negative removes it. Unlike feed/pump amounts, the sign matters.
+export function bankAdjustmentMl(details: Record<string, unknown>): number {
+  const amount = Number(details.amount);
+  return Number.isFinite(amount) ? amount : 0;
+}

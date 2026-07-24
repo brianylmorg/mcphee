@@ -41,6 +41,7 @@ interface PumpedMilkBatch {
   remainingMl: number;
   expiresAt: number;
   isExpired: boolean;
+  isAdjustment?: boolean;
 }
 
 const sgtHourFormatter = new Intl.DateTimeFormat("en-SG", {
@@ -136,6 +137,9 @@ export default function DashboardPage() {
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [isActivityFilterLoading, setIsActivityFilterLoading] = useState(false);
   const [activityFilterRefresh, setActivityFilterRefresh] = useState(0);
+  const [showReconcileBank, setShowReconcileBank] = useState(false);
+  const [reconcileBankMl, setReconcileBankMl] = useState("");
+  const [isReconcilingBank, setIsReconcilingBank] = useState(false);
 
   const sgtDateKey = (offsetDays = 0): string => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -161,6 +165,7 @@ export default function DashboardPage() {
     pump: Droplet,
     diaper: BabyIcon,
     vomit: TriangleAlert,
+    bankadjust: Scale,
   };
 
   const activityTypeOptions = [
@@ -478,6 +483,40 @@ export default function DashboardPage() {
     }
   };
 
+  const handleReconcileBank = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const targetBankMl = Number(reconcileBankMl);
+    if (!Number.isFinite(targetBankMl) || targetBankMl < 0) {
+      alert("Enter the actual amount of milk on hand, in ml.");
+      return;
+    }
+    if (!baby?.id || isReconcilingBank) return;
+    setIsReconcilingBank(true);
+    try {
+      const res = await fetch("/api/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          babyId: baby.id,
+          type: "bankadjust",
+          startedAt: Date.now(),
+          details: { targetBankMl },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to reconcile bank");
+      setShowReconcileBank(false);
+      setReconcileBankMl("");
+      await fetchData();
+      setActivityFilterRefresh((value) => value + 1);
+    } catch (error) {
+      console.error("Reconcile bank error:", error);
+      alert(error instanceof Error ? error.message : "Could not reconcile the bank. Try again.");
+    } finally {
+      setIsReconcilingBank(false);
+    }
+  };
+
   const handleActivityAction = async (type: string) => {
     if (type === "breastfeed" && !activeTimer) {
       if (!breastfeedPromptShown) {
@@ -570,6 +609,7 @@ export default function DashboardPage() {
     if (type === "diaper") return "Diaper";
     if (type === "vomit") return "Vomit";
     if (type === "pump") return "Pump";
+    if (type === "bankadjust") return "Bank adjustment";
     return type.charAt(0).toUpperCase() + type.slice(1);
   };
 
@@ -659,6 +699,15 @@ export default function DashboardPage() {
           "dribble-beancurd": "Dribble beancurd",
         };
         return { title: "Vomit", subcategory: labels[d.vomitType as string] || "", quantity: "" };
+      }
+      case "bankadjust": {
+        const amount = Number(d.amount);
+        const target = Number(d.targetBankMl);
+        return {
+          title: "Bank adjustment",
+          subcategory: Number.isFinite(target) ? `Reconciled to ${target} ml` : "",
+          quantity: Number.isFinite(amount) && amount !== 0 ? `${amount > 0 ? "+" : ""}${amount} ml` : "",
+        };
       }
       default:
         return { title: activityTitle(activity.type), subcategory: "", quantity: "" };
@@ -888,8 +937,52 @@ export default function DashboardPage() {
           <div className="mt-4 border-t border-border pt-3">
             <div className="flex items-baseline justify-between gap-4">
               <p className="text-sm font-medium text-muted">Breastmilk bank</p>
-              <p className="font-display text-lg tabular-nums text-warm-brown">{breastmilkLibraryMl} ml</p>
+              <div className="flex items-center gap-1">
+                <p className="font-display text-lg tabular-nums text-warm-brown">{breastmilkLibraryMl} ml</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReconcileBankMl(String(breastmilkLibraryMl));
+                    setShowReconcileBank((value) => !value);
+                  }}
+                  aria-label="Reconcile breastmilk bank"
+                  title="Reconcile bank with the actual amount on hand"
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-accent-strong transition-colors hover:bg-surface-muted"
+                >
+                  <Scale aria-hidden="true" className="h-4 w-4" />
+                </button>
+              </div>
             </div>
+            {showReconcileBank && (
+              <form onSubmit={handleReconcileBank} className="mt-3 flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  autoFocus
+                  value={reconcileBankMl}
+                  onChange={(event) => setReconcileBankMl(event.target.value)}
+                  placeholder="Actual ml on hand"
+                  aria-label="Actual breastmilk on hand in ml"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm tabular-nums text-warm-brown focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40"
+                />
+                <button
+                  type="submit"
+                  disabled={isReconcilingBank}
+                  className="shrink-0 rounded-lg bg-terracotta px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-terracotta-dark disabled:opacity-50"
+                >
+                  {isReconcilingBank ? "Saving…" : "Set"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowReconcileBank(false)}
+                  className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-muted"
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
             {breastmilkBatches.length > 0 && (
               <div className="mt-3 space-y-2">
                 {breastmilkBatches.map((batch) => (
@@ -902,7 +995,9 @@ export default function DashboardPage() {
                         {Math.round(batch.remainingMl * 100) / 100} ml
                       </p>
                       <p className="text-xs text-muted">
-                        Pumped {formatTime(batch.pumpedAt)} · expires {formatTime(batch.expiresAt)}
+                        {batch.isAdjustment
+                          ? `Bank adjustment · ${formatTime(batch.pumpedAt)}`
+                          : `Pumped ${formatTime(batch.pumpedAt)} · expires ${formatTime(batch.expiresAt)}`}
                       </p>
                     </div>
                     {batch.isExpired && (
@@ -1649,6 +1744,12 @@ function LogModal({
       details.peeUnits = diaperPeeUnits;
     } else if (type === "vomit") {
       details.vomitType = vomitType;
+    } else if (type === "bankadjust") {
+      // The modal has no fields for adjustments; carry the original values so
+      // editing notes/time doesn't wipe the correction.
+      details.amount = detailsObj.amount;
+      details.targetBankMl = detailsObj.targetBankMl;
+      details.bankBeforeMl = detailsObj.bankBeforeMl;
     }
     details.notes = notes.trim() || null;
 

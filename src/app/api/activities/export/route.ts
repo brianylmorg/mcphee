@@ -50,6 +50,7 @@ function activityLabel(type: unknown): string {
   if (type === "diaper") return "Diaper";
   if (type === "vomit") return "Vomit";
   if (type === "pump") return "Pump";
+  if (type === "bankadjust") return "Bank adjustment";
   if (typeof type === "string" && type.length > 0) return type.charAt(0).toUpperCase() + type.slice(1);
   return "";
 }
@@ -165,6 +166,16 @@ function displayFields(type: unknown, details: Record<string, unknown>) {
       "dribble-beancurd": "Dribble beancurd",
     };
     return { activity: "Vomit", subcategory: labels[String(details.vomitType)] || "", quantity: "" };
+  }
+
+  if (type === "bankadjust") {
+    const amount = Number(details.amount);
+    const target = Number(details.targetBankMl);
+    return {
+      activity: "Bank adjustment",
+      subcategory: Number.isFinite(target) ? "Reconciled to " + target + " ml" : "",
+      quantity: Number.isFinite(amount) && amount !== 0 ? (amount > 0 ? "+" : "") + amount + " ml" : "",
+    };
   }
 
   return { activity: activityLabel(type), subcategory: "", quantity: "" };

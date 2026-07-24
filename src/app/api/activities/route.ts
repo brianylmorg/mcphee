@@ -4,11 +4,11 @@ import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household
 import { generateId } from "@/lib/utils";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
-import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
+import { bottleBreastmilkLibraryDeduction, bankAdjustmentMl } from "@/lib/milk-calculation";
 
 export const runtime = "nodejs";
 
-const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep"]);
+const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "bankadjust"]);
 
 function isValidTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -30,14 +30,34 @@ function validateActivityInput(body: Record<string, unknown>) {
 
 type DB = ReturnType<typeof createDB>;
 
-// Lifetime running balance (pumped minus fed over full history), matching the
-// dashboard's breastmilk bank so the two never disagree.
+// Lifetime running balance (pumped minus fed, plus manual bankadjust
+// corrections, over full history), matching the dashboard's breastmilk bank
+// so the two never disagree.
+function replayBankBalance(rows: Array<unknown>): number {
+  const balance = rows.reduce<number>((running, row) => {
+    const typedRow = row as unknown as { type: string; details: string | null };
+    const details = parseActivityDetails(typedRow.details);
+    if (typedRow.type === "pump") {
+      return running + pumpAmount(details);
+    }
+    if (typedRow.type === "bankadjust") {
+      return Math.max(0, running + bankAdjustmentMl(details));
+    }
+    if (typedRow.type === "bottlefeed") {
+      return Math.max(0, running - bottleBreastmilkLibraryDeduction(details));
+    }
+    return running;
+  }, 0);
+
+  return Math.max(0, balance);
+}
+
 async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: string, excludeActivityId?: string): Promise<number> {
   let sql = `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
              WHERE a.baby_id = ?
                AND a.baby_id IN (SELECT id FROM babies WHERE household_id = ?)
-               AND a.type IN (?, ?)`;
-  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed"];
+               AND a.type IN (?, ?, ?)`;
+  const args: Array<string | number> = [babyId, householdId, "pump", "bottlefeed", "bankadjust"];
   if (excludeActivityId) {
     sql += " AND a.id != ?";
     args.push(excludeActivityId);
@@ -45,19 +65,19 @@ async function breastmilkLibraryForBaby(db: DB, babyId: string, householdId: str
   sql += " ORDER BY a.started_at ASC, a.created_at ASC";
 
   const result = await db.execute({ sql, args });
-  const walletMl = result.rows.reduce((balance, row) => {
-    const typedRow = row as unknown as { type: string; details: string | null };
-    const details = parseActivityDetails(typedRow.details);
-    if (typedRow.type === "pump") {
-      return balance + pumpAmount(details);
-    }
-    if (typedRow.type === "bottlefeed") {
-      return Math.max(0, balance - bottleBreastmilkLibraryDeduction(details));
-    }
-    return balance;
-  }, 0);
+  return replayBankBalance(result.rows);
+}
 
-  return Math.max(0, walletMl);
+// Household-wide balance, matching what the dashboard bank card shows.
+async function breastmilkLibraryForHousehold(db: DB, householdId: string): Promise<number> {
+  const result = await db.execute({
+    sql: `SELECT a.type, a.details FROM activities a
+          JOIN babies b ON b.id = a.baby_id
+          WHERE b.household_id = ? AND a.type IN (?, ?, ?)
+          ORDER BY a.started_at ASC, a.created_at ASC`,
+    args: [householdId, "pump", "bottlefeed", "bankadjust"],
+  });
+  return replayBankBalance(result.rows);
 }
 
 export async function GET(request: NextRequest) {
@@ -158,6 +178,45 @@ export async function POST(request: NextRequest) {
       userNameForHousehold(db, request.cookies.get("mcphee_user")?.value, householdId),
     ]);
     if (babyError) return babyError;
+
+    // Bank reconciliation: the client sends the actual amount on hand; the
+    // server computes the signed correction against its own replay so the
+    // bank lands exactly on the target (repeat submissions are no-ops).
+    if (body.type === "bankadjust") {
+      const targetBankMl = Number(parseActivityDetails(body.details).targetBankMl);
+      if (!Number.isFinite(targetBankMl) || targetBankMl < 0) {
+        return NextResponse.json({ error: "targetBankMl must be a non-negative number" }, { status: 400 });
+      }
+
+      const currentBankMl = await breastmilkLibraryForHousehold(db, householdId);
+      const deltaMl = Math.round((targetBankMl - currentBankMl) * 100) / 100;
+      if (deltaMl === 0) {
+        return NextResponse.json({ id: null, deltaMl: 0, bankMl: currentBankMl });
+      }
+
+      const activityId = generateId();
+      await db.execute({
+        sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          activityId,
+          body.babyId,
+          body.type,
+          body.startedAt,
+          null,
+          JSON.stringify({
+            ...parseActivityDetails(body.details),
+            amount: deltaMl,
+            bankBeforeMl: currentBankMl,
+          }),
+          Date.now(),
+          createdBy,
+        ],
+      });
+      await syncDb();
+
+      return NextResponse.json({ id: activityId, deltaMl, bankMl: targetBankMl });
+    }
 
     if (isBottlefeed) {
       const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(body.details));
