@@ -52,7 +52,7 @@ const sgtHourFormatter = new Intl.DateTimeFormat("en-SG", {
 
 // The milk charts show a recent window, not the full history (which now spans
 // months); the day-by-day navigation still uses the complete milkHistory.
-const MILK_CHART_WINDOW_DAYS = 14;
+const MILK_CHART_WINDOW_DAYS = 30;
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
