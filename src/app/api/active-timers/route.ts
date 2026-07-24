@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB, syncDb } from "@/db";
+import { createDB } from "@/db";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 
@@ -81,7 +81,6 @@ export async function POST(request: NextRequest) {
         args: [timerId, body.babyId, body.type, now, side, JSON.stringify([]), startedBy],
       },
     ], "write");
-    await syncDb();
 
     return NextResponse.json({ id: timerId, startedAt: now, side });
   } catch (error) {
@@ -143,7 +142,6 @@ export async function PUT(request: NextRequest) {
             WHERE baby_id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
       args: [body.side, JSON.stringify(sideSwitches), body.babyId, householdId],
     });
-    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -227,7 +225,6 @@ export async function DELETE(request: NextRequest) {
     } finally {
       tx.close();
     }
-    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {

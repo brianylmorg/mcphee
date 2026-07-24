@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB, syncDb } from "@/db";
+import { createDB } from "@/db";
 import { generateId } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -50,7 +50,6 @@ export async function POST(request: NextRequest) {
       sql: "INSERT INTO babies (id, household_id, name, birth_date, created_at) VALUES (?, ?, ?, ?, ?)",
       args: [babyId, householdId, body.name.trim(), body.birthDate || null, Date.now()],
     });
-    await syncDb();
 
     return NextResponse.json({ id: babyId, name: body.name.trim(), birthDate: body.birthDate });
   } catch (error) {
@@ -87,7 +86,6 @@ export async function PUT(request: NextRequest) {
     if (result.rowsAffected === 0) {
       return NextResponse.json({ error: "Baby not found" }, { status: 404 });
     }
-    await syncDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {

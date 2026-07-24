@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDB, syncDb } from "@/db";
+import { createDB } from "@/db";
 import { generateId, generateInviteCode } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -57,7 +57,6 @@ export async function POST(request: NextRequest) {
         sql: "INSERT INTO babies (id, household_id, name, birth_date, created_at) VALUES (?, ?, ?, ?, ?)",
         args: [babyId, householdId, body.name || "Baby", body.birthDate || null, Date.now()],
       });
-      await syncDb();
 
       const response = NextResponse.json({
         householdId,
