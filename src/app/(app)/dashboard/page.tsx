@@ -742,6 +742,13 @@ export default function DashboardPage() {
     setActivityDateFilter(date);
     setShowHistory(false);
   };
+  const shiftActivityDate = (offsetDays: number) => {
+    selectMilkDate(shiftMilkDate(activityDateFilter || todayDateKey, offsetDays));
+  };
+  const formatFilterDate = (date: string): string => {
+    const [year, month, day] = date.split("-");
+    return `${day}/${month}/${year}`;
+  };
 
   const activeMilkDate = selectedMilkDate || todayDateKey;
   const isSelectedMilkToday = activeMilkDate === todayDateKey;
@@ -762,6 +769,9 @@ export default function DashboardPage() {
   const earliestMilkDate = milkHistory[0]?.date ?? todayDateKey;
   const canGoToPreviousMilkDay = activeMilkDate > earliestMilkDate;
   const canGoToNextMilkDay = activeMilkDate < todayDateKey;
+  const effectiveActivityDate = activityDateFilter || todayDateKey;
+  const canGoToPreviousActivityDay = effectiveActivityDate > earliestMilkDate;
+  const canGoToNextActivityDay = effectiveActivityDate < todayDateKey;
   const selectedMilkDateLabel = new Intl.DateTimeFormat("en-SG", {
     timeZone: "Asia/Singapore", weekday: "short", day: "numeric", month: "short", year: "numeric",
   }).format(new Date(activeMilkDate + "T12:00:00+08:00"));
@@ -1104,18 +1114,40 @@ export default function DashboardPage() {
                 Yesterday
               </button>
             </div>
-            <div className="relative">
-              <input
-                aria-label="Select activity date"
-                type="date"
-                placeholder="select date"
-                value={activityDateFilter}
-                onChange={(e) => { setActivityDateFilter(e.target.value); setShowHistory(false); setSelectedMilkDate(e.target.value || todayDateKey); }}
-                className={"min-h-11 w-full rounded-lg border border-border bg-cream px-3 py-2 text-xs outline-none focus:border-accent-strong " + (activityDateFilter ? "text-warm-brown" : "text-transparent")}
-              />
-              {!activityDateFilter && (
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted">select date</span>
-              )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => shiftActivityDate(-1)}
+                disabled={!canGoToPreviousActivityDay}
+                aria-label="Show previous day activities"
+                title="Previous day"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-accent-strong transition-colors hover:bg-surface-muted disabled:opacity-30"
+              >
+                <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+              </button>
+              <div className="relative min-w-0 flex-1">
+                <div className="flex min-h-11 w-full items-center justify-center rounded-lg border border-border bg-cream px-3 py-2 text-xs font-medium tabular-nums text-warm-brown">
+                  {showHistory && !activityDateFilter ? "All days" : formatFilterDate(effectiveActivityDate)}
+                </div>
+                <input
+                  aria-label="Select activity date"
+                  type="date"
+                  value={effectiveActivityDate}
+                  max={todayDateKey}
+                  onChange={(e) => selectMilkDate(e.target.value || todayDateKey)}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => shiftActivityDate(1)}
+                disabled={!canGoToNextActivityDay}
+                aria-label="Show next day activities"
+                title="Next day"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-accent-strong transition-colors hover:bg-surface-muted disabled:opacity-30"
+              >
+                <ChevronRight aria-hidden="true" className="h-4 w-4" />
+              </button>
             </div>
             <details className="group relative">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-border bg-cream px-3 py-2 text-left transition-colors hover:border-terracotta/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden">
