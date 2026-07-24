@@ -1091,29 +1091,6 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="mb-3 space-y-3 rounded-lg border border-border bg-surface p-3">
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => { setActivityDateFilter(""); setShowHistory(true); setSelectedMilkDate(todayDateKey); }}
-                className={"min-h-11 w-full rounded-lg px-2 py-2 text-xs font-medium transition-colors " + (showHistory && !activityDateFilter ? "bg-terracotta-dark text-white" : "bg-cream border border-border text-warm-brown")}
-              >
-                All days
-              </button>
-              <button
-                type="button"
-                onClick={() => { setActivityDateFilter(todayDateKey); setShowHistory(false); setSelectedMilkDate(todayDateKey); }}
-                className={"min-h-11 w-full rounded-lg px-2 py-2 text-xs font-medium transition-colors " + (!showHistory && (!activityDateFilter || activityDateFilter === todayDateKey) ? "bg-terracotta-dark text-white" : "bg-cream border border-border text-warm-brown")}
-              >
-                Today
-              </button>
-              <button
-                type="button"
-                onClick={() => { setActivityDateFilter(yesterdayDateKey); setShowHistory(false); setSelectedMilkDate(yesterdayDateKey); }}
-                className={"min-h-11 w-full rounded-lg px-2 py-2 text-xs font-medium transition-colors " + (activityDateFilter === yesterdayDateKey ? "bg-terracotta-dark text-white" : "bg-cream border border-border text-warm-brown")}
-              >
-                Yesterday
-              </button>
-            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1127,7 +1104,9 @@ export default function DashboardPage() {
               </button>
               <div className="relative min-w-0 flex-1">
                 <div className="flex min-h-11 w-full items-center justify-center rounded-lg border border-border bg-cream px-3 py-2 text-xs font-medium tabular-nums text-warm-brown">
-                  {showHistory && !activityDateFilter ? "All days" : formatFilterDate(effectiveActivityDate)}
+                  {showHistory && !activityDateFilter
+                    ? "All days"
+                    : formatFilterDate(effectiveActivityDate) + (effectiveActivityDate === todayDateKey ? " (today)" : "")}
                 </div>
                 <input
                   aria-label="Select activity date"
@@ -1149,6 +1128,20 @@ export default function DashboardPage() {
                 <ChevronRight aria-hidden="true" className="h-4 w-4" />
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (showHistory && !activityDateFilter) selectMilkDate(todayDateKey);
+                else {
+                  setActivityDateFilter("");
+                  setShowHistory(true);
+                  setSelectedMilkDate(todayDateKey);
+                }
+              }}
+              className="mx-auto block min-h-8 px-3 text-[11px] text-muted underline decoration-border underline-offset-4 transition-colors hover:text-accent-strong"
+            >
+              {showHistory && !activityDateFilter ? "Back to today" : "All days"}
+            </button>
             <details className="group relative">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-border bg-cream px-3 py-2 text-left transition-colors hover:border-terracotta/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden">
                 <span className="min-w-0">
