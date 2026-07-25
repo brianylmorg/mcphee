@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 type MilkDaySummary = {
   date: string;
@@ -21,9 +21,13 @@ export function MilkHistoryChart({
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestDate = days[days.length - 1]?.date;
 
-  useEffect(() => {
+  // Start scrolled to the latest day: apply before first paint, then re-apply
+  // after paint in case the scrollable layout settles late (iOS Safari can
+  // ignore scrollLeft set in a post-paint effect).
+  useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
+    container.scrollLeft = container.scrollWidth;
     const frame = window.requestAnimationFrame(() => {
       container.scrollLeft = container.scrollWidth;
     });
@@ -156,9 +160,13 @@ export function MilkAsOfHistoryChart({
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestDate = days[days.length - 1]?.date;
 
-  useEffect(() => {
+  // Start scrolled to the latest day: apply before first paint, then re-apply
+  // after paint in case the scrollable layout settles late (iOS Safari can
+  // ignore scrollLeft set in a post-paint effect).
+  useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
+    container.scrollLeft = container.scrollWidth;
     const frame = window.requestAnimationFrame(() => {
       container.scrollLeft = container.scrollWidth;
     });

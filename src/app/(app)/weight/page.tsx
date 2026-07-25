@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -141,9 +141,13 @@ export default function WeightPage() {
   const selectedPoint = chart.points.find((point) => point.id === selectedId) ?? chart.points[chart.points.length - 1] ?? null;
   const latestWeight = measurements[measurements.length - 1]?.weight_g ?? null;
 
-  useEffect(() => {
+  // Start scrolled to the latest measurement: apply before first paint, then
+  // re-apply after paint in case the scrollable layout settles late (iOS
+  // Safari can ignore scrollLeft set in a post-paint effect).
+  useLayoutEffect(() => {
     const container = chartScrollRef.current;
     if (!container || measurements.length <= 6) return;
+    container.scrollLeft = container.scrollWidth;
     const frame = window.requestAnimationFrame(() => {
       container.scrollLeft = container.scrollWidth;
     });
