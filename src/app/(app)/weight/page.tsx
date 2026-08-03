@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useHousehold } from "@/lib/context/household-context";
-import { ageMonthsAt, whoBoysWeightForAgePercentile } from "@/lib/who/percentile";
+import { ageMonthsAt, sg2000BoysWeightForAgePercentile } from "@/lib/growth/percentile";
 import { formatDate, formatWeight } from "@/lib/utils";
 
 type Baby = { id: string; name: string; birth_date: number | null };
@@ -117,7 +117,7 @@ export default function WeightPage() {
     const points: ChartPoint[] = measurements.map((item, index) => {
       const weight = Number(item.weight_g ?? 0);
       const ageMonths = baby?.birth_date ? ageMonthsAt(Number(item.measured_at), Number(baby.birth_date)) : null;
-      const percentile = ageMonths == null ? null : whoBoysWeightForAgePercentile(weight, ageMonths);
+      const percentile = ageMonths == null ? null : sg2000BoysWeightForAgePercentile(weight, ageMonths);
       return {
         ...item,
         x: leftPad + index * pointGap,
@@ -271,7 +271,7 @@ export default function WeightPage() {
         <section className="bg-surface rounded-lg border border-terracotta/20 p-5 shadow-sm">
           <div>
             <h2 className="font-display text-lg text-accent-strong">Weight history</h2>
-            <p className="mt-1 text-xs text-muted">WHO boys standard</p>
+            <p className="mt-1 text-xs text-muted">Singapore growth charts · NHG Polyclinics 2000</p>
           </div>
 
           {chart.points.length === 0 ? (
@@ -339,7 +339,7 @@ export default function WeightPage() {
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-muted">
-                    Percentile uses WHO boys weight-for-age LMS standards, not an ethnicity-specific Asian standard.
+                    Percentile uses the Singapore 2000 reference (NHG Polyclinics) — the same weight-for-age charts as the Child Health Booklet.
                     {!baby?.birth_date ? " Add birth date to calculate percentile." : ""}
                   </p>
                   <div className="mt-3 flex justify-end border-t border-border pt-3">

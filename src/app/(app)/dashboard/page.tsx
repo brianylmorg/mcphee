@@ -784,6 +784,20 @@ export default function DashboardPage() {
   const canGoToPreviousComparisonDay = comparisonMilkDate > earliestMilkDate;
   const canGoToNextComparisonDay = asOfDayOffset < -1;
 
+  // Median of milk consumed "by this time" over the trailing 7 days ending at
+  // the selected comparison day (default: yesterday). Days with no milk logged
+  // are skipped so a missed logging day doesn't drag the typical value down.
+  const medianWindowStart = shiftMilkDate(comparisonMilkDate, -6);
+  const medianDataDays = milkHistory.filter(
+    (day) => day.date >= medianWindowStart && day.date <= comparisonMilkDate && day.totalMl > 0
+  );
+  const asOfMedianMl = medianDataDays.length > 0
+    ? median(medianDataDays.map((day) => day.asOfNowMl))
+    : null;
+  const medianDataDayCountLabel = medianDataDays.length > 0 && medianDataDays.length < 7
+    ? ` (${medianDataDays.length} ${medianDataDays.length === 1 ? "day" : "days"})`
+    : "";
+
   const chartMilkDays = [
     ...milkHistory.filter((day) => day.date !== todayDateKey),
     { date: todayDateKey, totalMl: dailyMilkMl, breastmilkMl: dailyBreastmilkMl, formulaMl: dailyFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: dailyMilkMl },
@@ -945,6 +959,13 @@ export default function DashboardPage() {
                 <ChevronRight aria-hidden="true" className="h-4 w-4" />
               </button>
             </div>
+          </div>
+
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <p className="min-w-0 text-left text-xs text-muted">
+              <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>{" "}
+              median · same time, last 7 days{medianDataDayCountLabel}
+            </p>
           </div>
 
           <div className="mt-4 border-t border-border pt-3">
