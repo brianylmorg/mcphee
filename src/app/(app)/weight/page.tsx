@@ -38,6 +38,20 @@ function parseSgtDate(date: string) {
   return Date.parse(date + "T12:00:00+08:00");
 }
 
+// Pick a "nice" weight step (grams) so the chart shows roughly 4-7 grid lines.
+function niceGridStep(rangeG: number): number {
+  const candidates = [250, 500, 1000, 2000, 5000];
+  return candidates.find((step) => rangeG / step <= 7) ?? 5000;
+}
+
+function yAxisLabel(weightG: number): string {
+  if (weightG >= 1000) {
+    const kg = weightG / 1000;
+    return Number.isInteger(kg) ? String(kg) : kg.toFixed(1);
+  }
+  return String(weightG);
+}
+
 function percentileLabel(value: number | null) {
   if (value == null) return "Percentile unavailable";
   if (value < 1) return "<1st percentile";
@@ -114,6 +128,16 @@ export default function WeightPage() {
     const viewportWidth = leftPad + rightPad + (visiblePointCount - 1) * pointGap;
     const width = Math.max(viewportWidth, leftPad + rightPad + Math.max(1, measurements.length - 1) * pointGap);
 
+    // Horizontal grid lines at "nice" weights. Their y is in SVG units, which
+    // match the fixed-height y-axis column 1:1, so the axis labels stay put
+    // while the plot scrolls horizontally.
+    const gridStep = niceGridStep(range);
+    const gridLines: { weight: number; y: number }[] = [];
+    for (let w = Math.ceil(bottom / gridStep) * gridStep; w <= top + 1e-9; w += gridStep) {
+      const y = 24 + ((top - w) / Math.max(1, top - bottom)) * (height - 48);
+      gridLines.push({ weight: w, y });
+    }
+
     const points: ChartPoint[] = measurements.map((item, index) => {
       const weight = Number(item.weight_g ?? 0);
       const ageMonths = baby?.birth_date ? ageMonthsAt(Number(item.measured_at), Number(baby.birth_date)) : null;
@@ -135,6 +159,7 @@ export default function WeightPage() {
       path: points.map((point) => `${point.x},${point.y}`).join(" "),
       top,
       bottom,
+      gridLines,
     };
   }, [baby?.birth_date, measurements]);
 
@@ -278,50 +303,66 @@ export default function WeightPage() {
             <p className="mt-4 text-sm text-warm-brown-light">No weights logged yet.</p>
           ) : (
             <>
-              <div ref={chartScrollRef} className="mt-4 overflow-x-auto overscroll-x-contain border-y border-border py-3 touch-pan-x">
-                <svg
-                  className="block max-w-none"
-                  style={{ width: `${Math.max(100, chart.width / chart.viewportWidth * 100)}%` }}
-                  height={chart.height}
-                  viewBox={`0 0 ${chart.width} ${chart.height}`}
-                  role="img"
-                  aria-label="Baby weight history line chart"
-                >
-                  <line x1="0" y1="196" x2={chart.width} y2="196" stroke="var(--color-warm-brown)" strokeOpacity="0.18" />
-                  <polyline fill="none" stroke="var(--color-terracotta)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chart.path} />
-                  {chart.points.map((point) => (
-                    <g key={point.id}>
-                      <circle
-                        cx={point.x}
-                        cy={point.y}
-                        r="16"
-                        fill="transparent"
-                        role="button"
-                        tabIndex={0}
-                        className="cursor-pointer"
-                        onClick={() => setSelectedId(point.id)}
-                        onFocus={() => setSelectedId(point.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setSelectedId(point.id);
-                          }
-                        }}
-                        aria-label={`${formatWeight(Number(point.weight_g))} on ${formatDate(Number(point.measured_at))}`}
-                      />
-                      <circle
-                        cx={point.x}
-                        cy={point.y}
-                        r={point.id === selectedPoint?.id ? "6" : "4"}
-                        fill={point.id === selectedPoint?.id ? "var(--color-warm-brown)" : "var(--color-terracotta)"}
-                        pointerEvents="none"
-                      />
-                      <text x={point.x} y="214" textAnchor="middle" fontSize="12" fill="var(--color-text-muted)">
-                        {sgtDateInput(Number(point.measured_at)).slice(5)}
-                      </text>
-                    </g>
+              <div className="mt-4 flex border-y border-border py-3">
+                <div className="relative w-11 shrink-0" style={{ height: chart.height }} aria-hidden="true">
+                  {chart.gridLines.map((line) => (
+                    <span
+                      key={line.weight}
+                      className="absolute right-0 -translate-y-1/2 text-[10px] leading-none tabular-nums text-muted"
+                      style={{ top: line.y }}
+                    >
+                      {yAxisLabel(line.weight)}
+                    </span>
                   ))}
-                </svg>
+                </div>
+                <div ref={chartScrollRef} className="flex-1 overflow-x-auto overscroll-x-contain touch-pan-x">
+                  <svg
+                    className="block max-w-none"
+                    style={{ width: `${Math.max(100, chart.width / chart.viewportWidth * 100)}%` }}
+                    height={chart.height}
+                    viewBox={`0 0 ${chart.width} ${chart.height}`}
+                    role="img"
+                    aria-label="Baby weight history line chart"
+                  >
+                    <line x1="0" y1="196" x2={chart.width} y2="196" stroke="var(--color-warm-brown)" strokeOpacity="0.18" />
+                    {chart.gridLines.map((line) => (
+                      <line key={line.weight} x1="0" y1={line.y} x2={chart.width} y2={line.y} stroke="var(--color-warm-brown)" strokeOpacity="0.10" />
+                    ))}
+                    <polyline fill="none" stroke="var(--color-terracotta)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chart.path} />
+                    {chart.points.map((point) => (
+                      <g key={point.id}>
+                        <circle
+                          cx={point.x}
+                          cy={point.y}
+                          r="16"
+                          fill="transparent"
+                          role="button"
+                          tabIndex={0}
+                          className="cursor-pointer"
+                          onClick={() => setSelectedId(point.id)}
+                          onFocus={() => setSelectedId(point.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedId(point.id);
+                            }
+                          }}
+                          aria-label={`${formatWeight(Number(point.weight_g))} on ${formatDate(Number(point.measured_at))}`}
+                        />
+                        <circle
+                          cx={point.x}
+                          cy={point.y}
+                          r={point.id === selectedPoint?.id ? "6" : "4"}
+                          fill={point.id === selectedPoint?.id ? "var(--color-warm-brown)" : "var(--color-terracotta)"}
+                          pointerEvents="none"
+                        />
+                        <text x={point.x} y="214" textAnchor="middle" fontSize="12" fill="var(--color-text-muted)">
+                          {sgtDateInput(Number(point.measured_at)).slice(5)}
+                        </text>
+                      </g>
+                    ))}
+                  </svg>
+                </div>
               </div>
 
               {selectedPoint && (
