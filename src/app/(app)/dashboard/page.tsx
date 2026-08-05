@@ -784,12 +784,14 @@ export default function DashboardPage() {
   const canGoToPreviousComparisonDay = comparisonMilkDate > earliestMilkDate;
   const canGoToNextComparisonDay = asOfDayOffset < -1;
 
-  // Median of milk consumed "by this time" over the trailing 7 days ending at
-  // the selected comparison day (default: yesterday). Days with no milk logged
-  // are skipped so a missed logging day doesn't drag the typical value down.
-  const medianWindowStart = shiftMilkDate(comparisonMilkDate, -6);
+  // Median of milk consumed "by this time" over the 7 days before today. The
+  // window is anchored to today so it stays fixed when the comparison day is
+  // toggled. Days with no milk logged are skipped so a missed logging day
+  // doesn't drag the typical value down.
+  const medianWindowStart = shiftMilkDate(todayDateKey, -7);
+  const medianWindowEnd = shiftMilkDate(todayDateKey, -1);
   const medianDataDays = milkHistory.filter(
-    (day) => day.date >= medianWindowStart && day.date <= comparisonMilkDate && day.totalMl > 0
+    (day) => day.date >= medianWindowStart && day.date <= medianWindowEnd && day.totalMl > 0
   );
   const asOfMedianMl = medianDataDays.length > 0
     ? median(medianDataDays.map((day) => day.asOfNowMl))
