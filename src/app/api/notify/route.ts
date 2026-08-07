@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { generateId } from "@/lib/utils";
-import webpush from "web-push";
 
 export const runtime = "nodejs";
 
@@ -11,6 +10,9 @@ function median(arr: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+// Detector only: finds overdue households and enqueues notification jobs.
+// Actual web-push sending happens in the VPS worker (worker/), which claims
+// jobs from notification_queue, enforces rate limits, and handles retries.
 async function handleNotify(request: NextRequest) {
   const cronSecret = request.headers.get("authorization")?.replace("Bearer ", "");
   const queryKey = new URL(request.url).searchParams.get("key");
@@ -21,15 +23,9 @@ async function handleNotify(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } = process.env;
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !VAPID_SUBJECT) {
-    return NextResponse.json({ error: "VAPID not configured" }, { status: 503 });
-  }
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-
   const db = createDB();
   const households = await db.execute({ sql: "SELECT id FROM households", args: [] });
-  const sent: string[] = [];
+  const queued: string[] = [];
 
   for (const hh of households.rows) {
     const hhId = hh.id as string;
@@ -42,6 +38,13 @@ async function handleNotify(request: NextRequest) {
       const lastSent = Number(recentLog.rows[0].sent_at);
       if (Date.now() - lastSent < 30 * 60 * 1000) continue;
     }
+
+    // Skip if an overdue job is already waiting in the queue for this household.
+    const pendingJob = await db.execute({
+      sql: "SELECT id FROM notification_queue WHERE household_id = ? AND kind = 'overdue' AND status IN ('pending', 'claimed') LIMIT 1",
+      args: [hhId],
+    });
+    if (pendingJob.rows.length > 0) continue;
 
     const babies = await db.execute({
       sql: "SELECT id, name FROM babies WHERE household_id = ?",
@@ -76,38 +79,20 @@ async function handleNotify(request: NextRequest) {
     const labels: Record<string, string> = { bottlefeed: "feed", breastfeed: "feed", diaper: "diaper change" };
     const body = `${babyName} may be due for a ${overdueTypes.map((t) => labels[t] || t).join(" and ")}`;
 
-    const subs = await db.execute({
-      sql: "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE household_id = ?",
-      args: [hhId],
-    });
-
-    for (const sub of subs.rows) {
-      try {
-        await webpush.sendNotification(
-          {
-            endpoint: sub.endpoint as string,
-            keys: { p256dh: sub.p256dh as string, auth: sub.auth as string },
-          },
-          JSON.stringify({ title: "mcphee", body, url: "/dashboard" })
-        );
-      } catch (err: unknown) {
-        if ((err as { statusCode?: number }).statusCode === 410) {
-          await db.execute({
-            sql: "DELETE FROM push_subscriptions WHERE household_id = ? AND endpoint = ?",
-            args: [hhId, sub.endpoint],
-          });
-        }
-      }
-    }
-
     await db.execute({
-      sql: "INSERT INTO notification_log (id, household_id, kind, sent_at) VALUES (?, ?, 'overdue', ?)",
-      args: [generateId(), hhId, Date.now()],
+      sql: "INSERT INTO notification_queue (id, household_id, kind, payload, status, attempts, scheduled_at, created_at) VALUES (?, ?, 'overdue', ?, 'pending', 0, ?, ?)",
+      args: [
+        generateId(),
+        hhId,
+        JSON.stringify({ title: "mcphee", body, url: "/dashboard" }),
+        Date.now(),
+        Date.now(),
+      ],
     });
-    sent.push(hhId);
+    queued.push(hhId);
   }
 
-  return NextResponse.json({ sent: sent.length });
+  return NextResponse.json({ queued: queued.length });
 }
 
 export async function GET(request: NextRequest) {

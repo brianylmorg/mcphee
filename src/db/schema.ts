@@ -94,6 +94,25 @@ export const notificationLog = sqliteTable("notification_log", {
   sentAt: integer("sent_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+export const notificationQueue = sqliteTable("notification_queue", {
+  id: text("id").primaryKey(),
+  householdId: text("household_id")
+    .notNull()
+    .references(() => households.id),
+  kind: text("kind").notNull(),
+  payload: text("payload", { mode: "json" }).notNull(),
+  status: text("status").notNull(), // pending | claimed | sent | failed | dead
+  attempts: integer("attempts").notNull().default(0),
+  scheduledAt: integer("scheduled_at", { mode: "timestamp_ms" }).notNull(),
+  claimToken: text("claim_token"),
+  claimExpiresAt: integer("claim_expires_at", { mode: "timestamp_ms" }),
+  processedAt: integer("processed_at", { mode: "timestamp_ms" }),
+  error: text("error"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  index("idx_notification_queue_status_scheduled_at").on(table.status, table.scheduledAt),
+]);
+
 export const paperLogImportBatches = sqliteTable("paper_log_import_batches", {
   id: text("id").primaryKey(),
   householdId: text("household_id")

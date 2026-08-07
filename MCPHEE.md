@@ -52,12 +52,13 @@
 - Chart view (recharts)
 - WHO percentile overlays (Day 2)
 
-### Stage 5 — PWA + Push
+### Stage 5 — PWA + Push ✅
 - Manifest, service worker, standalone mode
 - iOS HCTA prompt
 - Push subscriptions per device
-- Vercel Cron → check overdue → fire push notifications
-- Rate-limit via `notification_log`
+- Vercel Cron (`/api/notify`) → detect overdue → enqueue `notification_queue` job
+- VPS worker (`worker/`) → claim jobs → send web-push, rate-limit, retry
+- Rate-limit via `notification_log` (30 min per household+kind)
 
 ### Stage 6 — Nudges + Fussing Predictor
 - Fussing button → ranked list by overdue score
@@ -84,3 +85,4 @@
 - `measurements`: id, baby_id, measured_at, weight_g, length_mm, head_mm, note, created_at
 - `push_subscriptions`: id, household_id, endpoint, p256dh, auth, label
 - `notification_log`: id, household_id, kind, sent_at
+- `notification_queue`: id, household_id, kind, payload (JSON), status (pending|claimed|sent|failed|dead), attempts, scheduled_at, claim_token, claim_expires_at, processed_at, error, created_at
