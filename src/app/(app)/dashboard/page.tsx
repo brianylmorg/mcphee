@@ -800,6 +800,23 @@ export default function DashboardPage() {
     ? ` (${medianDataDays.length} ${medianDataDays.length === 1 ? "day" : "days"})`
     : "";
 
+  // Signed % difference of today's intake vs a same-time reference total
+  // (comparison day or the 7-day median). Null when the reference is missing
+  // or zero, where a percentage would be meaningless.
+  const todayDeltaPct = (referenceMl: number | null | undefined): string | null => {
+    if (referenceMl == null || referenceMl <= 0) return null;
+    const pct = Math.round(((dailyMilkMl - referenceMl) / referenceMl) * 100);
+    return (pct > 0 ? "+" : "") + pct + "%";
+  };
+  const comparisonDeltaPct = todayDeltaPct(comparisonMilkSummary?.asOfNowMl);
+  const medianDeltaPct = todayDeltaPct(asOfMedianMl);
+  const deltaBadgeClass = (delta: string) =>
+    delta.startsWith("-")
+      ? "bg-danger/10 text-danger"
+      : delta === "0%"
+        ? "bg-surface-muted text-muted"
+        : "bg-success/10 text-success";
+
   const chartMilkDays = [
     ...milkHistory.filter((day) => day.date !== todayDateKey),
     { date: todayDateKey, totalMl: dailyMilkMl, breastmilkMl: dailyBreastmilkMl, formulaMl: dailyFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: dailyMilkMl },
@@ -936,7 +953,15 @@ export default function DashboardPage() {
 
           <div className="mt-2 flex items-center justify-between gap-3">
             <p className="min-w-0 text-left text-xs text-muted">
-              <span className="font-semibold tabular-nums text-warm-brown">{comparisonMilkSummary?.asOfNowMl ?? 0}ml</span>{" "}
+              <span className="font-semibold tabular-nums text-warm-brown">{comparisonMilkSummary?.asOfNowMl ?? 0}ml</span>
+              {comparisonDeltaPct && (
+                <span
+                  title="Today vs this reference"
+                  className={`ml-1.5 inline-flex items-center rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(comparisonDeltaPct)}`}
+                >
+                  {comparisonDeltaPct}
+                </span>
+              )}{" "}
               as of {milkHistoryCutoffLabel} {comparisonMilkDateLabel}
             </p>
             <div className="flex shrink-0 items-center gap-1">
@@ -965,7 +990,15 @@ export default function DashboardPage() {
 
           <div className="mt-1 flex items-center justify-between gap-3">
             <p className="min-w-0 text-left text-xs text-muted">
-              <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>{" "}
+              <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>
+              {medianDeltaPct && (
+                <span
+                  title="Today vs this reference"
+                  className={`ml-1.5 inline-flex items-center rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(medianDeltaPct)}`}
+                >
+                  {medianDeltaPct}
+                </span>
+              )}{" "}
               median · same time, last 7 days{medianDataDayCountLabel}
             </p>
           </div>
