@@ -3,8 +3,9 @@ import { createDB } from "@/db";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
-import { parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
-import { bottleBreastmilkLibraryDeduction, bankAdjustmentMl } from "@/lib/milk-calculation";
+import { parseActivityDetails } from "@/lib/milk-volumes";
+import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
+import { MilkLedgerError, previewAvailableUse, replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
 
 export const runtime = "nodejs";
 
@@ -54,49 +55,29 @@ function validateActivityInput(body: Record<string, unknown>) {
 
 type DB = ReturnType<typeof createDB>;
 
-// Lifetime running balance (pumped minus fed, plus manual bankadjust
-// corrections, over full history), matching the dashboard's breastmilk bank
-// so the two never disagree.
-function replayBankBalance(rows: Array<unknown>): number {
-  const balance = rows.reduce<number>((running, row) => {
-    const typedRow = row as unknown as { type: string; details: string | null };
-    const details = parseActivityDetails(typedRow.details);
-    if (typedRow.type === "pump") {
-      return running + pumpAmount(details);
-    }
-    if (typedRow.type === "bankadjust") {
-      return Math.max(0, running + bankAdjustmentMl(details));
-    }
-    if (typedRow.type === "bottlefeed") {
-      return Math.max(0, running - bottleBreastmilkLibraryDeduction(details));
-    }
-    return running;
-  }, 0);
-
-  return Math.max(0, balance);
-}
-
-// Household-wide lifetime balance (pumped minus fed, plus bankadjust
-// corrections, over full history), matching what the dashboard bank card
-// shows. Feed sufficiency checks and reconciliation both use this household
-// scope so the bank, validation, and reconciliation can never disagree.
-async function breastmilkLibraryForHousehold(
+async function milkLedgerForHousehold(
   db: Pick<DB, "execute">,
   householdId: string,
   excludeActivityId?: string,
-): Promise<number> {
-  let sql = `SELECT a.type, a.details FROM activities a
+): Promise<MilkLedgerActivity[]> {
+  let sql = `SELECT a.id, a.type, a.started_at, a.created_at, a.details FROM activities a
              JOIN babies b ON b.id = a.baby_id
-             WHERE b.household_id = ? AND a.type IN (?, ?, ?)`;
-  const args: Array<string | number> = [householdId, "pump", "bottlefeed", "bankadjust"];
+             WHERE b.household_id = ? AND a.type IN (?, ?, ?, ?, ?, ?)`;
+  const args: Array<string | number> = [householdId, "pump", "bottlefeed", "bankadjust", "bankfreeze", "bankthaw", "bankdiscard"];
   if (excludeActivityId) {
     sql += " AND a.id != ?";
     args.push(excludeActivityId);
   }
-  sql += " ORDER BY a.started_at ASC, a.created_at ASC";
+  sql += " ORDER BY a.started_at ASC, a.created_at ASC, a.id ASC";
 
   const result = await db.execute({ sql, args });
-  return replayBankBalance(result.rows);
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    type: String(row.type),
+    startedAt: Number(row.started_at),
+    createdAt: Number(row.created_at),
+    details: parseActivityDetails(row.details),
+  }));
 }
 
 export async function GET(request: NextRequest) {
@@ -131,6 +112,7 @@ export async function GET(request: NextRequest) {
       FROM activities a
       JOIN babies b ON a.baby_id = b.id
       WHERE b.household_id = ?
+        AND a.type NOT IN ('bankfreeze', 'bankthaw', 'bankdiscard')
     `;
     const args: Array<string | number> = [householdId];
 
@@ -190,11 +172,8 @@ export async function POST(request: NextRequest) {
 
     const db = createDB();
     const isBottlefeed = body.type === "bottlefeed";
-    const [babyError, availableBreastmilkMl, createdBy] = await Promise.all([
+    const [babyError, createdBy] = await Promise.all([
       requireBabyInHousehold(db, body.babyId, householdId),
-      isBottlefeed
-        ? breastmilkLibraryForHousehold(db, householdId)
-        : Promise.resolve(0),
       userNameForHousehold(db, request.cookies.get("mcphee_user")?.value, householdId),
     ]);
     if (babyError) return babyError;
@@ -212,7 +191,8 @@ export async function POST(request: NextRequest) {
 
       const tx = await db.transaction("write");
       try {
-        const currentBankMl = await breastmilkLibraryForHousehold(tx, householdId);
+        const currentEvents = await milkLedgerForHousehold(tx, householdId);
+        const currentBankMl = replayMilkLedger(currentEvents, Date.now()).availableMl;
         const deltaMl = Math.round((targetBankMl - currentBankMl) * 100) / 100;
         if (deltaMl === 0) {
           await tx.commit();
@@ -248,12 +228,47 @@ export async function POST(request: NextRequest) {
     }
 
     if (isBottlefeed) {
-      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(body.details));
-      if (requestedBreastmilkMl > availableBreastmilkMl) {
-        return NextResponse.json(
-          { error: "Breastmilk amount exceeds available breastmilk bank" },
-          { status: 400 }
-        );
+      const tx = await db.transaction("write");
+      try {
+        const ledgerEvents = await milkLedgerForHousehold(tx, householdId);
+        const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(body.details));
+        if (requestedBreastmilkMl > 0) {
+          const preview = previewAvailableUse(ledgerEvents, requestedBreastmilkMl, Number(body.startedAt));
+          if (preview.expiredMl > 0 && body.confirmExpired !== true) {
+            await tx.rollback();
+            return NextResponse.json({
+              error: `This bottle would use ${preview.expiredMl} ml of expired Available milk. Confirm to continue.`,
+              code: "EXPIRED_CONFIRMATION_REQUIRED",
+              expiredMl: preview.expiredMl,
+            }, { status: 409 });
+          }
+          replayMilkLedger([...ledgerEvents, {
+            id: "__candidate_bottle__",
+            type: "bottlefeed",
+            startedAt: Number(body.startedAt),
+            createdAt: Date.now(),
+            details: parseActivityDetails(body.details),
+          }], Date.now());
+        }
+        const activityId = generateId();
+        await tx.execute({
+          sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [activityId, body.babyId, body.type, body.startedAt, body.endedAt || null, JSON.stringify(body.details || {}), Date.now(), createdBy],
+        });
+        await tx.commit();
+        return NextResponse.json({ id: activityId });
+      } catch (error) {
+        try { await tx.rollback(); } catch {}
+          if (error instanceof MilkLedgerError && error.code === "INSUFFICIENT_AVAILABLE") {
+            return NextResponse.json({ error: "Breastmilk amount exceeds available breastmilk bank" }, { status: 400 });
+          }
+          if (error instanceof MilkLedgerError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+          }
+          throw error;
+      } finally {
+        tx.close();
       }
     }
 
@@ -311,6 +326,9 @@ export async function PUT(request: NextRequest) {
     if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Activity not found" }, { status: 404 });
     }
+    if (["bankfreeze", "bankthaw", "bankdiscard"].includes(String(existing.rows[0].type))) {
+      return NextResponse.json({ error: "Bank transfers must be changed through the milk bank" }, { status: 400 });
+    }
 
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
@@ -342,13 +360,46 @@ export async function PUT(request: NextRequest) {
     mergedDetails = { ...mergedDetails, ...body.details };
 
     if (body.type === "bottlefeed") {
-      const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(mergedDetails));
-      const availableBreastmilkMl = await breastmilkLibraryForHousehold(db, householdId, body.id);
-      if (requestedBreastmilkMl > availableBreastmilkMl) {
-        return NextResponse.json(
-          { error: "Breastmilk amount exceeds available breastmilk bank" },
-          { status: 400 }
-        );
+      const tx = await db.transaction("write");
+      try {
+        const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(mergedDetails));
+        const ledgerEvents = await milkLedgerForHousehold(tx, householdId, body.id);
+        if (requestedBreastmilkMl > 0) {
+          const preview = previewAvailableUse(ledgerEvents, requestedBreastmilkMl, Number(body.startedAt));
+          if (preview.expiredMl > 0 && body.confirmExpired !== true) {
+            await tx.rollback();
+            return NextResponse.json({
+              error: `This bottle would use ${preview.expiredMl} ml of expired Available milk. Confirm to continue.`,
+              code: "EXPIRED_CONFIRMATION_REQUIRED",
+              expiredMl: preview.expiredMl,
+            }, { status: 409 });
+          }
+          replayMilkLedger([...ledgerEvents, {
+            id: body.id,
+            type: "bottlefeed",
+            startedAt: Number(body.startedAt),
+            createdAt: Date.now(),
+            details: parseActivityDetails(mergedDetails),
+          }], Date.now());
+        }
+        await tx.execute({
+          sql: `UPDATE activities SET type = ?, started_at = ?, ended_at = ?, details = ?
+                WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+          args: [body.type, body.startedAt, "endedAt" in body ? body.endedAt ?? null : existingRow.ended_at, JSON.stringify(mergedDetails), body.id, householdId],
+        });
+        await tx.commit();
+        return NextResponse.json({ success: true });
+      } catch (error) {
+        try { await tx.rollback(); } catch {}
+          if (error instanceof MilkLedgerError && error.code === "INSUFFICIENT_AVAILABLE") {
+            return NextResponse.json({ error: "Breastmilk amount exceeds available breastmilk bank" }, { status: 400 });
+          }
+          if (error instanceof MilkLedgerError) {
+            return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+          }
+          throw error;
+      } finally {
+        tx.close();
       }
     }
 
@@ -396,12 +447,15 @@ export async function DELETE(request: NextRequest) {
     const db = createDB();
 
     const ownedActivity = await db.execute({
-      sql: `SELECT id FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+      sql: `SELECT id, type FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
       args: [activityId, householdId],
     });
 
     if (ownedActivity.rows.length === 0) {
       return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+    }
+    if (["bankfreeze", "bankthaw", "bankdiscard"].includes(String(ownedActivity.rows[0].type))) {
+      return NextResponse.json({ error: "Bank transfers must be changed through the milk bank" }, { status: 400 });
     }
 
     await db.batch([

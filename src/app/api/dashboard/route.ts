@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
-import { bottleBreastmilkLibraryDeduction, bankAdjustmentMl } from "@/lib/milk-calculation";
+import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { bottleVolumes, parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
-
-const BREASTMILK_BATCH_TTL_MS = 4 * 60 * 60 * 1000;
-// The bank is a lifetime tally: pumped minus fed over full history, replayed as
-// FIFO batches so the batch list always sums to the bank total. The TTL only
-// drives the per-batch expiry badge — it does not remove milk from the bank.
+import { replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
 
 const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Singapore",
@@ -15,16 +11,6 @@ const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 });
-
-type PumpedMilkBatch = {
-  id: string;
-  pumpedAt: number;
-  amountMl: number;
-  remainingMl: number;
-  expiresAt: number;
-  isExpired: boolean;
-  isAdjustment?: boolean;
-};
 
 export const runtime = "nodejs";
 
@@ -61,6 +47,7 @@ export async function GET(request: NextRequest) {
               FROM activities a
               JOIN babies b ON a.baby_id = b.id
               WHERE b.household_id = ?
+                AND a.type NOT IN ('bankfreeze', 'bankthaw', 'bankdiscard')
               ORDER BY a.started_at DESC LIMIT 50`,
         args: [householdId],
       },
@@ -95,9 +82,9 @@ export async function GET(request: NextRequest) {
         sql: `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
               JOIN babies b ON a.baby_id = b.id
               WHERE b.household_id = ?
-                AND a.type IN (?, ?, ?)
+                AND a.type IN (?, ?, ?, ?, ?, ?)
               ORDER BY a.started_at ASC, a.created_at ASC`,
-        args: [householdId, "bottlefeed", "pump", "bankadjust"],
+        args: [householdId, "bottlefeed", "pump", "bankadjust", "bankfreeze", "bankthaw", "bankdiscard"],
       },
       {
         sql: "SELECT name FROM users WHERE household_id = ?",
@@ -128,71 +115,34 @@ export async function GET(request: NextRequest) {
     }, { breastmilkMl: 0, formulaMl: 0, pumpedMl: 0 });
     const dailyMilkMl = dailyMilkTotals.breastmilkMl + dailyMilkTotals.formulaMl;
 
-    const pumpedTotals = pumpedLedger.rows.reduce((total, row) => {
+    const ledgerEvents: MilkLedgerActivity[] = pumpedLedger.rows.map((row) => {
       const typedRow = row as unknown as { id: string; type: string; details: string | null; started_at?: number; created_at?: number };
-      const details = parseActivityDetails(typedRow.details);
-      if (typedRow.type === "pump") {
-        const amount = pumpAmount(details);
-        const pumpedAt = Number(typedRow.started_at) || Number(typedRow.created_at) || 0;
-        total.pumpedMl += amount;
-        if (amount > 0 && pumpedAt > 0) {
-          total.batches.push({
-            id: typedRow.id,
-            pumpedAt,
-            amountMl: amount,
-            remainingMl: amount,
-            expiresAt: pumpedAt + BREASTMILK_BATCH_TTL_MS,
-            isExpired: pumpedAt + BREASTMILK_BATCH_TTL_MS <= now.getTime(),
-          });
-          total.lastPumpMl = amount;
-          total.lastPumpAt = pumpedAt;
-        }
-        return total;
-      }
-
-      let remainingDeductionMl: number;
-      if (typedRow.type === "bankadjust") {
-        const deltaMl = bankAdjustmentMl(details);
-        if (deltaMl > 0) {
-          const adjustedAt = Number(typedRow.started_at) || Number(typedRow.created_at) || 0;
-          if (adjustedAt > 0) {
-            // Virtual batch from a reconciliation top-up; feeds drain it FIFO
-            // like real milk, but it never gets an expiry badge.
-            total.batches.push({
-              id: typedRow.id,
-              pumpedAt: adjustedAt,
-              amountMl: deltaMl,
-              remainingMl: deltaMl,
-              expiresAt: adjustedAt + BREASTMILK_BATCH_TTL_MS,
-              isExpired: false,
-              isAdjustment: true,
-            });
-          }
-          return total;
-        }
-        // Negative correction: drain batches FIFO, but it is not consumption.
-        remainingDeductionMl = -deltaMl;
-        for (const batch of total.batches) {
-          if (remainingDeductionMl <= 0) break;
-          const deductedMl = Math.min(batch.remainingMl, remainingDeductionMl);
-          batch.remainingMl -= deductedMl;
-          remainingDeductionMl -= deductedMl;
-        }
-        return total;
-      }
-
-      remainingDeductionMl = bottleBreastmilkLibraryDeduction(details);
-      for (const batch of total.batches) {
-        if (remainingDeductionMl <= 0) break;
-        const deductedMl = Math.min(batch.remainingMl, remainingDeductionMl);
-        batch.remainingMl -= deductedMl;
-        remainingDeductionMl -= deductedMl;
-        total.breastmilkConsumedMl += deductedMl;
-      }
-      return total;
-    }, { pumpedMl: 0, breastmilkConsumedMl: 0, lastPumpMl: 0, lastPumpAt: null as number | null, batches: [] as PumpedMilkBatch[] });
-    const pumpedMilkBatches = pumpedTotals.batches.filter((batch) => batch.remainingMl > 0);
-    const pumpedWalletMl = pumpedMilkBatches.reduce((total, batch) => total + batch.remainingMl, 0);
+      return {
+        id: String(typedRow.id),
+        type: String(typedRow.type),
+        startedAt: Number(typedRow.started_at),
+        createdAt: Number(typedRow.created_at),
+        details: parseActivityDetails(typedRow.details),
+      };
+    });
+    const bankState = replayMilkLedger(ledgerEvents, now.getTime());
+    const pumpEvents = ledgerEvents.filter((event) => event.type === "pump");
+    const latestPump = pumpEvents[pumpEvents.length - 1];
+    const totalPumpedMl = pumpEvents.reduce((sum, event) => sum + pumpAmount(event.details), 0);
+    const breastmilkConsumedMl = ledgerEvents
+      .filter((event) => event.type === "bottlefeed")
+      .reduce((sum, event) => sum + bottleBreastmilkLibraryDeduction(event.details), 0);
+    const pumpedMilkBatches = bankState.availableBatches.map((batch) => ({
+      id: batch.id,
+      addedAt: batch.addedAt,
+      pumpedAt: batch.addedAt,
+      amountMl: batch.amountMl,
+      remainingMl: batch.remainingMl,
+      expiresAt: batch.expiresAt,
+      isExpired: batch.expiresAt != null && batch.expiresAt <= now.getTime(),
+      isAdjustment: batch.source === "adjustment",
+      source: batch.source,
+    }));
     const latestWeightG = Number((measurements.rows[0] as { weight_g?: unknown } | undefined)?.weight_g);
     const expectedMilkMl = Number.isFinite(latestWeightG)
       ? Math.round((latestWeightG / 1000) * 150)
@@ -223,11 +173,16 @@ export async function GET(request: NextRequest) {
         expectedMl: expectedMilkMl,
       },
       pumpedMilk: {
-        walletMl: pumpedWalletMl,
-        totalPumpedMl: pumpedTotals.pumpedMl,
-        breastmilkConsumedMl: pumpedTotals.breastmilkConsumedMl,
-        lastPumpMl: pumpedTotals.lastPumpMl,
-        lastPumpAt: pumpedTotals.lastPumpAt,
+        walletMl: bankState.availableMl,
+        availableMl: bankState.availableMl,
+        expiredAvailableMl: bankState.expiredAvailableMl,
+        frozenMl: bankState.frozenMl,
+        frozenPackets: bankState.frozenPackets,
+        bankHistory: bankState.history,
+        totalPumpedMl,
+        breastmilkConsumedMl,
+        lastPumpMl: latestPump ? pumpAmount(latestPump.details) : 0,
+        lastPumpAt: latestPump?.startedAt ?? null,
         batches: pumpedMilkBatches,
       },
     });

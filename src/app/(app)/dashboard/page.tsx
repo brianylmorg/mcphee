@@ -4,12 +4,16 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Plus, Scale, Sun, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Plus, Scale, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
 import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk-calculation";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
+import { SleepStateControl } from "@/components/SleepStateControl";
+import { MilkBank } from "@/components/MilkBank";
+import type { SleepUndoToken } from "@/lib/sleep-transition";
+import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
 
 interface Baby {
   id: string;
@@ -46,12 +50,8 @@ interface MilkDaySummary {
   asOfNowMl: number;
 }
 
-interface PumpedMilkBatch {
-  id: string;
+interface PumpedMilkBatch extends AvailableMilkBatch {
   pumpedAt: number;
-  amountMl: number;
-  remainingMl: number;
-  expiresAt: number;
   isExpired: boolean;
   isAdjustment?: boolean;
 }
@@ -103,28 +103,6 @@ function LiveTimerStatus({ startedAt }: { startedAt: number }) {
   );
 }
 
-function SleepStatus({ state, since }: Pick<SleepState, "state" | "since">) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
-  const elapsed = since == null ? null : Math.max(0, now - since);
-  return (
-    <div className="flex items-center gap-3">
-      {state === "sleeping"
-        ? <Moon aria-hidden="true" className="h-7 w-7 text-accent-strong" />
-        : <Sun aria-hidden="true" className="h-7 w-7 text-accent-strong" />}
-      <div>
-        <p className="text-sm text-muted">{state === "sleeping" ? "Sleeping" : "Awake"}</p>
-        <p className={`font-display font-semibold tabular-nums ${state === "sleeping" ? "text-4xl text-info" : "text-2xl text-accent-strong"}`}>
-          {elapsed == null ? "Not timed yet" : formatElapsed(elapsed)}
-        </p>
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardPage() {
   const { householdId, userId, userName, setHouseholdId, setUserId } = useHousehold();
   const router = useRouter();
@@ -144,6 +122,9 @@ export default function DashboardPage() {
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
   const [sleepState, setSleepState] = useState<SleepState>({ state: "awake", since: null, activity: null });
   const [isChangingSleepState, setIsChangingSleepState] = useState(false);
+  const [sleepUndo, setSleepUndo] = useState<{ token: SleepUndoToken; message: string } | null>(null);
+  const [sleepNotice, setSleepNotice] = useState<string | null>(null);
+  const sleepUndoTimerRef = useRef<number | null>(null);
   const [isEditingSleepSince, setIsEditingSleepSince] = useState(false);
   const [sleepSinceInput, setSleepSinceInput] = useState("");
   const [breastfeedPromptShown, setBreastfeedPromptShown] = useState(false);
@@ -158,6 +139,10 @@ export default function DashboardPage() {
   const [dailyFormulaMl, setDailyFormulaMl] = useState(0);
   const [breastmilkLibraryMl, setBreastmilkLibraryMl] = useState(0);
   const [breastmilkBatches, setBreastmilkBatches] = useState<PumpedMilkBatch[]>([]);
+  const [expiredAvailableMl, setExpiredAvailableMl] = useState(0);
+  const [frozenMilkMl, setFrozenMilkMl] = useState(0);
+  const [frozenPackets, setFrozenPackets] = useState<FrozenMilkPacket[]>([]);
+  const [bankHistory, setBankHistory] = useState<MilkBankHistoryItem[]>([]);
   const [lastPumpedMl, setLastPumpedMl] = useState(0);
   const [lastPumpedAt, setLastPumpedAt] = useState<number | null>(null);
   const [expectedDailyMilkMl, setExpectedDailyMilkMl] = useState<number | null>(null);
@@ -175,9 +160,6 @@ export default function DashboardPage() {
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [isActivityFilterLoading, setIsActivityFilterLoading] = useState(false);
   const [activityFilterRefresh, setActivityFilterRefresh] = useState(0);
-  const [showReconcileBank, setShowReconcileBank] = useState(false);
-  const [reconcileBankMl, setReconcileBankMl] = useState("");
-  const [isReconcilingBank, setIsReconcilingBank] = useState(false);
 
   const sgtDateKey = (offsetDays = 0): string => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -343,6 +325,10 @@ export default function DashboardPage() {
       setDailyFormulaMl(Number(data.dailyMilk?.formulaMl ?? 0));
       setBreastmilkLibraryMl(Number(data.pumpedMilk?.walletMl ?? 0));
       setBreastmilkBatches(Array.isArray(data.pumpedMilk?.batches) ? data.pumpedMilk.batches : []);
+      setExpiredAvailableMl(Number(data.pumpedMilk?.expiredAvailableMl ?? 0));
+      setFrozenMilkMl(Number(data.pumpedMilk?.frozenMl ?? 0));
+      setFrozenPackets(Array.isArray(data.pumpedMilk?.frozenPackets) ? data.pumpedMilk.frozenPackets : []);
+      setBankHistory(Array.isArray(data.pumpedMilk?.bankHistory) ? data.pumpedMilk.bankHistory : []);
       setLastPumpedMl(Number(data.pumpedMilk?.lastPumpMl ?? 0));
       const lastPumpAt = Number(data.pumpedMilk?.lastPumpAt);
       setLastPumpedAt(Number.isFinite(lastPumpAt) && lastPumpAt > 0 ? lastPumpAt : null);
@@ -536,55 +522,68 @@ export default function DashboardPage() {
     }
   };
 
-  const handleReconcileBank = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const targetBankMl = Number(reconcileBankMl);
-    if (reconcileBankMl.trim() === "" || !Number.isFinite(targetBankMl) || targetBankMl < 0) {
-      alert("Enter the actual amount of milk on hand, in ml.");
-      return;
-    }
-    if (!baby?.id || isReconcilingBank) return;
-    setIsReconcilingBank(true);
-    try {
-      const res = await fetch("/api/activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          babyId: baby.id,
-          type: "bankadjust",
-          startedAt: Date.now(),
-          details: { targetBankMl },
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to reconcile bank");
-      setShowReconcileBank(false);
-      setReconcileBankMl("");
-      await fetchData();
-      setActivityFilterRefresh((value) => value + 1);
-    } catch (error) {
-      console.error("Reconcile bank error:", error);
-      alert(error instanceof Error ? error.message : "Could not reconcile the bank. Try again.");
-    } finally {
-      setIsReconcilingBank(false);
-    }
+  useEffect(() => () => {
+    if (sleepUndoTimerRef.current != null) window.clearTimeout(sleepUndoTimerRef.current);
+  }, []);
+
+  const showSleepUndo = (token: SleepUndoToken, message: string) => {
+    if (sleepUndoTimerRef.current != null) window.clearTimeout(sleepUndoTimerRef.current);
+    setSleepNotice(null);
+    setSleepUndo({ token, message });
+    sleepUndoTimerRef.current = window.setTimeout(() => {
+      setSleepUndo(null);
+      sleepUndoTimerRef.current = null;
+    }, 10_000);
   };
 
-  const handleSleepTransition = async () => {
-    if (!baby?.id || isChangingSleepState) return;
+  const handleSleepTransition = async (target: "awake" | "sleeping") => {
+    if (!baby?.id || isChangingSleepState || target === sleepState.state) return;
     setIsChangingSleepState(true);
     try {
       const res = await fetch("/api/sleep-state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ babyId: baby.id, action: sleepState.state === "awake" ? "sleep" : "wake" }),
+        body: JSON.stringify({ babyId: baby.id, action: target === "sleeping" ? "sleep" : "wake" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not update sleep state");
+      if (data.undoToken) {
+        showSleepUndo(data.undoToken as SleepUndoToken, target === "sleeping" ? "Sleep started" : "Marked awake");
+      }
       await fetchData();
       setActivityFilterRefresh((value) => value + 1);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Could not update sleep state. Try again.");
+      await fetchData();
+    } finally {
+      setIsChangingSleepState(false);
+    }
+  };
+
+  const handleUndoSleep = async () => {
+    if (!baby?.id || !sleepUndo || isChangingSleepState) return;
+    const pending = sleepUndo;
+    if (sleepUndoTimerRef.current != null) window.clearTimeout(sleepUndoTimerRef.current);
+    setSleepUndo(null);
+    setIsChangingSleepState(true);
+    try {
+      const res = await fetch("/api/sleep-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ babyId: baby.id, action: "undo", undoToken: pending.token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSleepNotice(data.code === "STALE_UNDO"
+          ? "Couldn’t undo: the sleep state changed on another device. Latest state loaded."
+          : data.error || "Couldn’t undo the sleep change.");
+      } else {
+        setSleepNotice("Sleep change undone.");
+      }
+      await fetchData();
+      setActivityFilterRefresh((value) => value + 1);
+    } catch {
+      setSleepNotice("Couldn’t undo the sleep change. Latest state loaded.");
       await fetchData();
     } finally {
       setIsChangingSleepState(false);
@@ -1019,18 +1018,13 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
-        <section className="rounded-lg border border-terracotta/30 bg-surface p-4 shadow-sm" aria-label="Sleep status">
-          <div className="flex items-center justify-between gap-4">
-            <SleepStatus state={sleepState.state} since={sleepState.since} />
-            <button
-              type="button"
-              onClick={handleSleepTransition}
-              disabled={isChangingSleepState}
-              className="min-h-11 shrink-0 rounded-lg bg-terracotta-dark px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-warm-brown disabled:opacity-60"
-            >
-              {isChangingSleepState ? "Updating…" : sleepState.state === "awake" ? "Start sleep" : "Wake up"}
-            </button>
-          </div>
+        <section className="rounded-2xl border border-terracotta/25 bg-surface p-4 shadow-sm" aria-label="Sleep status">
+          <SleepStateControl
+            state={sleepState.state}
+            since={sleepState.since}
+            disabled={isChangingSleepState}
+            onSelect={handleSleepTransition}
+          />
           {sleepState.since != null && sleepState.activity && (
             isEditingSleepSince ? (
               <div className="mt-3 flex flex-wrap items-end gap-2">
@@ -1185,87 +1179,21 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="mt-4 border-t border-border pt-3">
-            <div className="flex items-baseline justify-between gap-4">
-              <p className="text-sm font-medium text-muted">Breastmilk bank</p>
-              <div className="flex items-center gap-1">
-                <p className="font-display text-lg tabular-nums text-warm-brown">{breastmilkLibraryMl} ml</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReconcileBankMl(String(breastmilkLibraryMl));
-                    setShowReconcileBank((value) => !value);
-                  }}
-                  aria-label="Reconcile breastmilk bank"
-                  title="Reconcile bank with the actual amount on hand"
-                  className="flex h-11 w-11 items-center justify-center rounded-full text-accent-strong transition-colors hover:bg-surface-muted"
-                >
-                  <Scale aria-hidden="true" className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-            {showReconcileBank && (
-              <form onSubmit={handleReconcileBank} className="mt-3 flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputMode="decimal"
-                  autoFocus
-                  value={reconcileBankMl}
-                  onChange={(event) => setReconcileBankMl(event.target.value)}
-                  placeholder="Actual ml on hand"
-                  aria-label="Actual breastmilk on hand in ml"
-                  className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm tabular-nums text-warm-brown focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40"
-                />
-                <button
-                  type="submit"
-                  disabled={isReconcilingBank}
-                  className="shrink-0 rounded-lg bg-terracotta px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-terracotta-dark disabled:opacity-50"
-                >
-                  {isReconcilingBank ? "Saving…" : "Set"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowReconcileBank(false)}
-                  className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm text-muted transition-colors hover:bg-surface-muted"
-                >
-                  Cancel
-                </button>
-              </form>
-            )}
-            {breastmilkBatches.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {breastmilkBatches.map((batch) => (
-                  <div
-                    key={batch.id}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-cream px-3 py-2 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium tabular-nums text-warm-brown">
-                        {Math.round(batch.remainingMl * 100) / 100} ml
-                      </p>
-                      <p className="text-xs text-muted">
-                        {batch.isAdjustment
-                          ? `Bank adjustment · ${formatTime(batch.pumpedAt)}`
-                          : `Pumped ${formatTime(batch.pumpedAt)} · expires ${formatTime(batch.expiresAt)}`}
-                      </p>
-                    </div>
-                    {batch.isExpired && (
-                      <span
-                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/10 px-2 py-1 text-xs font-medium text-warning"
-                        aria-label="Expired breastmilk batch"
-                        title="Expired breastmilk batch"
-                      >
-                        <TriangleAlert aria-hidden="true" className="h-3.5 w-3.5" />
-                        Expired
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {baby?.id && (
+            <MilkBank
+              babyId={baby.id}
+              availableMl={breastmilkLibraryMl}
+              expiredAvailableMl={expiredAvailableMl}
+              availableBatches={breastmilkBatches}
+              frozenMl={frozenMilkMl}
+              frozenPackets={frozenPackets}
+              history={bankHistory}
+              onChanged={async () => {
+                await fetchData();
+                setActivityFilterRefresh((value) => value + 1);
+              }}
+            />
+          )}
 
 
         </section>
@@ -1762,6 +1690,36 @@ export default function DashboardPage() {
         />
       )}
 
+      {(sleepUndo || sleepNotice) && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-between gap-3 rounded-2xl bg-warm-brown px-4 py-3 text-sm text-white shadow-xl"
+        >
+          <span>{sleepUndo?.message ?? sleepNotice}</span>
+          {sleepUndo && (
+            <button
+              type="button"
+              onClick={handleUndoSleep}
+              disabled={isChangingSleepState}
+              className="min-h-11 shrink-0 rounded-xl bg-white/15 px-4 font-semibold text-white transition-colors hover:bg-white/25 disabled:opacity-50"
+            >
+              Undo
+            </button>
+          )}
+          {!sleepUndo && (
+            <button
+              type="button"
+              onClick={() => setSleepNotice(null)}
+              aria-label="Dismiss sleep message"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/80 hover:bg-white/10"
+            >
+              <X aria-hidden="true" className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
+
       </main>
   );
 }
@@ -2073,22 +2031,36 @@ function LogModal({
     details.notes = notes.trim() || null;
 
     try {
-      const res = await fetch("/api/activities", {
-        method: isEditing && activity ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const activityPayload = {
           ...(isEditing && activity ? { id: activity.id } : { userId }),
           babyId,
           type,
           startedAt,
           ...(type === "sleep" && isEditing ? { endedAt } : {}),
           details,
-        }),
+      };
+      const save = (confirmExpired = false) => fetch("/api/activities", {
+        method: isEditing && activity ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...activityPayload, ...(confirmExpired ? { confirmExpired: true } : {}) }),
       });
+      let res = await save();
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save activity");
+        if (type === "bottlefeed" && data.code === "EXPIRED_CONFIRMATION_REQUIRED") {
+          const confirmed = window.confirm(
+            `This bottle reaches ${Number(data.expiredMl) || "some"} ml of expired Available milk. Use it anyway?`,
+          );
+          if (!confirmed) return;
+          res = await save(true);
+          if (!res.ok) {
+            const confirmedData = await res.json().catch(() => ({}));
+            throw new Error(confirmedData.error || "Failed to save activity");
+          }
+        } else {
+          throw new Error(data.error || "Failed to save activity");
+        }
       }
 
       onSuccess();

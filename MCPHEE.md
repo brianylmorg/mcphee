@@ -47,6 +47,14 @@
 - Safety prompt at 2h runtime (amber "Safety check" badge)
 - Stop & log atomically creates activity entry with full side history
 
+### Sleep state + breastmilk bank
+- Sleep uses an `Awake | Sleeping` state control. Transitions are immediate; the 10-second undo token is accepted only while that exact transition remains the newest server-side sleep change.
+- Breastmilk is replayed as an auditable FIFO ledger with separate **Available** and **Frozen** balances. Existing pump/feed/`bankadjust` history remains Available; no data migration is required.
+- Pump and thaw batches expire from Available after 4 hours, but expired milk stays visible and requires confirmation when a bottle or freeze reaches it.
+- `bankfreeze`, `bankthaw`, and `bankdiscard` activities are hidden from the baby timeline and shown in dedicated bank history. A freeze creates one indivisible packet; thaw and discard always address the whole packet.
+- Frozen expiry is three calendar months from the recorded freeze time in `Asia/Singapore`. Month-end dates clamp to the target month’s last day (for example, 31 January → 30 April) while preserving local time.
+- Frozen reconciliation is packet-based: add, correct, or safely remove explicit packets. Transfer edits replay all later events and are rejected if they make a balance or packet state impossible.
+
 ### Stage 4 — Growth Tracking
 - Weight (g), length (mm), optional head (mm), backdatable
 - Chart view (recharts)
@@ -74,7 +82,9 @@
 - One-tap logging is #1 priority
 
 ## Activity Types
-`bottlefeed` | `breastfeed` | `pump` | `diaper` | `vomit`
+Main timeline: `bottlefeed` | `breastfeed` | `pump` | `diaper` | `vomit` | `sleep` | `note` | `temperature`
+
+Bank-only ledger: `bankadjust` | `bankfreeze` | `bankthaw` | `bankdiscard`
 
 ## Database Schema
 - `households`: id, invite_code (unique), created_at
