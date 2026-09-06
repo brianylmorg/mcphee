@@ -34,7 +34,7 @@ export const activities = sqliteTable("activities", {
   babyId: text("baby_id")
     .notNull()
     .references(() => babies.id),
-  type: text("type").notNull(), // bottlefeed | breastfeed | pump | diaper
+  type: text("type").notNull(), // bottlefeed | breastfeed | pump | diaper | vomit | sleep | bankadjust | note | temperature
   startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
   endedAt: integer("ended_at", { mode: "timestamp_ms" }),
   details: text("details", { mode: "json" }),

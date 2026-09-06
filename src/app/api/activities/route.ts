@@ -8,7 +8,7 @@ import { bottleBreastmilkLibraryDeduction, bankAdjustmentMl } from "@/lib/milk-c
 
 export const runtime = "nodejs";
 
-const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "bankadjust"]);
+const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "bankadjust", "note", "temperature"]);
 
 function isValidTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -24,6 +24,26 @@ function validateActivityInput(body: Record<string, unknown>) {
   }
   if (body.details != null && (typeof body.details !== "object" || Array.isArray(body.details))) {
     return "details must be an object";
+  }
+  if ((body.type === "note" || body.type === "temperature") && Number(body.startedAt) > Date.now()) {
+    return "startedAt cannot be in the future";
+  }
+  const details = (body.details ?? {}) as Record<string, unknown>;
+  if (typeof details.notes === "string" && details.notes.length > 500) {
+    return "Notes must be 500 characters or fewer";
+  }
+  if (body.type === "note" && (typeof details.notes !== "string" || !details.notes.trim())) {
+    return "Note text is required";
+  }
+  if (body.type === "temperature") {
+    const celsius = Number(details.celsius);
+    if (!Number.isFinite(celsius) || celsius < 30 || celsius > 45) {
+      return "Temperature must be between 30 and 45 °C";
+    }
+    const methods = new Set(["armpit", "ear", "oral", "rectal", "forehead", "other"]);
+    if (details.method != null && details.method !== "" && !methods.has(String(details.method))) {
+      return "Invalid temperature measurement method";
+    }
   }
   return null;
 }

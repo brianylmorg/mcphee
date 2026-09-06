@@ -178,6 +178,18 @@ function displayFields(type: unknown, details: Record<string, unknown>) {
     };
   }
 
+  if (type === "temperature") {
+    const methods: Record<string, string> = {
+      armpit: "Armpit", ear: "Ear", oral: "Oral", rectal: "Rectal", forehead: "Forehead", other: "Other",
+    };
+    const celsius = Number(details.celsius);
+    return {
+      activity: "Temperature",
+      subcategory: methods[String(details.method)] || "",
+      quantity: Number.isFinite(celsius) ? celsius + " °C" : "",
+    };
+  }
+
   return { activity: activityLabel(type), subcategory: "", quantity: "" };
 }
 
@@ -238,6 +250,8 @@ export async function GET(request: NextRequest) {
       "pee_units",
       "poop_size",
       "vomit_type",
+      "temperature_celsius",
+      "temperature_method",
       "raw_details",
     ];
 
@@ -267,6 +281,8 @@ export async function GET(request: NextRequest) {
         peeUnitsLabel(details.peeUnits ?? details.peeSize),
         details.poop,
         details.vomitType,
+        details.celsius,
+        details.method,
         JSON.stringify(details),
       ].map(csvCell).join(",");
     });

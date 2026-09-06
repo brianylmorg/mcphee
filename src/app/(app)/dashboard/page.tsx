@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Pencil, Plus, Scale, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, NotebookPen, Pencil, Plus, Scale, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -158,7 +158,7 @@ export default function DashboardPage() {
     setSelectedMilkDate((current) => current || todayDateKey);
   }, [todayDateKey]);
   const isActivityFiltered = Boolean(activityDateFilter || activityTypeFilters.length > 0);
-  const activityActionTypes = ["bottlefeed", "breastfeed", "pump", "diaper", "vomit"];
+  const activityActionTypes = ["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "note", "temperature"];
   const activityIcons: Record<string, LucideIcon> = {
     bottlefeed: Milk,
     breastfeed: Heart,
@@ -166,6 +166,8 @@ export default function DashboardPage() {
     diaper: BabyIcon,
     vomit: TriangleAlert,
     bankadjust: Scale,
+    note: NotebookPen,
+    temperature: Thermometer,
   };
 
   const activityTypeOptions = [
@@ -174,6 +176,8 @@ export default function DashboardPage() {
     { value: "pump", label: "Pump" },
     { value: "diaper", label: "Diaper" },
     { value: "vomit", label: "Vomit" },
+    { value: "note", label: "Note" },
+    { value: "temperature", label: "Temperature" },
   ];
 
   const selectedActivityTypeLabels = activityTypeOptions
@@ -710,6 +714,22 @@ export default function DashboardPage() {
           title: "Bank adjustment",
           subcategory: Number.isFinite(target) ? `Reconciled to ${target} ml` : "",
           quantity: Number.isFinite(amount) && amount !== 0 ? `${amount > 0 ? "+" : ""}${amount} ml` : "",
+        };
+      }
+      case "temperature": {
+        const celsius = Number(d.celsius);
+        const methods: Record<string, string> = {
+          armpit: "Armpit",
+          ear: "Ear",
+          oral: "Oral",
+          rectal: "Rectal",
+          forehead: "Forehead",
+          other: "Other",
+        };
+        return {
+          title: "Temperature",
+          subcategory: methods[String(d.method)] || "",
+          quantity: Number.isFinite(celsius) ? `${celsius} °C` : "",
         };
       }
       default:
@@ -1710,6 +1730,12 @@ function LogModal({
     if (typeof detailsObj.note === "string") return detailsObj.note;
     return "";
   });
+  const [temperature, setTemperature] = useState(
+    isEditing && detailsObj.celsius != null ? String(detailsObj.celsius) : ""
+  );
+  const [temperatureMethod, setTemperatureMethod] = useState(
+    isEditing && detailsObj.method ? String(detailsObj.method) : ""
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   // Custom time picker state (hour/minute as numbers, 24h)
@@ -1751,6 +1777,11 @@ function LogModal({
   const bottlefeedBreastmilkOverLimit = type === "bottlefeed" && bottleBreastmilkLibraryDeductionMl > availableBreastmilkMl;
   const pumpEffectiveAmount = type === "pump" ? evaluateMlExpression(amount) : null;
   const pumpHasInvalidAmount = type === "pump" && amount.trim() !== "" && pumpEffectiveAmount == null;
+  const temperatureValue = Number(temperature);
+  const temperatureIsInvalid = type === "temperature" && (
+    !Number.isFinite(temperatureValue) || temperatureValue < 30 || temperatureValue > 45
+  );
+  const noteIsInvalid = type === "note" && !notes.trim();
   const pumpAgeLabel = (timestamp: number | null) => {
     if (!timestamp) return "";
     const hours = Math.max(0, (Date.now() - timestamp) / (60 * 60 * 1000));
@@ -1765,6 +1796,14 @@ function LogModal({
   const handleSubmit = async () => {
     if (bottlefeedHasInvalidAmount || pumpHasInvalidAmount) {
       alert("Enter a valid amount, such as 90 or 90-50.");
+      return;
+    }
+    if (noteIsInvalid) {
+      alert("Enter a note.");
+      return;
+    }
+    if (temperatureIsInvalid) {
+      alert("Enter a temperature between 30 and 45 °C.");
       return;
     }
     if (bottlefeedBreastmilkOverLimit) {
@@ -1786,6 +1825,11 @@ function LogModal({
         return;
       }
       startedAt = parsed;
+    }
+    if ((type === "note" || type === "temperature") && startedAt > Date.now()) {
+      alert("Time cannot be in the future.");
+      setIsLoading(false);
+      return;
     }
 
     const details: Record<string, unknown> = {};
@@ -1835,6 +1879,9 @@ function LogModal({
       details.amount = detailsObj.amount;
       details.targetBankMl = detailsObj.targetBankMl;
       details.bankBeforeMl = detailsObj.bankBeforeMl;
+    } else if (type === "temperature") {
+      details.celsius = temperatureValue;
+      details.method = temperatureMethod || null;
     }
     details.notes = notes.trim() || null;
 
@@ -2226,9 +2273,53 @@ function LogModal({
             </div>
           )}
 
+          {type === "temperature" && (
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="temperature-celsius" className="block text-sm font-medium text-warm-brown-light mb-2">
+                  Temperature (°C)
+                </label>
+                <input
+                  id="temperature-celsius"
+                  type="number"
+                  inputMode="decimal"
+                  min="30"
+                  max="45"
+                  step="0.1"
+                  value={temperature}
+                  onChange={(e) => setTemperature(e.target.value)}
+                  placeholder="37.0"
+                  className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-warm-brown outline-none focus:border-accent-strong"
+                />
+                {temperature !== "" && temperatureIsInvalid && (
+                  <p className="mt-1.5 text-xs font-medium text-danger">Enter a reading between 30 and 45 °C.</p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="temperature-method" className="block text-sm font-medium text-warm-brown-light mb-2">
+                  Measurement method (optional)
+                </label>
+                <select
+                  id="temperature-method"
+                  value={temperatureMethod}
+                  onChange={(e) => setTemperatureMethod(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-warm-brown outline-none focus:border-accent-strong"
+                >
+                  <option value="">Not specified</option>
+                  <option value="armpit">Armpit</option>
+                  <option value="ear">Ear</option>
+                  <option value="oral">Oral</option>
+                  <option value="rectal">Rectal</option>
+                  <option value="forehead">Forehead</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+          )}
+
           <div>
             <label htmlFor="activity-notes" className="block text-sm font-medium text-warm-brown-light mb-2">
-              Notes
+              {type === "note" ? "Note" : "Notes"}
             </label>
             <textarea
               id="activity-notes"
@@ -2236,14 +2327,14 @@ function LogModal({
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               maxLength={500}
-              placeholder="Add a note (optional)"
+              placeholder={type === "note" ? "What happened?" : "Add a note (optional)"}
               className="w-full resize-none rounded-lg border border-border bg-surface px-4 py-3 text-sm text-warm-brown outline-none transition-colors focus:border-accent-strong"
             />
           </div>
 
           <button
             onClick={handleSubmit}
-            disabled={isLoading || bottlefeedBreastmilkOverLimit || bottlefeedHasInvalidAmount || pumpHasInvalidAmount}
+            disabled={isLoading || bottlefeedBreastmilkOverLimit || bottlefeedHasInvalidAmount || pumpHasInvalidAmount || noteIsInvalid || temperatureIsInvalid}
             className="w-full py-4 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
           >
             {isLoading ? "Saving…" : isEditing ? "Save changes" : "Log activity"}
