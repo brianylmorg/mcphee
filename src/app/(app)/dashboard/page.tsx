@@ -29,6 +29,12 @@ interface Activity {
 interface SleepState {
   state: "awake" | "sleeping";
   since: number | null;
+  activity: Activity | null;
+}
+
+interface TimelineActivity extends Activity {
+  sourceActivity?: Activity;
+  sleepEvent?: "start" | "wake";
 }
 
 interface MilkDaySummary {
@@ -97,7 +103,7 @@ function LiveTimerStatus({ startedAt }: { startedAt: number }) {
   );
 }
 
-function SleepStatus({ state, since }: SleepState) {
+function SleepStatus({ state, since }: Pick<SleepState, "state" | "since">) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
@@ -136,8 +142,10 @@ export default function DashboardPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
-  const [sleepState, setSleepState] = useState<SleepState>({ state: "awake", since: null });
+  const [sleepState, setSleepState] = useState<SleepState>({ state: "awake", since: null, activity: null });
   const [isChangingSleepState, setIsChangingSleepState] = useState(false);
+  const [isEditingSleepSince, setIsEditingSleepSince] = useState(false);
+  const [sleepSinceInput, setSleepSinceInput] = useState("");
   const [breastfeedPromptShown, setBreastfeedPromptShown] = useState(false);
   const [isStartingTimer, setIsStartingTimer] = useState(false);
   const [isStoppingTimer, setIsStoppingTimer] = useState(false);
@@ -320,8 +328,8 @@ export default function DashboardPage() {
         const openSleep = sleeps.find((item: { ended_at?: unknown }) => item.ended_at == null);
         const latestClosed = sleeps.find((item: { ended_at?: unknown }) => item.ended_at != null);
         setSleepState(openSleep
-          ? { state: "sleeping", since: Number(openSleep.started_at) }
-          : { state: "awake", since: latestClosed ? Number(latestClosed.ended_at) : null });
+          ? { state: "sleeping", since: Number(openSleep.started_at), activity: openSleep as Activity }
+          : { state: "awake", since: latestClosed ? Number(latestClosed.ended_at) : null, activity: latestClosed as Activity | null });
       }
       setActivities(data.activities || []);
       if (data.household?.inviteCode) {
@@ -583,6 +591,44 @@ export default function DashboardPage() {
     }
   };
 
+  const startEditingSleepSince = () => {
+    if (sleepState.since == null) return;
+    const date = new Date(sleepState.since + 8 * 60 * 60 * 1000);
+    setSleepSinceInput(date.toISOString().slice(0, 16));
+    setIsEditingSleepSince(true);
+  };
+
+  const saveSleepSince = async () => {
+    if (!baby?.id || !sleepState.activity || !sleepSinceInput) return;
+    const correctedAt = Date.parse(sleepSinceInput + ":00+08:00");
+    if (!Number.isFinite(correctedAt)) return;
+    setIsChangingSleepState(true);
+    try {
+      const activity = sleepState.activity;
+      const res = await fetch("/api/activities", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: activity.id,
+          babyId: baby.id,
+          type: "sleep",
+          startedAt: sleepState.state === "sleeping" ? correctedAt : activity.started_at,
+          endedAt: sleepState.state === "awake" ? correctedAt : null,
+          details: {},
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not correct the start time");
+      setIsEditingSleepSince(false);
+      await fetchData();
+      setActivityFilterRefresh((value) => value + 1);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not correct the start time. Try again.");
+    } finally {
+      setIsChangingSleepState(false);
+    }
+  };
+
   const handleActivityAction = async (type: string) => {
     if (type === "breastfeed" && !activeTimer) {
       if (!breastfeedPromptShown) {
@@ -795,14 +841,19 @@ export default function DashboardPage() {
         };
       }
       case "sleep": {
-        const duration = activity.ended_at == null ? null : Math.max(0, activity.ended_at - activity.started_at);
-        return {
-          title: "Sleep",
-          subcategory: activity.ended_at == null
-            ? `Started ${formatTime(activity.started_at)}`
-            : `${formatTime(activity.started_at)}–${formatTime(activity.ended_at)}`,
-          quantity: duration == null ? "In progress" : formatElapsed(duration),
-        };
+        const timelineActivity = activity as TimelineActivity;
+        if (timelineActivity.sleepEvent === "start") {
+          return { title: "Sleep started", subcategory: "", quantity: "" };
+        }
+        if (timelineActivity.sleepEvent === "wake") {
+          const source = timelineActivity.sourceActivity ?? activity;
+          return {
+            title: "Woke up",
+            subcategory: `Slept ${formatTime(source.started_at)}–${formatTime(Number(source.ended_at))}`,
+            quantity: formatElapsed(Number(source.ended_at) - source.started_at),
+          };
+        }
+        return { title: "Sleep", subcategory: "", quantity: "" };
       }
       default:
         return { title: activityTitle(activity.type), subcategory: "", quantity: "" };
@@ -980,6 +1031,29 @@ export default function DashboardPage() {
               {isChangingSleepState ? "Updating…" : sleepState.state === "awake" ? "Start sleep" : "Wake up"}
             </button>
           </div>
+          {sleepState.since != null && sleepState.activity && (
+            isEditingSleepSince ? (
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="min-w-0 flex-1 text-xs text-muted">
+                  {sleepState.state === "sleeping" ? "Sleep started" : "Awake since"}
+                  <input
+                    aria-label="Current state start time"
+                    type="datetime-local"
+                    value={sleepSinceInput}
+                    onChange={(event) => setSleepSinceInput(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-warm-brown outline-none focus:border-accent-strong"
+                  />
+                </label>
+                <button type="button" onClick={saveSleepSince} disabled={isChangingSleepState} className="min-h-11 rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">Save</button>
+                <button type="button" onClick={() => setIsEditingSleepSince(false)} className="min-h-11 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-warm-brown">Cancel</button>
+              </div>
+            ) : (
+              <button type="button" onClick={startEditingSleepSince} className="mt-2 inline-flex min-h-11 items-center gap-1.5 text-xs font-medium text-accent-strong">
+                <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
+                Edit {sleepState.state === "sleeping" ? "sleep start" : "awake start"} ({formatTime(sleepState.since)})
+              </button>
+            )
+          )}
           {sleepState.since == null && (
             <p className="mt-2 text-xs text-muted">Awake time starts after the first recorded sleep.</p>
           )}
@@ -1341,7 +1415,16 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2">
             {(() => {
-              const visible = filteredActivities;
+              const dateFilter = activityDateFilter || (!showHistory ? todayDateKey : "");
+              const visible: TimelineActivity[] = filteredActivities.flatMap((activity) => {
+                if (activity.type !== "sleep") return [activity];
+                const events: TimelineActivity[] = [{ ...activity, id: `${activity.id}:start`, sleepEvent: "start", sourceActivity: activity }];
+                if (activity.ended_at != null) {
+                  events.push({ ...activity, id: `${activity.id}:wake`, started_at: activity.ended_at, sleepEvent: "wake", sourceActivity: activity });
+                }
+                return events;
+              }).filter((activity) => !dateFilter || new Date(activity.started_at).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" }) === dateFilter)
+                .sort((a, b) => b.started_at - a.started_at);
               const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
               const yesterday = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
 
@@ -1387,7 +1470,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingActivity(activity);
+                          setEditingActivity(activity.sourceActivity ?? activity);
                           setLogType(activity.type);
                           setShowLogModal(true);
                         }}
@@ -1420,7 +1503,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         aria-label={`Delete ${display.title.toLowerCase()} activity`}
-                        onClick={() => setDeleteActivity(activity)}
+                        onClick={() => setDeleteActivity(activity.sourceActivity ?? activity)}
                         className="flex min-h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl text-muted transition-colors hover:bg-red-50 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                         title="Delete"
                       >

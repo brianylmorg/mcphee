@@ -26,8 +26,11 @@ function validateActivityInput(body: Record<string, unknown>) {
   if (body.details != null && (typeof body.details !== "object" || Array.isArray(body.details))) {
     return "details must be an object";
   }
-  if ((body.type === "note" || body.type === "temperature") && Number(body.startedAt) > Date.now() + FUTURE_CLOCK_SKEW_MS) {
+  if ((body.type === "note" || body.type === "temperature" || body.type === "sleep") && Number(body.startedAt) > Date.now() + FUTURE_CLOCK_SKEW_MS) {
     return "startedAt cannot be in the future";
+  }
+  if (body.type === "sleep" && body.endedAt != null && Number(body.endedAt) > Date.now() + FUTURE_CLOCK_SKEW_MS) {
+    return "endedAt cannot be in the future";
   }
   const details = (body.details ?? {}) as Record<string, unknown>;
   if (typeof details.notes === "string" && details.notes.length > 500) {
@@ -144,8 +147,9 @@ export async function GET(request: NextRequest) {
       if (!Number.isFinite(dayStart)) {
         return NextResponse.json({ error: "Invalid date" }, { status: 400 });
       }
-      sql += " AND a.started_at >= ? AND a.started_at < ?";
-      args.push(dayStart, dayStart + 24 * 60 * 60 * 1000);
+      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+      sql += " AND ((a.started_at >= ? AND a.started_at < ?) OR (a.type = 'sleep' AND a.ended_at >= ? AND a.ended_at < ?))";
+      args.push(dayStart, dayEnd, dayStart, dayEnd);
     }
 
     sql += " ORDER BY a.started_at DESC";
