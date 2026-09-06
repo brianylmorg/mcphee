@@ -117,7 +117,7 @@ function SleepStatus({ state, since }: Pick<SleepState, "state" | "since">) {
         : <Sun aria-hidden="true" className="h-7 w-7 text-accent-strong" />}
       <div>
         <p className="text-sm text-muted">{state === "sleeping" ? "Sleeping" : "Awake"}</p>
-        <p className="font-display text-2xl font-semibold tabular-nums text-accent-strong">
+        <p className={`font-display font-semibold tabular-nums ${state === "sleeping" ? "text-4xl text-info" : "text-2xl text-accent-strong"}`}>
           {elapsed == null ? "Not timed yet" : formatElapsed(elapsed)}
         </p>
       </div>
@@ -1019,7 +1019,7 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
-        <section className="rounded-lg border border-terracotta/30 bg-surface p-5 shadow-sm" aria-label="Sleep status">
+        <section className="rounded-lg border border-terracotta/30 bg-surface p-4 shadow-sm" aria-label="Sleep status">
           <div className="flex items-center justify-between gap-4">
             <SleepStatus state={sleepState.state} since={sleepState.since} />
             <button
