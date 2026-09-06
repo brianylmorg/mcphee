@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     const dayStart = Date.parse(sgtDate + "T00:00:00+08:00");
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
 
-    const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger, users] = await db.batch([
+    const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities] = await db.batch([
       {
         sql: "SELECT * FROM babies WHERE household_id = ?",
         args: [householdId],
@@ -101,6 +101,13 @@ export async function GET(request: NextRequest) {
       },
       {
         sql: "SELECT name FROM users WHERE household_id = ?",
+        args: [householdId],
+      },
+      {
+        sql: `SELECT a.id, a.baby_id, a.started_at, a.ended_at
+              FROM activities a JOIN babies b ON b.id = a.baby_id
+              WHERE b.household_id = ? AND a.type = 'sleep'
+              ORDER BY (a.ended_at IS NULL) DESC, COALESCE(a.ended_at, a.started_at) DESC`,
         args: [householdId],
       },
     ], "read");
@@ -205,6 +212,7 @@ export async function GET(request: NextRequest) {
           }
         : null,
       timers: timers.rows,
+      sleepActivities: sleepActivities.rows,
       measurement: measurements.rows[0] ?? null,
       dailyMilk: {
         date: sgtDate,

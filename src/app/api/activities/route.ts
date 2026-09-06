@@ -9,6 +9,7 @@ import { bottleBreastmilkLibraryDeduction, bankAdjustmentMl } from "@/lib/milk-c
 export const runtime = "nodejs";
 
 const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "bankadjust", "note", "temperature"]);
+const FUTURE_CLOCK_SKEW_MS = 2 * 60 * 1000;
 
 function isValidTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -25,7 +26,7 @@ function validateActivityInput(body: Record<string, unknown>) {
   if (body.details != null && (typeof body.details !== "object" || Array.isArray(body.details))) {
     return "details must be an object";
   }
-  if ((body.type === "note" || body.type === "temperature") && Number(body.startedAt) > Date.now()) {
+  if ((body.type === "note" || body.type === "temperature") && Number(body.startedAt) > Date.now() + FUTURE_CLOCK_SKEW_MS) {
     return "startedAt cannot be in the future";
   }
   const details = (body.details ?? {}) as Record<string, unknown>;
@@ -309,6 +310,20 @@ export async function PUT(request: NextRequest) {
 
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
+
+    if (body.type === "sleep") {
+      const sleepEnd = body.endedAt == null ? Number.MAX_SAFE_INTEGER : Number(body.endedAt);
+      const overlap = await db.execute({
+        sql: `SELECT id FROM activities
+              WHERE baby_id = ? AND type = 'sleep' AND id != ?
+                AND started_at < ? AND COALESCE(ended_at, 9223372036854775807) > ?
+              LIMIT 1`,
+        args: [body.babyId, body.id, sleepEnd, body.startedAt],
+      });
+      if (overlap.rows.length > 0) {
+        return NextResponse.json({ error: "Sleep window overlaps an existing sleep window" }, { status: 409 });
+      }
+    }
 
     let mergedDetails = {};
     const existingRow = existing.rows[0] as unknown as { type: string; details: string | null; ended_at: number | null };

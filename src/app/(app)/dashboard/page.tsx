@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, NotebookPen, Pencil, Plus, Scale, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Plus, Scale, Sun, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -21,8 +21,14 @@ interface Activity {
   id: string;
   type: string;
   started_at: number;
+  ended_at?: number | null;
   details: string | Record<string, unknown>; // JSON string from API, parsed client-side
   created_by?: string;
+}
+
+interface SleepState {
+  state: "awake" | "sleeping";
+  since: number | null;
 }
 
 interface MilkDaySummary {
@@ -91,6 +97,28 @@ function LiveTimerStatus({ startedAt }: { startedAt: number }) {
   );
 }
 
+function SleepStatus({ state, since }: SleepState) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+  const elapsed = since == null ? null : Math.max(0, now - since);
+  return (
+    <div className="flex items-center gap-3">
+      {state === "sleeping"
+        ? <Moon aria-hidden="true" className="h-7 w-7 text-accent-strong" />
+        : <Sun aria-hidden="true" className="h-7 w-7 text-accent-strong" />}
+      <div>
+        <p className="text-sm text-muted">{state === "sleeping" ? "Sleeping" : "Awake"}</p>
+        <p className="font-display text-2xl font-semibold tabular-nums text-accent-strong">
+          {elapsed == null ? "Not timed yet" : formatElapsed(elapsed)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { householdId, userId, userName, setHouseholdId, setUserId } = useHousehold();
   const router = useRouter();
@@ -108,6 +136,8 @@ export default function DashboardPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
+  const [sleepState, setSleepState] = useState<SleepState>({ state: "awake", since: null });
+  const [isChangingSleepState, setIsChangingSleepState] = useState(false);
   const [breastfeedPromptShown, setBreastfeedPromptShown] = useState(false);
   const [isStartingTimer, setIsStartingTimer] = useState(false);
   const [isStoppingTimer, setIsStoppingTimer] = useState(false);
@@ -168,6 +198,7 @@ export default function DashboardPage() {
     bankadjust: Scale,
     note: NotebookPen,
     temperature: Thermometer,
+    sleep: Moon,
   };
 
   const activityTypeOptions = [
@@ -178,6 +209,7 @@ export default function DashboardPage() {
     { value: "vomit", label: "Vomit" },
     { value: "note", label: "Note" },
     { value: "temperature", label: "Temperature" },
+    { value: "sleep", label: "Sleep" },
   ];
 
   const selectedActivityTypeLabels = activityTypeOptions
@@ -279,8 +311,17 @@ export default function DashboardPage() {
       dashboardSnapshotRef.current = snapshot;
 
       if (data.babies?.length > 0) {
-        setBaby(data.babies[0]);
-        fetchMilkHistory(String(data.babies[0].id), false);
+        const selectedBaby = data.babies[0];
+        setBaby(selectedBaby);
+        fetchMilkHistory(String(selectedBaby.id), false);
+        const sleeps = Array.isArray(data.sleepActivities)
+          ? data.sleepActivities.filter((item: { baby_id?: unknown }) => String(item.baby_id) === String(selectedBaby.id))
+          : [];
+        const openSleep = sleeps.find((item: { ended_at?: unknown }) => item.ended_at == null);
+        const latestClosed = sleeps.find((item: { ended_at?: unknown }) => item.ended_at != null);
+        setSleepState(openSleep
+          ? { state: "sleeping", since: Number(openSleep.started_at) }
+          : { state: "awake", since: latestClosed ? Number(latestClosed.ended_at) : null });
       }
       setActivities(data.activities || []);
       if (data.household?.inviteCode) {
@@ -521,6 +562,27 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSleepTransition = async () => {
+    if (!baby?.id || isChangingSleepState) return;
+    setIsChangingSleepState(true);
+    try {
+      const res = await fetch("/api/sleep-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ babyId: baby.id, action: sleepState.state === "awake" ? "sleep" : "wake" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not update sleep state");
+      await fetchData();
+      setActivityFilterRefresh((value) => value + 1);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not update sleep state. Try again.");
+      await fetchData();
+    } finally {
+      setIsChangingSleepState(false);
+    }
+  };
+
   const handleActivityAction = async (type: string) => {
     if (type === "breastfeed" && !activeTimer) {
       if (!breastfeedPromptShown) {
@@ -732,6 +794,16 @@ export default function DashboardPage() {
           quantity: Number.isFinite(celsius) ? `${celsius} °C` : "",
         };
       }
+      case "sleep": {
+        const duration = activity.ended_at == null ? null : Math.max(0, activity.ended_at - activity.started_at);
+        return {
+          title: "Sleep",
+          subcategory: activity.ended_at == null
+            ? `Started ${formatTime(activity.started_at)}`
+            : `${formatTime(activity.started_at)}–${formatTime(activity.ended_at)}`,
+          quantity: duration == null ? "In progress" : formatElapsed(duration),
+        };
+      }
       default:
         return { title: activityTitle(activity.type), subcategory: "", quantity: "" };
     }
@@ -896,6 +968,22 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
+        <section className="rounded-lg border border-terracotta/30 bg-surface p-5 shadow-sm" aria-label="Sleep status">
+          <div className="flex items-center justify-between gap-4">
+            <SleepStatus state={sleepState.state} since={sleepState.since} />
+            <button
+              type="button"
+              onClick={handleSleepTransition}
+              disabled={isChangingSleepState}
+              className="min-h-11 shrink-0 rounded-lg bg-terracotta-dark px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-warm-brown disabled:opacity-60"
+            >
+              {isChangingSleepState ? "Updating…" : sleepState.state === "awake" ? "Start sleep" : "Wake up"}
+            </button>
+          </div>
+          {sleepState.since == null && (
+            <p className="mt-2 text-xs text-muted">Awake time starts after the first recorded sleep.</p>
+          )}
+        </section>
         {/* Daily Milk Total */}
         <section className="rounded-lg border border-border bg-surface p-5 shadow-sm">
           <div className="flex items-start justify-between gap-4">
@@ -1650,6 +1738,7 @@ function LogModal({
     };
   };
   const initialSGT = getSGTParts(isEditing && activity ? activity.started_at : undefined);
+  const initialEndSGT = getSGTParts(isEditing && activity?.ended_at ? activity.ended_at : undefined);
   type BottleFeedLine = { milkType: "breastmilk" | "formula"; amount: string };
   const existingBreastmilkAmount = isEditing && type === "bottlefeed"
     ? bottleBreastmilkLibraryDeduction(detailsObj)
@@ -1742,6 +1831,9 @@ function LogModal({
   const [customHour, setCustomHour] = useState(initialSGT.h);
   const [customMinute, setCustomMinute] = useState(initialSGT.m);
   const [customDate, setCustomDate] = useState(initialSGT.date);
+  const [endDate, setEndDate] = useState(initialEndSGT.date);
+  const [endHour, setEndHour] = useState(initialEndSGT.h);
+  const [endMinute, setEndMinute] = useState(initialEndSGT.m);
   const hourOptions = Array.from({ length: 24 }, (_, hour) => hour);
   const minuteOptions = Array.from({ length: 12 }, (_, index) => index * 5);
   const amountPresets = [30, 60, 90, 120, 150, 180];
@@ -1826,10 +1918,22 @@ function LogModal({
       }
       startedAt = parsed;
     }
-    if ((type === "note" || type === "temperature") && startedAt > Date.now()) {
+    if ((type === "note" || type === "temperature") && startedAt > Date.now() + 2 * 60 * 1000) {
       alert("Time cannot be in the future.");
       setIsLoading(false);
       return;
+    }
+
+    let endedAt: number | null | undefined;
+    if (type === "sleep" && isEditing) {
+      endedAt = activity?.ended_at == null
+        ? null
+        : Date.parse(endDate + "T" + pad2(endHour) + ":" + pad2(endMinute) + ":00+08:00");
+      if (endedAt != null && (!Number.isFinite(endedAt) || endedAt < startedAt)) {
+        alert("Wake time must be after sleep time.");
+        setIsLoading(false);
+        return;
+      }
     }
 
     const details: Record<string, unknown> = {};
@@ -1894,6 +1998,7 @@ function LogModal({
           babyId,
           type,
           startedAt,
+          ...(type === "sleep" && isEditing ? { endedAt } : {}),
           details,
         }),
       });
@@ -2003,6 +2108,40 @@ function LogModal({
               </div>
             )}
           </div>
+
+          {type === "sleep" && isEditing && activity?.ended_at != null && (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-warm-brown-light">Wake time</label>
+              <div className="space-y-3">
+                <input
+                  aria-label="Sleep end date"
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  className="w-full rounded-lg border border-border px-4 py-3 outline-none focus:border-accent-strong"
+                />
+                <div className="flex items-center gap-3">
+                  <select
+                    aria-label="Sleep end hour"
+                    value={endHour}
+                    onChange={(event) => setEndHour(Number(event.target.value))}
+                    className="flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-center text-lg tabular-nums outline-none focus:border-accent-strong"
+                  >
+                    {hourOptions.map((hour) => <option key={hour} value={hour}>{pad2(hour)}</option>)}
+                  </select>
+                  <span className="text-2xl text-warm-brown-light">:</span>
+                  <select
+                    aria-label="Sleep end minute"
+                    value={endMinute}
+                    onChange={(event) => setEndMinute(Number(event.target.value))}
+                    className="flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-center text-lg tabular-nums outline-none focus:border-accent-strong"
+                  >
+                    {minuteOptions.map((minute) => <option key={minute} value={minute}>{pad2(minute)}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Type-specific fields */}
           {type === "bottlefeed" && (
