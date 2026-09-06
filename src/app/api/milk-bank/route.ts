@@ -41,7 +41,7 @@ async function loadLedger(executor: Executor, householdId: string): Promise<Milk
 }
 
 function serializeState(events: MilkLedgerActivity[], now = Date.now()) {
-  return replayMilkLedger(events, now);
+  return replayMilkLedger(events, now, new Set(events.map((event) => event.id)));
 }
 
 function ledgerErrorResponse(error: unknown) {

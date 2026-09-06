@@ -49,7 +49,7 @@
 
 ### Sleep state + breastmilk bank
 - Sleep uses an `Awake | Sleeping` state control. Transitions are immediate; the 10-second undo token is accepted only while that exact transition remains the newest server-side sleep change.
-- Breastmilk is replayed as an auditable FIFO ledger with separate **Available** and **Frozen** balances. Existing pump/feed/`bankadjust` history remains Available; no data migration is required.
+- Breastmilk is replayed as an auditable FIFO ledger with separate **Available** and **Frozen** balances. Existing pump/feed/`bankadjust` history retains the prior non-negative balance behavior; no data migration is required. New writes remain strict.
 - Pump and thaw batches expire from Available after 4 hours, but expired milk stays visible and requires confirmation when a bottle or freeze reaches it.
 - `bankfreeze`, `bankthaw`, and `bankdiscard` activities are hidden from the baby timeline and shown in dedicated bank history. A freeze creates one indivisible packet; thaw and discard always address the whole packet.
 - Frozen expiry is three calendar months from the recorded freeze time in `Asia/Singapore`. Month-end dates clamp to the target month’s last day (for example, 31 January → 30 April) while preserving local time.

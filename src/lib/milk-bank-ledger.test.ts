@@ -63,6 +63,27 @@ test("an impossible Available deduction is rejected and never clamped", () => {
   );
 });
 
+test("persisted legacy deficits are tolerated while a new candidate remains strict", () => {
+  const events = [
+    { id: "early-feed", type: "bottlefeed", startedAt: 100, details: { milkType: "breastmilk", amount: 90 } },
+    { id: "later-pump", type: "pump", startedAt: 200, details: { amount: 120 } },
+    { id: "later-feed", type: "bottlefeed", startedAt: 300, details: { milkType: "breastmilk", amount: 20 } },
+  ];
+  const persistedEventIds = new Set(events.map((event) => event.id));
+
+  const result = replayMilkLedger(events, 400, persistedEventIds);
+  assert.equal(result.availableMl, 100);
+
+  assert.throws(
+    () => replayMilkLedger([...events, {
+      id: "new-feed", type: "bottlefeed", startedAt: 400, details: { milkType: "breastmilk", amount: 101 },
+    }], 400, persistedEventIds),
+    (error) => error instanceof MilkLedgerError
+      && error.code === "INSUFFICIENT_AVAILABLE"
+      && error.eventId === "new-feed",
+  );
+});
+
 test("freeze moves Available FIFO into one indivisible frozen packet", () => {
   const hour = 60 * 60 * 1000;
   const result = replayMilkLedger([

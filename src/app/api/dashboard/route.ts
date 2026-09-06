@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
         details: parseActivityDetails(typedRow.details),
       };
     });
-    const bankState = replayMilkLedger(ledgerEvents, now.getTime());
+    const bankState = replayMilkLedger(ledgerEvents, now.getTime(), new Set(ledgerEvents.map((event) => event.id)));
     const pumpEvents = ledgerEvents.filter((event) => event.type === "pump");
     const latestPump = pumpEvents[pumpEvents.length - 1];
     const totalPumpedMl = pumpEvents.reduce((sum, event) => sum + pumpAmount(event.details), 0);

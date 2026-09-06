@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
       const tx = await db.transaction("write");
       try {
         const currentEvents = await milkLedgerForHousehold(tx, householdId);
-        const currentBankMl = replayMilkLedger(currentEvents, Date.now()).availableMl;
+        const currentBankMl = replayMilkLedger(currentEvents, Date.now(), new Set(currentEvents.map((event) => event.id))).availableMl;
         const deltaMl = Math.round((targetBankMl - currentBankMl) * 100) / 100;
         if (deltaMl === 0) {
           await tx.commit();
@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
             startedAt: Number(body.startedAt),
             createdAt: Date.now(),
             details: parseActivityDetails(body.details),
-          }], Date.now());
+          }], Date.now(), new Set(ledgerEvents.map((event) => event.id)));
         }
         const activityId = generateId();
         await tx.execute({
@@ -380,7 +380,7 @@ export async function PUT(request: NextRequest) {
             startedAt: Number(body.startedAt),
             createdAt: Date.now(),
             details: parseActivityDetails(mergedDetails),
-          }], Date.now());
+          }], Date.now(), new Set(ledgerEvents.map((event) => event.id)));
         }
         await tx.execute({
           sql: `UPDATE activities SET type = ?, started_at = ?, ended_at = ?, details = ?

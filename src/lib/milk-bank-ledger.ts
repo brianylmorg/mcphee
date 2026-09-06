@@ -62,6 +62,7 @@ export function allocateAvailable(
   amountMl: number,
   at: number,
   eventId?: string,
+  allowShortfall = false,
 ): { allocations: Array<{ batchId: string; amountMl: number; expired: boolean }>; expiredMl: number } {
   if (!Number.isFinite(amountMl) || amountMl < 0) {
     throw new MilkLedgerError("INVALID_EVENT", "Milk amounts must be finite and non-negative", eventId);
@@ -77,7 +78,7 @@ export function allocateAvailable(
     remaining = Math.round((remaining - used) * 100) / 100;
     allocations.push({ batchId: batch.id, amountMl: used, expired });
   }
-  if (remaining > 0) {
+  if (remaining > 0 && !allowShortfall) {
     throw new MilkLedgerError("INSUFFICIENT_AVAILABLE", "Not enough Available milk for this event", eventId);
   }
   return {
@@ -86,7 +87,7 @@ export function allocateAvailable(
   };
 }
 
-export function replayMilkLedger(events: MilkLedgerActivity[], now: number) {
+export function replayMilkLedger(events: MilkLedgerActivity[], now: number, persistedEventIds: ReadonlySet<string> = new Set()) {
   const availableBatches: AvailableMilkBatch[] = [];
   const frozenPackets: FrozenMilkPacket[] = [];
   const history: MilkBankHistoryItem[] = [];
@@ -126,11 +127,11 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number) {
           source: "adjustment",
         });
       } else {
-        allocateAvailable(availableBatches, amountMl, event.startedAt, event.id);
+        allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
       }
     } else if (event.type === "bottlefeed") {
       const amountMl = Math.round(bottleBreastmilkLibraryDeduction(event.details) * 100) / 100;
-      if (amountMl > 0) allocateAvailable(availableBatches, amountMl, event.startedAt, event.id);
+      if (amountMl > 0) allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
     } else if (event.type === "bankfreeze") {
       const amountMl = positiveAmount(event.details.amount, event.id);
       const source = event.details.source === "reconcile" ? "reconcile" : "available";
@@ -222,7 +223,8 @@ export function previewAvailableUse(
   amountMl: number,
   at: number,
 ): { availableMl: number; expiredMl: number } {
-  const state = replayMilkLedger(events.filter((event) => event.startedAt <= at), at);
+  const relevantEvents = events.filter((event) => event.startedAt <= at);
+  const state = replayMilkLedger(relevantEvents, at, new Set(relevantEvents.map((event) => event.id)));
   const batches = state.availableBatches.map((batch) => ({ ...batch }));
   const allocation = allocateAvailable(batches, amountMl, at);
   return { availableMl: state.availableMl, expiredMl: allocation.expiredMl };
@@ -245,7 +247,7 @@ export function replayMilkLedgerEdit(
     };
   });
   if (!found) throw new MilkLedgerError("INVALID_EVENT", "Bank transfer was not found", eventId);
-  return replayMilkLedger(edited, now);
+  return replayMilkLedger(edited, now, new Set(events.map((event) => event.id)));
 }
 
 /**
