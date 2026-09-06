@@ -9,6 +9,7 @@ import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
 import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk-calculation";
+import { activityNoteText } from "@/lib/activity-note";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
 import { SleepStateControl } from "@/components/SleepStateControl";
 import { MilkBank } from "@/components/MilkBank";
@@ -713,7 +714,7 @@ export default function DashboardPage() {
       if (expression) calculations.push(expression + " ml");
     }
 
-    const note = typeof details.notes === "string" ? details.notes.trim() : "";
+    const note = activity.type === "note" ? "" : activityNoteText(details);
     return [...calculations, note].filter(Boolean).join(" · ");
   };
 
@@ -839,6 +840,8 @@ export default function DashboardPage() {
           quantity: Number.isFinite(celsius) ? `${celsius} °C` : "",
         };
       }
+      case "note":
+        return { title: activityNoteText(d) || "Note", subcategory: "", quantity: "" };
       case "sleep": {
         const timelineActivity = activity as TimelineActivity;
         if (timelineActivity.sleepEvent === "start") {
@@ -1408,9 +1411,9 @@ export default function DashboardPage() {
                           <p className="text-xs font-medium text-muted tabular-nums">
                             {formatTime(activity.started_at)} · {timeSince(activity.started_at)}
                           </p>
-                          <div className="mt-1 flex min-w-0 items-center gap-2">
-                            <ActivityIcon aria-hidden="true" className="h-5 w-5 shrink-0 text-accent-strong" />
-                            <p className="truncate text-lg font-semibold text-warm-brown">{display.title}</p>
+                          <div className={`mt-1 flex min-w-0 gap-2 ${activity.type === "note" ? "items-start" : "items-center"}`}>
+                            <ActivityIcon aria-hidden="true" className={`h-5 w-5 shrink-0 text-accent-strong ${activity.type === "note" ? "mt-0.5" : ""}`} />
+                            <p className={activity.type === "note" ? "min-w-0 whitespace-pre-wrap break-words text-base font-semibold leading-relaxed text-warm-brown" : "truncate text-lg font-semibold text-warm-brown"}>{display.title}</p>
                           </div>
                           {display.subcategory && (
                             <p className="mt-1 text-sm text-warm-brown-light">{display.subcategory}</p>
