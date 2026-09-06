@@ -1,0 +1,20 @@
+{
+  "name": "mcphee-push-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Always-on push notification worker for mcphee. Claims jobs from notification_queue in Turso and sends web-push.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/web-push": "^3.6.4",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

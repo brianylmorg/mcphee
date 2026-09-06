@@ -75,6 +75,21 @@ CREATE TABLE IF NOT EXISTS notification_log (
   sent_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notification_queue (
+  id TEXT PRIMARY KEY,
+  household_id TEXT NOT NULL REFERENCES households(id),
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  scheduled_at INTEGER NOT NULL,
+  claim_token TEXT,
+  claim_expires_at INTEGER,
+  processed_at INTEGER,
+  error TEXT,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS paper_log_import_batches (
   id TEXT PRIMARY KEY,
   household_id TEXT NOT NULL REFERENCES households(id),
@@ -108,6 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_activities_baby_started_at ON activities(baby_id,
 CREATE INDEX IF NOT EXISTS idx_activities_baby_type_started_at ON activities(baby_id, type, started_at DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_active_timers_baby_id ON active_timers(baby_id);
 CREATE INDEX IF NOT EXISTS idx_measurements_baby_measured_at ON measurements(baby_id, measured_at DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_queue_status_scheduled_at ON notification_queue(status, scheduled_at);
 `;
 
 async function migrate() {
