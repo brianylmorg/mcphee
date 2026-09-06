@@ -169,6 +169,23 @@ export function MilkBank({
     }
   };
 
+  const deleteTransfer = async (item: MilkBankHistoryItem) => {
+    if (!window.confirm("Delete this " + item.eventType.toLowerCase() + " entry? Bank totals will be recalculated.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/milk-bank?id=" + encodeURIComponent(item.id), { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "This entry cannot be deleted because later bank history depends on it");
+      if (editTransfer?.id === item.id) setEditTransfer(null);
+      await onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete bank history entry");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const correctPacket = (packet: FrozenMilkPacket) => {
     const event = history.find((item) => item.id === packet.id);
     setEditTransfer({
@@ -340,11 +357,18 @@ export function MilkBank({
         </summary>
         <div className="divide-y divide-border">
           {[...history].sort((a, b) => b.at - a.at).map((item) => (
-            <div key={item.id} className="flex min-h-12 items-center gap-3 py-2 text-sm">
-              <span className="w-16 font-semibold tabular-nums">{roundMl(item.amountMl)} ml</span>
-              <span className="flex-1 text-muted">{item.eventType}</span>
-              <time className="text-xs text-muted">{singaporeDateTime(item.at)}</time>
-              <button type="button" onClick={() => setEditTransfer({ ...item, localTime: toSingaporeInput(item.at) })} className="flex h-11 w-11 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted" aria-label={`Edit ${item.eventType} transfer`}><Pencil aria-hidden="true" className="h-4 w-4" /></button>
+            <div key={item.id} className="flex min-h-14 items-center gap-2 py-2 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-semibold tabular-nums">{roundMl(item.amountMl)} ml</span>
+                  <span className="text-muted">{item.eventType}</span>
+                </p>
+                <time className="mt-0.5 block text-xs text-muted">{singaporeDateTime(item.at)}</time>
+              </div>
+              <div className="flex shrink-0 items-center">
+                <button type="button" onClick={() => setEditTransfer({ ...item, localTime: toSingaporeInput(item.at)})} className="flex h-11 w-11 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted" aria-label={"Edit " + item.eventType + " transfer"}><Pencil aria-hidden="true" className="h-4 w-4" /></button>
+                <button type="button" onClick={() => deleteTransfer(item)} disabled={busy} className="flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50" aria-label={"Delete " + item.eventType + " transfer"}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+              </div>
             </div>
           ))}
           {history.length === 0 && <p className="py-3 text-xs text-muted">No bank transfers yet.</p>}

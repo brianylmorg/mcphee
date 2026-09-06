@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { addSingaporeCalendarMonths, MilkLedgerError, previewAvailableUse, replayMilkLedger, replayMilkLedgerEdit } from "./milk-bank-ledger";
+import { addSingaporeCalendarMonths, assertMilkLedgerMutation, MilkLedgerError, previewAvailableUse, replayMilkLedger, replayMilkLedgerDeletion, replayMilkLedgerEdit } from "./milk-bank-ledger";
 
 test("frozen expiry is three Singapore calendar months, clamped at month end", () => {
   const january31 = Date.parse("2026-01-31T21:15:00+08:00");
@@ -81,6 +81,51 @@ test("persisted legacy deficits are tolerated while a new candidate remains stri
     (error) => error instanceof MilkLedgerError
       && error.code === "INSUFFICIENT_AVAILABLE"
       && error.eventId === "new-feed",
+  );
+});
+
+test("legacy negative adjustments clamp Available and retain their exact shortfall", () => {
+  const events = [
+    { id: "pump", type: "pump", startedAt: 100, details: { amount: 30 } },
+    { id: "legacy-adjust", type: "bankadjust", startedAt: 200, details: { amount: -45 } },
+  ];
+
+  const result = replayMilkLedger(events, 300, new Set(events.map((event) => event.id)));
+
+  assert.equal(result.availableMl, 0);
+  assert.deepEqual(result.shortfallByEventId, { "legacy-adjust": 15 });
+});
+
+test("ledger state at now ignores future balance and packet events", () => {
+  const result = replayMilkLedger([
+    { id: "current-pump", type: "pump", startedAt: 100, details: { amount: 30 } },
+    { id: "future-pump", type: "pump", startedAt: 301, details: { amount: 70 } },
+    { id: "future-packet", type: "bankfreeze", startedAt: 302, details: { amount: 40, source: "reconcile" } },
+  ], 300);
+
+  assert.equal(result.availableMl, 30);
+  assert.equal(result.frozenMl, 0);
+  assert.deepEqual(result.history, []);
+});
+
+test("bank-affecting mutations may preserve but never create or worsen a legacy shortfall", () => {
+  const original = [
+    { id: "pump", type: "pump", startedAt: 100, details: { amount: 30 } },
+    { id: "legacy-adjust", type: "bankadjust", startedAt: 200, details: { amount: -45 } },
+  ];
+
+  assert.doesNotThrow(() => assertMilkLedgerMutation(original, [
+    { ...original[0], details: { amount: 45 } },
+    original[1],
+  ], 300));
+  assert.throws(
+    () => assertMilkLedgerMutation(original, [
+      { ...original[0], details: { amount: 20 } },
+      original[1],
+    ], 300),
+    (error) => error instanceof MilkLedgerError
+      && error.code === "INSUFFICIENT_AVAILABLE"
+      && error.eventId === "legacy-adjust",
   );
 });
 
@@ -204,5 +249,27 @@ test("editing a transfer replays later packet state and rejects impossible amoun
       at: Date.parse("2025-10-01T10:00:00+08:00"),
     }, thawedAt),
     (error) => error instanceof MilkLedgerError && error.code === "PACKET_EXPIRED",
+  );
+});
+test("deleting a transfer replays packet state and rejects broken dependencies", () => {
+  const frozenAt = Date.parse("2026-05-10T10:00:00+08:00");
+  const thawedAt = Date.parse("2026-05-11T10:00:00+08:00");
+  const events = [
+    { id: "packet", type: "bankfreeze", startedAt: frozenAt, details: { amount: 90, source: "reconcile" } },
+    { id: "thaw", type: "bankthaw", startedAt: thawedAt, details: { packetId: "packet", amount: 90 } },
+  ];
+
+  const restored = replayMilkLedgerDeletion(events, "thaw", thawedAt);
+  assert.equal(restored.availableMl, 0);
+  assert.equal(restored.frozenMl, 90);
+  assert.deepEqual(restored.history.map((item) => item.eventType), ["Packet added"]);
+
+  assert.throws(
+    () => replayMilkLedgerDeletion(events, "packet", thawedAt),
+    (error) => error instanceof MilkLedgerError && error.code === "PACKET_NOT_FOUND",
+  );
+  assert.throws(
+    () => replayMilkLedgerDeletion(events, "missing", thawedAt),
+    (error) => error instanceof MilkLedgerError && error.code === "INVALID_EVENT",
   );
 });

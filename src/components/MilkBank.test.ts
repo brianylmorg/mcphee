@@ -33,4 +33,5 @@ test("milk bank separates Available and Frozen and blocks thaw for expired packe
   assert.match(html, /aria-label="Remove 80 ml packet"/);
   assert.doesNotMatch(html, /aria-label="Thaw 80 ml packet"/);
   assert.match(html, /Bank history/);
+  assert.match(html, /aria-label="Delete Freeze transfer"/);
 });

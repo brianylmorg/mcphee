@@ -63,7 +63,7 @@ export function allocateAvailable(
   at: number,
   eventId?: string,
   allowShortfall = false,
-): { allocations: Array<{ batchId: string; amountMl: number; expired: boolean }>; expiredMl: number } {
+): { allocations: Array<{ batchId: string; amountMl: number; expired: boolean }>; expiredMl: number; shortfallMl: number } {
   if (!Number.isFinite(amountMl) || amountMl < 0) {
     throw new MilkLedgerError("INVALID_EVENT", "Milk amounts must be finite and non-negative", eventId);
   }
@@ -84,6 +84,7 @@ export function allocateAvailable(
   return {
     allocations,
     expiredMl: allocations.reduce((sum, item) => sum + (item.expired ? item.amountMl : 0), 0),
+    shortfallMl: remaining,
   };
 }
 
@@ -91,6 +92,7 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
   const availableBatches: AvailableMilkBatch[] = [];
   const frozenPackets: FrozenMilkPacket[] = [];
   const history: MilkBankHistoryItem[] = [];
+  const shortfallByEventId: Record<string, number> = {};
   const ordered = [...events].sort((a, b) =>
     a.startedAt - b.startedAt || (a.createdAt ?? 0) - (b.createdAt ?? 0) || a.id.localeCompare(b.id),
   );
@@ -99,6 +101,7 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
     if (!Number.isFinite(event.startedAt) || event.startedAt <= 0) {
       throw new MilkLedgerError("INVALID_EVENT", "Event time must be a positive timestamp", event.id);
     }
+    if (event.startedAt > now) continue;
     if (event.type === "pump") {
       const rawAmount = Number(event.details.amount);
       // Historical pump logs were allowed without a measured amount. They are
@@ -127,11 +130,15 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
           source: "adjustment",
         });
       } else {
-        allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
+        const allocation = allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
+        if (allocation.shortfallMl > 0) shortfallByEventId[event.id] = allocation.shortfallMl;
       }
     } else if (event.type === "bottlefeed") {
       const amountMl = Math.round(bottleBreastmilkLibraryDeduction(event.details) * 100) / 100;
-      if (amountMl > 0) allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
+      if (amountMl > 0) {
+        const allocation = allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
+        if (allocation.shortfallMl > 0) shortfallByEventId[event.id] = allocation.shortfallMl;
+      }
     } else if (event.type === "bankfreeze") {
       const amountMl = positiveAmount(event.details.amount, event.id);
       const source = event.details.source === "reconcile" ? "reconcile" : "available";
@@ -215,6 +222,7 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
     availableBatches: remainingBatches,
     frozenPackets: activeFrozenPackets,
     history,
+    shortfallByEventId,
   };
 }
 
@@ -228,6 +236,36 @@ export function previewAvailableUse(
   const batches = state.availableBatches.map((batch) => ({ ...batch }));
   const allocation = allocateAvailable(batches, amountMl, at);
   return { availableMl: state.availableMl, expiredMl: allocation.expiredMl };
+}
+
+export function assertMilkLedgerMutation(
+  originalEvents: MilkLedgerActivity[],
+  candidateEvents: MilkLedgerActivity[],
+  now = Date.now(),
+) {
+  const originalState = replayMilkLedger(
+    originalEvents,
+    now,
+    new Set(originalEvents.map((event) => event.id)),
+  );
+  const candidateState = replayMilkLedger(
+    candidateEvents,
+    now,
+    new Set(candidateEvents.map((event) => event.id)),
+  );
+
+  for (const [eventId, shortfallMl] of Object.entries(candidateState.shortfallByEventId)) {
+    const originalShortfallMl = originalState.shortfallByEventId[eventId] ?? 0;
+    if (shortfallMl > originalShortfallMl) {
+      throw new MilkLedgerError(
+        "INSUFFICIENT_AVAILABLE",
+        "This change would create or worsen an Available milk shortfall",
+        eventId,
+      );
+    }
+  }
+
+  return candidateState;
 }
 
 export function replayMilkLedgerEdit(
@@ -247,7 +285,19 @@ export function replayMilkLedgerEdit(
     };
   });
   if (!found) throw new MilkLedgerError("INVALID_EVENT", "Bank transfer was not found", eventId);
-  return replayMilkLedger(edited, now, new Set(events.map((event) => event.id)));
+  return assertMilkLedgerMutation(events, edited, now);
+}
+
+export function replayMilkLedgerDeletion(
+  events: MilkLedgerActivity[],
+  eventId: string,
+  now = Date.now(),
+) {
+  const remaining = events.filter((event) => event.id !== eventId);
+  if (remaining.length === events.length) {
+    throw new MilkLedgerError("INVALID_EVENT", "Bank transfer was not found", eventId);
+  }
+  return assertMilkLedgerMutation(events, remaining, now);
 }
 
 /**

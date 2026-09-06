@@ -7,6 +7,7 @@ import {
   MilkLedgerError,
   previewAvailableUse,
   replayMilkLedger,
+  replayMilkLedgerDeletion,
   replayMilkLedgerEdit,
   type MilkLedgerActivity,
 } from "@/lib/milk-bank-ledger";
@@ -194,7 +195,7 @@ export async function DELETE(request: NextRequest) {
   const householdId = request.cookies.get("mcphee_hh")?.value;
   if (!householdId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const id = new URL(request.url).searchParams.get("id") ?? "";
-  if (!id) return NextResponse.json({ error: "Packet ID required" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "Bank transfer ID required" }, { status: 400 });
 
   const db = createDB();
   const tx = await db.transaction("write");
@@ -204,15 +205,15 @@ export async function DELETE(request: NextRequest) {
             WHERE a.id = ? AND b.household_id = ? LIMIT 1`,
       args: [id, householdId],
     });
-    if (String(owned.rows[0]?.type ?? "") !== "bankfreeze") {
+    if (!TRANSFER_TYPES.has(String(owned.rows[0]?.type ?? ""))) {
       await tx.rollback();
-      return NextResponse.json({ error: "Frozen packet not found" }, { status: 404 });
+      return NextResponse.json({ error: "Bank transfer not found" }, { status: 404 });
     }
     const events = await loadLedger(tx as unknown as Executor, householdId);
-    const state = serializeState(events.filter((event) => event.id !== id));
+    const state = replayMilkLedgerDeletion(events, id);
     await tx.execute({
       sql: `DELETE FROM activities WHERE id = ?
-            AND baby_id IN (SELECT id FROM babies WHERE household_id = ?) AND type = 'bankfreeze'`,
+            AND baby_id IN (SELECT id FROM babies WHERE household_id = ?) AND type IN ('bankfreeze', 'bankthaw', 'bankdiscard')`,
       args: [id, householdId],
     });
     await tx.commit();
@@ -221,7 +222,7 @@ export async function DELETE(request: NextRequest) {
     try { await tx.rollback(); } catch {}
     const response = ledgerErrorResponse(error);
     if (response) return response;
-    console.error("Milk bank packet removal error:", error);
+    console.error("Milk bank transfer deletion error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   } finally {
     tx.close();
