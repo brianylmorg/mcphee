@@ -226,7 +226,7 @@ export function MilkBank({
         <div>
           <h3 id="milk-bank-title" className="text-sm font-semibold text-muted">Breastmilk bank</h3>
           <p className="mt-1 flex items-baseline gap-1.5 text-warm-brown">
-            <span className="font-display text-4xl font-semibold tabular-nums">{roundMl(availableMl)}</span>
+            <span className="font-display text-3xl font-semibold tabular-nums">{roundMl(availableMl)}</span>
             <span className="text-sm font-semibold">ml</span>
             <span className="ml-1 rounded-full bg-terracotta/10 px-2 py-1 text-xs font-semibold text-accent-strong">Available</span>
           </p>

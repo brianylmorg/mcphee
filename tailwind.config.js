@@ -24,7 +24,7 @@ module.exports = {
         info: "rgb(var(--rgb-info) / <alpha-value>)",
       },
       fontFamily: {
-        display: ["Fraunces", "serif"],
+        display: ["Manrope", "sans-serif"],
         sans: ["Instrument Sans", "sans-serif"],
       },
     },

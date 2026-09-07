@@ -92,7 +92,7 @@ function LiveTimerStatus({ startedAt }: { startedAt: number }) {
         <Heart aria-hidden="true" className="h-7 w-7 text-accent-strong" />
         <div>
           <p className="text-sm text-muted">Live feeding</p>
-          <p className="font-display text-3xl text-accent-strong font-semibold tabular-nums">
+          <p className="font-display text-2xl text-accent-strong font-semibold tabular-nums">
             {formatElapsed(elapsed)}
           </p>
         </div>
@@ -979,7 +979,7 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-dvh bg-cream pb-24">
-      <header className="bg-surface border-b border-border px-6 py-4">
+      <header className="bg-surface border-b border-border px-4 py-3 sm:px-5 sm:py-4">
         <div className="mx-auto max-w-lg">
           <div className="text-center">
             <div className="inline-flex max-w-full items-center justify-center gap-2">
@@ -1020,8 +1020,8 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
-        <section className="rounded-2xl border border-terracotta/25 bg-surface p-4 shadow-sm" aria-label="Sleep status">
+      <div className="max-w-lg mx-auto px-4 py-4 sm:px-5 sm:py-5 space-y-3">
+        <section className="rounded-xl border border-terracotta/25 bg-surface p-4 shadow-sm" aria-label="Sleep status">
           <SleepStateControl
             state={sleepState.state}
             since={sleepState.since}
@@ -1056,7 +1056,7 @@ export default function DashboardPage() {
           )}
         </section>
         {/* Daily Milk Total */}
-        <section className="rounded-lg border border-border bg-surface p-5 shadow-sm">
+        <section className="rounded-lg border border-border bg-surface p-4 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="font-display text-lg text-accent-strong">
@@ -1102,7 +1102,7 @@ export default function DashboardPage() {
 
           <div className="mt-4 flex items-end justify-between gap-4">
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-4xl font-semibold tabular-nums text-warm-brown">
+              <span className="font-display text-3xl font-semibold tabular-nums text-warm-brown">
                 {selectedMilkSummary.totalMl}
               </span>
               <span className="text-base text-warm-brown-light">ml</span>
@@ -1202,7 +1202,7 @@ export default function DashboardPage() {
         </section>
         {/* Live Timer */}
         {activeTimer && (
-          <div className="bg-surface rounded-lg border border-terracotta/30 p-5 shadow-sm">
+          <div className="bg-surface rounded-lg border border-terracotta/30 p-4 shadow-sm">
             <LiveTimerStatus startedAt={Number(activeTimer.started_at)} />
             <div className="flex gap-2 mb-4">
               {["L", "R"].map((s) => (

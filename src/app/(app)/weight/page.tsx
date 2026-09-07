@@ -244,7 +244,7 @@ export default function WeightPage() {
 
   return (
     <main className="min-h-dvh bg-cream pb-24">
-      <header className="bg-surface border-b border-border px-6 py-4">
+      <header className="bg-surface border-b border-border px-4 py-3 sm:px-5 sm:py-4">
         <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
           <div>
             <Link href="/dashboard" className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-accent-strong"><ArrowLeft aria-hidden="true" className="h-4 w-4" />Dashboard</Link>
@@ -256,8 +256,8 @@ export default function WeightPage() {
         </div>
       </header>
 
-      <div className="max-w-lg mx-auto px-6 py-6 space-y-4">
-        <form onSubmit={saveWeight} className="bg-surface rounded-lg border border-terracotta/20 p-5 shadow-sm space-y-4">
+      <div className="max-w-lg mx-auto px-4 py-4 sm:px-5 sm:py-5 space-y-3">
+        <form onSubmit={saveWeight} className="bg-surface rounded-lg border border-terracotta/20 p-4 shadow-sm space-y-4">
           <div>
             <h2 className="font-display text-lg text-accent-strong mt-1">Add dated measurement</h2>
           </div>
@@ -293,7 +293,7 @@ export default function WeightPage() {
           </button>
         </form>
 
-        <section className="bg-surface rounded-lg border border-terracotta/20 p-5 shadow-sm">
+        <section className="bg-surface rounded-lg border border-terracotta/20 p-4 shadow-sm">
           <div>
             <h2 className="font-display text-lg text-accent-strong">Weight history</h2>
             <p className="mt-1 text-xs text-muted">Singapore growth charts · NHG Polyclinics 2000</p>
