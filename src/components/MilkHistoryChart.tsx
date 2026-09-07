@@ -31,11 +31,19 @@ export function MilkHistoryChart({
       container.scrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
     };
     alignToLatest();
-    const frame = window.requestAnimationFrame(alignToLatest);
+    let secondFrame: number | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      alignToLatest();
+      secondFrame = window.requestAnimationFrame(alignToLatest);
+    });
+    const timeout = window.setTimeout(alignToLatest, 120);
     const observer = new ResizeObserver(alignToLatest);
     observer.observe(container);
+    if (container.firstElementChild) observer.observe(container.firstElementChild);
     return () => {
       window.cancelAnimationFrame(frame);
+      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+      window.clearTimeout(timeout);
       observer.disconnect();
     };
   }, [days.length, latestDate]);
@@ -176,11 +184,19 @@ export function MilkAsOfHistoryChart({
       container.scrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
     };
     alignToLatest();
-    const frame = window.requestAnimationFrame(alignToLatest);
+    let secondFrame: number | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      alignToLatest();
+      secondFrame = window.requestAnimationFrame(alignToLatest);
+    });
+    const timeout = window.setTimeout(alignToLatest, 120);
     const observer = new ResizeObserver(alignToLatest);
     observer.observe(container);
+    if (container.firstElementChild) observer.observe(container.firstElementChild);
     return () => {
       window.cancelAnimationFrame(frame);
+      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+      window.clearTimeout(timeout);
       observer.disconnect();
     };
   }, [days.length, latestDate]);
