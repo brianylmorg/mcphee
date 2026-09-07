@@ -27,11 +27,17 @@ export function MilkHistoryChart({
   useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
-    container.scrollLeft = container.scrollWidth;
-    const frame = window.requestAnimationFrame(() => {
-      container.scrollLeft = container.scrollWidth;
-    });
-    return () => window.cancelAnimationFrame(frame);
+    const alignToLatest = () => {
+      container.scrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+    };
+    alignToLatest();
+    const frame = window.requestAnimationFrame(alignToLatest);
+    const observer = new ResizeObserver(alignToLatest);
+    observer.observe(container);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [days.length, latestDate]);
 
   if (isLoading) {
@@ -166,11 +172,17 @@ export function MilkAsOfHistoryChart({
   useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
-    container.scrollLeft = container.scrollWidth;
-    const frame = window.requestAnimationFrame(() => {
-      container.scrollLeft = container.scrollWidth;
-    });
-    return () => window.cancelAnimationFrame(frame);
+    const alignToLatest = () => {
+      container.scrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+    };
+    alignToLatest();
+    const frame = window.requestAnimationFrame(alignToLatest);
+    const observer = new ResizeObserver(alignToLatest);
+    observer.observe(container);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [days.length, latestDate]);
 
   if (isLoading) {

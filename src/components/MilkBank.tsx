@@ -299,19 +299,19 @@ export function MilkBank({
                 <div key={packet.id} className="rounded-xl border border-sky-100 bg-white p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-semibold tabular-nums text-sky-950">{roundMl(packet.amountMl)} ml</p>
+                      <p className="text-sm font-semibold tabular-nums text-sky-950">{roundMl(packet.amountMl)} ml</p>
                       <p className="mt-0.5 text-xs text-muted">Frozen {singaporeDateTime(packet.frozenAt)} · expires {singaporeDateTime(packet.expiresAt)}</p>
                     </div>
                     {packet.isExpired && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">Expired</span>}
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
+                  <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
                     {packet.isExpired ? (
                       <button type="button" onClick={() => packetAction("discard", packet)} disabled={busy} className="min-h-11 rounded-xl bg-amber-700 px-3 text-sm font-semibold text-white disabled:opacity-50">Discard</button>
                     ) : (
                       <button type="button" aria-label={`Thaw ${packet.amountMl} ml packet`} onClick={() => packetAction("thaw", packet)} disabled={busy} className="min-h-11 rounded-xl bg-sky-800 px-3 text-sm font-semibold text-white disabled:opacity-50">Thaw whole</button>
                     )}
-                    <button type="button" onClick={() => correctPacket(packet)} className="min-h-11 rounded-xl border border-sky-200 px-3 text-sm font-semibold text-sky-900">Correct</button>
-                    <button type="button" onClick={() => removePacket(packet)} className="flex min-h-11 items-center justify-center rounded-xl border border-sky-200 text-sky-900" aria-label={`Remove ${packet.amountMl} ml packet`}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => correctPacket(packet)} aria-label={`Edit ${packet.amountMl} ml packet`} title="Edit packet" className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-sky-200 text-sky-900"><Pencil aria-hidden="true" className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => removePacket(packet)} className="flex min-h-11 items-center justify-center rounded-xl border border-sky-200 text-sky-900" aria-label={`Delete ${packet.amountMl} ml packet`} title="Delete packet"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
                   </div>
                 </div>
               ))}
