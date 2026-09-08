@@ -5,7 +5,7 @@ import { generateId } from "@/lib/utils";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { parseActivityDetails } from "@/lib/milk-volumes";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
-import { MilkLedgerError, previewAvailableUse, replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
+import { MilkLedgerError, replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
 
 export const runtime = "nodejs";
 
@@ -233,15 +233,6 @@ export async function POST(request: NextRequest) {
         const ledgerEvents = await milkLedgerForHousehold(tx, householdId);
         const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(body.details));
         if (requestedBreastmilkMl > 0) {
-          const preview = previewAvailableUse(ledgerEvents, requestedBreastmilkMl, Number(body.startedAt));
-          if (preview.expiredMl > 0 && body.confirmExpired !== true) {
-            await tx.rollback();
-            return NextResponse.json({
-              error: `This bottle would use ${preview.expiredMl} ml of expired Available milk. Confirm to continue.`,
-              code: "EXPIRED_CONFIRMATION_REQUIRED",
-              expiredMl: preview.expiredMl,
-            }, { status: 409 });
-          }
           replayMilkLedger([...ledgerEvents, {
             id: "__candidate_bottle__",
             type: "bottlefeed",
@@ -365,15 +356,6 @@ export async function PUT(request: NextRequest) {
         const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(mergedDetails));
         const ledgerEvents = await milkLedgerForHousehold(tx, householdId, body.id);
         if (requestedBreastmilkMl > 0) {
-          const preview = previewAvailableUse(ledgerEvents, requestedBreastmilkMl, Number(body.startedAt));
-          if (preview.expiredMl > 0 && body.confirmExpired !== true) {
-            await tx.rollback();
-            return NextResponse.json({
-              error: `This bottle would use ${preview.expiredMl} ml of expired Available milk. Confirm to continue.`,
-              code: "EXPIRED_CONFIRMATION_REQUIRED",
-              expiredMl: preview.expiredMl,
-            }, { status: 409 });
-          }
           replayMilkLedger([...ledgerEvents, {
             id: body.id,
             type: "bottlefeed",

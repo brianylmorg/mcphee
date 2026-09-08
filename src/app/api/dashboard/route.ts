@@ -138,8 +138,6 @@ export async function GET(request: NextRequest) {
       pumpedAt: batch.addedAt,
       amountMl: batch.amountMl,
       remainingMl: batch.remainingMl,
-      expiresAt: batch.expiresAt,
-      isExpired: batch.expiresAt != null && batch.expiresAt <= now.getTime(),
       isAdjustment: batch.source === "adjustment",
       source: batch.source,
     }));
@@ -175,7 +173,6 @@ export async function GET(request: NextRequest) {
       pumpedMilk: {
         walletMl: bankState.availableMl,
         availableMl: bankState.availableMl,
-        expiredAvailableMl: bankState.expiredAvailableMl,
         frozenMl: bankState.frozenMl,
         frozenPackets: bankState.frozenPackets,
         bankHistory: bankState.history,

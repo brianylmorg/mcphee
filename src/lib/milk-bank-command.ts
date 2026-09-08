@@ -1,5 +1,5 @@
 export type MilkBankCommand =
-  | { action: "freeze"; amountMl: number; at: number; confirmExpired: boolean }
+  | { action: "freeze"; amountMl: number; at: number }
   | { action: "thaw" | "discard"; packetId: string; at: number }
   | { action: "addPacket"; amountMl: number; at: number };
 
@@ -22,7 +22,7 @@ export function parseMilkBankCommand(value: unknown, now = Date.now()): MilkBank
   const body = value as Record<string, unknown>;
   const at = timestamp(body.at, now);
   if (body.action === "freeze") {
-    return { action: "freeze", amountMl: positiveAmount(body.amountMl), at, confirmExpired: body.confirmExpired === true };
+    return { action: "freeze", amountMl: positiveAmount(body.amountMl), at };
   }
   if (body.action === "addPacket") {
     return { action: "addPacket", amountMl: positiveAmount(body.amountMl), at };

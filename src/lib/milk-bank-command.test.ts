@@ -7,7 +7,7 @@ const now = 1_800_000_000_000;
 
 test("freeze commands require a finite positive amount and valid timestamp", () => {
   assert.deepEqual(parseMilkBankCommand({ action: "freeze", amountMl: 80, at: now }, now), {
-    action: "freeze", amountMl: 80, at: now, confirmExpired: false,
+    action: "freeze", amountMl: 80, at: now,
   });
   assert.throws(() => parseMilkBankCommand({ action: "freeze", amountMl: Number.NaN, at: now }, now));
   assert.throws(() => parseMilkBankCommand({ action: "freeze", amountMl: 0, at: now }, now));

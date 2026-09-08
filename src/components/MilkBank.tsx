@@ -1,15 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, History, PackagePlus, Pencil, Scale, Snowflake, Trash2, TriangleAlert } from "lucide-react";
+import { ChevronDown, History, PackagePlus, Pencil, Scale, Snowflake, Trash2 } from "lucide-react";
 
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
 
 type MilkBankProps = {
   babyId: string;
   availableMl: number;
-  expiredAvailableMl: number;
-  availableBatches: Array<AvailableMilkBatch & { pumpedAt?: number; isAdjustment?: boolean; isExpired?: boolean }>;
+  availableBatches: Array<AvailableMilkBatch & { pumpedAt?: number; isAdjustment?: boolean }>;
   frozenMl: number;
   frozenPackets: FrozenMilkPacket[];
   history: MilkBankHistoryItem[];
@@ -43,7 +42,6 @@ function fromSingaporeInput(value: string): number {
 export function MilkBank({
   babyId,
   availableMl,
-  expiredAvailableMl,
   availableBatches,
   frozenMl,
   frozenPackets,
@@ -53,7 +51,6 @@ export function MilkBank({
   const [freezeAmount, setFreezeAmount] = useState("");
   const [showFreeze, setShowFreeze] = useState(false);
   const [showFrozenDetails, setShowFrozenDetails] = useState(false);
-  const [expiredFreezeMl, setExpiredFreezeMl] = useState<number | null>(null);
   const [reconcileAvailable, setReconcileAvailable] = useState("");
   const [showAvailableReconcile, setShowAvailableReconcile] = useState(false);
   const [packetAmount, setPacketAmount] = useState("");
@@ -73,20 +70,15 @@ export function MilkBank({
     return { response, data };
   };
 
-  const freeze = async (confirmExpired = false) => {
+  const freeze = async () => {
     const amountMl = Number(freezeAmount);
     if (!Number.isFinite(amountMl) || amountMl <= 0) return setError("Enter a positive amount to freeze.");
     setBusy(true);
     setError(null);
     try {
-      const { response, data } = await sendBankCommand({ action: "freeze", amountMl, at: Date.now(), confirmExpired });
-      if (!response.ok && data.code === "EXPIRED_CONFIRMATION_REQUIRED") {
-        setExpiredFreezeMl(Number(data.expiredMl));
-        return;
-      }
+      const { response, data } = await sendBankCommand({ action: "freeze", amountMl, at: Date.now() });
       if (!response.ok) throw new Error(data.error || "Could not freeze milk");
       setFreezeAmount("");
-      setExpiredFreezeMl(null);
       setShowFreeze(false);
       await onChanged();
     } catch (caught) {
@@ -230,12 +222,6 @@ export function MilkBank({
             <span className="text-sm font-semibold">ml</span>
             <span className="ml-1 rounded-full bg-terracotta/10 px-2 py-1 text-xs font-semibold text-accent-strong">Available</span>
           </p>
-          {expiredAvailableMl > 0 && (
-            <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-warning">
-              <TriangleAlert aria-hidden="true" className="h-3.5 w-3.5" />
-              {roundMl(expiredAvailableMl)} ml expired
-            </p>
-          )}
         </div>
         <button
           type="button"
@@ -275,15 +261,9 @@ export function MilkBank({
           <div className="mx-3 mb-3 rounded-xl bg-white/80 p-3">
             <label className="text-xs font-semibold text-sky-950">Amount from Available (ml)</label>
             <div className="mt-1.5 flex gap-2">
-              <input type="number" min="0.01" step="any" inputMode="decimal" value={freezeAmount} onChange={(event) => { setFreezeAmount(event.target.value); setExpiredFreezeMl(null); }} className="min-h-11 min-w-0 flex-1 rounded-xl border border-sky-200 bg-white px-3" />
-              <button type="button" onClick={() => freeze(false)} disabled={busy} className="min-h-11 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white disabled:opacity-50">Freeze</button>
+              <input type="number" min="0.01" step="any" inputMode="decimal" value={freezeAmount} onChange={(event) => setFreezeAmount(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-sky-200 bg-white px-3" />
+              <button type="button" onClick={freeze} disabled={busy} className="min-h-11 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white disabled:opacity-50">Freeze</button>
             </div>
-            {expiredFreezeMl != null && (
-              <div role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
-                <p>This uses {roundMl(expiredFreezeMl)} ml of expired Available milk.</p>
-                <button type="button" onClick={() => freeze(true)} disabled={busy} className="mt-2 min-h-11 w-full rounded-xl bg-amber-700 px-3 font-semibold text-white">Confirm and freeze</button>
-              </div>
-            )}
           </div>
         )}
 
@@ -343,7 +323,6 @@ export function MilkBank({
             {availableBatches.map((batch) => (
               <div key={batch.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-sm">
                 <div><p className="font-medium tabular-nums">{roundMl(batch.remainingMl)} ml</p><p className="text-xs text-muted">{batch.source === "thaw" ? "Thawed" : batch.source === "adjustment" ? "Adjustment" : "Pumped"} {singaporeDateTime(batch.addedAt ?? batch.pumpedAt ?? 0)}</p></div>
-                {batch.expiresAt != null && batch.expiresAt <= Date.now() && <span className="text-xs font-semibold text-warning">Expired</span>}
               </div>
             ))}
           </div>

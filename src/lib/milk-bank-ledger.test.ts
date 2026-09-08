@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { addSingaporeCalendarMonths, assertMilkLedgerMutation, MilkLedgerError, previewAvailableUse, replayMilkLedger, replayMilkLedgerDeletion, replayMilkLedgerEdit } from "./milk-bank-ledger";
+import { addSingaporeCalendarMonths, assertMilkLedgerMutation, MilkLedgerError, replayMilkLedger, replayMilkLedgerDeletion, replayMilkLedgerEdit } from "./milk-bank-ledger";
 
 test("frozen expiry is three Singapore calendar months, clamped at month end", () => {
   const january31 = Date.parse("2026-01-31T21:15:00+08:00");
@@ -17,7 +17,7 @@ test("frozen expiry is three Singapore calendar months, clamped at month end", (
   );
 });
 
-test("Available milk is allocated FIFO and expired milk remains visible", () => {
+test("Available milk is allocated FIFO without in-app expiry", () => {
   const hour = 60 * 60 * 1000;
   const result = replayMilkLedger([
     { id: "pump-old", type: "pump", startedAt: 1 * hour, createdAt: 1, details: { amount: 60 } },
@@ -26,21 +26,20 @@ test("Available milk is allocated FIFO and expired milk remains visible", () => 
   ], 7 * hour);
 
   assert.equal(result.availableMl, 30);
-  assert.equal(result.expiredAvailableMl, 30);
   assert.deepEqual(
     result.availableBatches.map(({ id, remainingMl }) => ({ id, remainingMl })),
     [{ id: "pump-new", remainingMl: 30 }],
   );
+  assert.equal("expiresAt" in result.availableBatches[0], false);
 });
 
-test("Available reconciliation additions persist without retroactive expiry", () => {
+test("Available reconciliation additions remain available without in-app expiry", () => {
   const result = replayMilkLedger([
     { id: "legacy", type: "bankadjust", startedAt: 100, details: { amount: 45 } },
   ], 99_999_999);
 
   assert.equal(result.availableMl, 45);
-  assert.equal(result.expiredAvailableMl, 0);
-  assert.equal(result.availableBatches[0]?.expiresAt, null);
+  assert.equal("expiresAt" in result.availableBatches[0], false);
 });
 
 test("legacy pump logs without a positive amount do not break the bank", () => {
@@ -143,7 +142,7 @@ test("freeze moves Available FIFO into one indivisible frozen packet", () => {
   assert.deepEqual(result.frozenPackets.map((packet) => [packet.id, packet.amountMl]), [["packet", 60]]);
 });
 
-test("thaw requires the whole packet and gives milk a fresh four-hour Available expiry", () => {
+test("thaw requires the whole packet and returns it to Available", () => {
   const frozenAt = Date.parse("2026-02-01T10:00:00+08:00");
   const thawedAt = Date.parse("2026-02-02T09:30:00+08:00");
   const base = [
@@ -165,7 +164,7 @@ test("thaw requires the whole packet and gives milk a fresh four-hour Available 
   assert.equal(result.frozenMl, 0);
   assert.equal(result.availableMl, 75);
   assert.equal(result.availableBatches[0]?.source, "thaw");
-  assert.equal(result.availableBatches[0]?.expiresAt, thawedAt + 4 * 60 * 60 * 1000);
+  assert.equal("expiresAt" in result.availableBatches[0], false);
 });
 
 test("expired frozen packets cannot thaw but can be discarded", () => {
@@ -198,23 +197,6 @@ test("later packet events make an edited ledger impossible instead of silently c
     ], 300),
     (error) => error instanceof MilkLedgerError && error.code === "PACKET_CLOSED",
   );
-});
-
-test("Available-use preview reports the expired FIFO portion requiring confirmation", () => {
-  const hour = 60 * 60 * 1000;
-  const events = [
-    { id: "old", type: "pump", startedAt: hour, details: { amount: 50 } },
-    { id: "fresh", type: "pump", startedAt: 6 * hour, details: { amount: 60 } },
-  ];
-
-  assert.deepEqual(previewAvailableUse(events, 80, 7 * hour), {
-    availableMl: 110,
-    expiredMl: 50,
-  });
-  assert.deepEqual(previewAvailableUse(events, 40, 4 * hour), {
-    availableMl: 50,
-    expiredMl: 0,
-  });
 });
 
 test("historical bottle calculations deduct consumed plus wasted milk", () => {

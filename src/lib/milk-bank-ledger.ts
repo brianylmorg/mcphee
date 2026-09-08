@@ -1,7 +1,6 @@
 import { bottleBreastmilkLibraryDeduction } from "./milk-calculation";
 
 const SINGAPORE_OFFSET_MS = 8 * 60 * 60 * 1000;
-export const AVAILABLE_EXPIRY_MS = 4 * 60 * 60 * 1000;
 
 export type MilkLedgerActivity = {
   id: string;
@@ -16,7 +15,6 @@ export type AvailableMilkBatch = {
   addedAt: number;
   amountMl: number;
   remainingMl: number;
-  expiresAt: number | null;
   source: "pump" | "adjustment" | "thaw";
 };
 
@@ -60,30 +58,27 @@ function positiveAmount(value: unknown, eventId: string): number {
 export function allocateAvailable(
   batches: AvailableMilkBatch[],
   amountMl: number,
-  at: number,
   eventId?: string,
   allowShortfall = false,
-): { allocations: Array<{ batchId: string; amountMl: number; expired: boolean }>; expiredMl: number; shortfallMl: number } {
+): { allocations: Array<{ batchId: string; amountMl: number }>; shortfallMl: number } {
   if (!Number.isFinite(amountMl) || amountMl < 0) {
     throw new MilkLedgerError("INVALID_EVENT", "Milk amounts must be finite and non-negative", eventId);
   }
   let remaining = Math.round(amountMl * 100) / 100;
-  const allocations: Array<{ batchId: string; amountMl: number; expired: boolean }> = [];
+  const allocations: Array<{ batchId: string; amountMl: number }> = [];
   for (const batch of batches) {
     if (remaining <= 0) break;
     const used = Math.min(batch.remainingMl, remaining);
     if (used <= 0) continue;
-    const expired = batch.expiresAt != null && batch.expiresAt <= at;
     batch.remainingMl = Math.round((batch.remainingMl - used) * 100) / 100;
     remaining = Math.round((remaining - used) * 100) / 100;
-    allocations.push({ batchId: batch.id, amountMl: used, expired });
+    allocations.push({ batchId: batch.id, amountMl: used });
   }
   if (remaining > 0 && !allowShortfall) {
     throw new MilkLedgerError("INSUFFICIENT_AVAILABLE", "Not enough Available milk for this event", eventId);
   }
   return {
     allocations,
-    expiredMl: allocations.reduce((sum, item) => sum + (item.expired ? item.amountMl : 0), 0),
     shortfallMl: remaining,
   };
 }
@@ -113,7 +108,6 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
         addedAt: event.startedAt,
         amountMl,
         remainingMl: amountMl,
-        expiresAt: event.startedAt + AVAILABLE_EXPIRY_MS,
         source: "pump",
       });
     } else if (event.type === "bankadjust") {
@@ -126,24 +120,23 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
           addedAt: event.startedAt,
           amountMl,
           remainingMl: amountMl,
-          expiresAt: null,
           source: "adjustment",
         });
       } else {
-        const allocation = allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
+        const allocation = allocateAvailable(availableBatches, amountMl, event.id, persistedEventIds.has(event.id));
         if (allocation.shortfallMl > 0) shortfallByEventId[event.id] = allocation.shortfallMl;
       }
     } else if (event.type === "bottlefeed") {
       const amountMl = Math.round(bottleBreastmilkLibraryDeduction(event.details) * 100) / 100;
       if (amountMl > 0) {
-        const allocation = allocateAvailable(availableBatches, amountMl, event.startedAt, event.id, persistedEventIds.has(event.id));
+        const allocation = allocateAvailable(availableBatches, amountMl, event.id, persistedEventIds.has(event.id));
         if (allocation.shortfallMl > 0) shortfallByEventId[event.id] = allocation.shortfallMl;
       }
     } else if (event.type === "bankfreeze") {
       const amountMl = positiveAmount(event.details.amount, event.id);
       const source = event.details.source === "reconcile" ? "reconcile" : "available";
       if (source === "available") {
-        allocateAvailable(availableBatches, amountMl, event.startedAt, event.id);
+        allocateAvailable(availableBatches, amountMl, event.id);
       }
       if (frozenPackets.some((packet) => packet.id === event.id)) {
         throw new MilkLedgerError("INVALID_EVENT", "Frozen packet identity must be unique", event.id);
@@ -196,7 +189,6 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
           addedAt: event.startedAt,
           amountMl,
           remainingMl: amountMl,
-          expiresAt: event.startedAt + AVAILABLE_EXPIRY_MS,
           source: "thaw",
         });
       }
@@ -205,10 +197,6 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
 
   const remainingBatches = availableBatches.filter((batch) => batch.remainingMl > 0);
   const availableMl = remainingBatches.reduce((sum, batch) => sum + batch.remainingMl, 0);
-  const expiredAvailableMl = remainingBatches.reduce(
-    (sum, batch) => sum + (batch.expiresAt != null && batch.expiresAt <= now ? batch.remainingMl : 0),
-    0,
-  );
 
   const activeFrozenPackets = frozenPackets
     .filter((packet) => packet.status === "frozen")
@@ -217,25 +205,12 @@ export function replayMilkLedger(events: MilkLedgerActivity[], now: number, pers
 
   return {
     availableMl: Math.round(availableMl * 100) / 100,
-    expiredAvailableMl: Math.round(expiredAvailableMl * 100) / 100,
     frozenMl: Math.round(frozenMl * 100) / 100,
     availableBatches: remainingBatches,
     frozenPackets: activeFrozenPackets,
     history,
     shortfallByEventId,
   };
-}
-
-export function previewAvailableUse(
-  events: MilkLedgerActivity[],
-  amountMl: number,
-  at: number,
-): { availableMl: number; expiredMl: number } {
-  const relevantEvents = events.filter((event) => event.startedAt <= at);
-  const state = replayMilkLedger(relevantEvents, at, new Set(relevantEvents.map((event) => event.id)));
-  const batches = state.availableBatches.map((batch) => ({ ...batch }));
-  const allocation = allocateAvailable(batches, amountMl, at);
-  return { availableMl: state.availableMl, expiredMl: allocation.expiredMl };
 }
 
 export function assertMilkLedgerMutation(

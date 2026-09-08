@@ -53,7 +53,6 @@ interface MilkDaySummary {
 
 interface PumpedMilkBatch extends AvailableMilkBatch {
   pumpedAt: number;
-  isExpired: boolean;
   isAdjustment?: boolean;
 }
 
@@ -140,7 +139,6 @@ export default function DashboardPage() {
   const [dailyFormulaMl, setDailyFormulaMl] = useState(0);
   const [breastmilkLibraryMl, setBreastmilkLibraryMl] = useState(0);
   const [breastmilkBatches, setBreastmilkBatches] = useState<PumpedMilkBatch[]>([]);
-  const [expiredAvailableMl, setExpiredAvailableMl] = useState(0);
   const [frozenMilkMl, setFrozenMilkMl] = useState(0);
   const [frozenPackets, setFrozenPackets] = useState<FrozenMilkPacket[]>([]);
   const [bankHistory, setBankHistory] = useState<MilkBankHistoryItem[]>([]);
@@ -326,7 +324,6 @@ export default function DashboardPage() {
       setDailyFormulaMl(Number(data.dailyMilk?.formulaMl ?? 0));
       setBreastmilkLibraryMl(Number(data.pumpedMilk?.walletMl ?? 0));
       setBreastmilkBatches(Array.isArray(data.pumpedMilk?.batches) ? data.pumpedMilk.batches : []);
-      setExpiredAvailableMl(Number(data.pumpedMilk?.expiredAvailableMl ?? 0));
       setFrozenMilkMl(Number(data.pumpedMilk?.frozenMl ?? 0));
       setFrozenPackets(Array.isArray(data.pumpedMilk?.frozenPackets) ? data.pumpedMilk.frozenPackets : []);
       setBankHistory(Array.isArray(data.pumpedMilk?.bankHistory) ? data.pumpedMilk.bankHistory : []);
@@ -1021,7 +1018,7 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-4 sm:px-5 sm:py-5 space-y-3">
-        <section className="rounded-xl border border-terracotta/25 bg-surface p-4 shadow-sm" aria-label="Sleep status">
+        <section className={"rounded-xl border p-4 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45")} aria-label="Sleep status">
           <SleepStateControl
             state={sleepState.state}
             since={sleepState.since}
@@ -1186,7 +1183,6 @@ export default function DashboardPage() {
             <MilkBank
               babyId={baby.id}
               availableMl={breastmilkLibraryMl}
-              expiredAvailableMl={expiredAvailableMl}
               availableBatches={breastmilkBatches}
               frozenMl={frozenMilkMl}
               frozenPackets={frozenPackets}
@@ -2042,28 +2038,14 @@ function LogModal({
           ...(type === "sleep" && isEditing ? { endedAt } : {}),
           details,
       };
-      const save = (confirmExpired = false) => fetch("/api/activities", {
+      const res = await fetch("/api/activities", {
         method: isEditing && activity ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...activityPayload, ...(confirmExpired ? { confirmExpired: true } : {}) }),
+        body: JSON.stringify(activityPayload),
       });
-      let res = await save();
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        if (type === "bottlefeed" && data.code === "EXPIRED_CONFIRMATION_REQUIRED") {
-          const confirmed = window.confirm(
-            `This bottle reaches ${Number(data.expiredMl) || "some"} ml of expired Available milk. Use it anyway?`,
-          );
-          if (!confirmed) return;
-          res = await save(true);
-          if (!res.ok) {
-            const confirmedData = await res.json().catch(() => ({}));
-            throw new Error(confirmedData.error || "Failed to save activity");
-          }
-        } else {
-          throw new Error(data.error || "Failed to save activity");
-        }
+        throw new Error(data.error || "Failed to save activity");
       }
 
       onSuccess();

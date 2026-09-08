@@ -9,7 +9,6 @@ test("milk bank separates Available and Frozen and blocks thaw for expired packe
   const html = renderToStaticMarkup(createElement(MilkBank, {
     babyId: "baby-1",
     availableMl: 120,
-    expiredAvailableMl: 20,
     availableBatches: [],
     frozenMl: 80,
     frozenPackets: [{
@@ -26,7 +25,7 @@ test("milk bank separates Available and Frozen and blocks thaw for expired packe
   assert.match(html, /aria-expanded="false"/);
   assert.match(html, /aria-controls="frozen-bank-details"/);
   assert.match(html, /id="frozen-bank-details" hidden=""/);
-  assert.match(html, /20 ml expired/);
+  assert.doesNotMatch(html, /20 ml expired/);
   assert.match(html, /Expired/);
   assert.match(html, /Discard/);
   assert.doesNotMatch(html, />Correct<\/button>/);

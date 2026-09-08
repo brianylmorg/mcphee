@@ -5,7 +5,6 @@ import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household
 import { parseMilkBankCommand } from "@/lib/milk-bank-command";
 import {
   MilkLedgerError,
-  previewAvailableUse,
   replayMilkLedger,
   replayMilkLedgerDeletion,
   replayMilkLedgerEdit,
@@ -93,15 +92,6 @@ export async function POST(request: NextRequest) {
     let details: Record<string, unknown>;
 
     if (command.action === "freeze") {
-      const preview = previewAvailableUse(events, command.amountMl, command.at);
-      if (preview.expiredMl > 0 && !command.confirmExpired) {
-        await tx.rollback();
-        return NextResponse.json({
-          error: `This freeze would use ${preview.expiredMl} ml of expired Available milk. Confirm to continue.`,
-          code: "EXPIRED_CONFIRMATION_REQUIRED",
-          expiredMl: preview.expiredMl,
-        }, { status: 409 });
-      }
       type = "bankfreeze";
       details = { amount: command.amountMl, source: "available" };
     } else if (command.action === "addPacket") {

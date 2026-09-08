@@ -18,4 +18,7 @@ test("sleep control exposes both states with the current segment pressed", () =>
   assert.match(html, /aria-label="Set state to Awake"[^>]*aria-pressed="true"/);
   assert.match(html, /aria-label="Set state to Sleeping"[^>]*aria-pressed="false"/);
   assert.equal((html.match(/font-display text-2xl/g) ?? []).length, 2);
+  assert.match(html, /data-state="awake"/);
+  assert.match(html, /transform:translateX\(0\)/);
+  assert.match(html, /motion-reduce:transition-none/);
 });
