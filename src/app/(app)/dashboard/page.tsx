@@ -51,6 +51,12 @@ interface MilkDaySummary {
   asOfNowMl: number;
 }
 
+interface RecentMilkFeed {
+  id: string;
+  startedAt: number;
+  amountMl: number;
+}
+
 interface PumpedMilkBatch extends AvailableMilkBatch {
   pumpedAt: number;
   isAdjustment?: boolean;
@@ -137,6 +143,7 @@ export default function DashboardPage() {
   const [dailyMilkMl, setDailyMilkMl] = useState(0);
   const [dailyBreastmilkMl, setDailyBreastmilkMl] = useState(0);
   const [dailyFormulaMl, setDailyFormulaMl] = useState(0);
+  const [recentMilkFeeds, setRecentMilkFeeds] = useState<RecentMilkFeed[]>([]);
   const [breastmilkLibraryMl, setBreastmilkLibraryMl] = useState(0);
   const [breastmilkBatches, setBreastmilkBatches] = useState<PumpedMilkBatch[]>([]);
   const [frozenMilkMl, setFrozenMilkMl] = useState(0);
@@ -322,6 +329,7 @@ export default function DashboardPage() {
       setDailyMilkMl(Number(data.dailyMilk?.totalMl ?? 0));
       setDailyBreastmilkMl(Number(data.dailyMilk?.breastmilkMl ?? 0));
       setDailyFormulaMl(Number(data.dailyMilk?.formulaMl ?? 0));
+      setRecentMilkFeeds(Array.isArray(data.recentMilkFeeds) ? data.recentMilkFeeds : []);
       setBreastmilkLibraryMl(Number(data.pumpedMilk?.walletMl ?? 0));
       setBreastmilkBatches(Array.isArray(data.pumpedMilk?.batches) ? data.pumpedMilk.batches : []);
       setFrozenMilkMl(Number(data.pumpedMilk?.frozenMl ?? 0));
@@ -1177,6 +1185,31 @@ export default function DashboardPage() {
               )}{" "}
               median · same time, last 7 days{medianDataDayCountLabel}
             </p>
+          </div>
+
+          <div className="mt-3 border-t border-border/70 pt-3" aria-label="Recent bottle feeds">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Last 2 bottle feeds</p>
+            {recentMilkFeeds.length > 0 ? (
+              <div className="mt-1.5 divide-y divide-border/60">
+                {recentMilkFeeds.map((feed) => {
+                  const feedDateKey = new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Asia/Singapore", year: "numeric", month: "2-digit", day: "2-digit",
+                  }).format(new Date(feed.startedAt));
+                  const when = feedDateKey === todayDateKey
+                    ? formatTime(feed.startedAt)
+                    : `${formatDate(feed.startedAt)} · ${formatTime(feed.startedAt)}`;
+
+                  return (
+                    <div key={feed.id} className="flex items-baseline justify-between gap-3 py-1.5 first:pt-0 last:pb-0">
+                      <span className="min-w-0 text-xs text-muted">{when}</span>
+                      <span className="shrink-0 text-sm font-semibold tabular-nums text-warm-brown">{feed.amountMl} ml consumed</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-muted">No bottle feeds logged yet.</p>
+            )}
           </div>
 
           {baby?.id && (

@@ -4,6 +4,7 @@ import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { bottleVolumes, parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
 import { replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
+import { selectRecentMilkFeeds, type RecentMilkFeedActivity } from "@/lib/recent-milk-feeds";
 
 const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Singapore",
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
         args: [householdId, "bottlefeed", "pump", dayStart, dayEnd],
       },
       {
-        sql: `SELECT a.id, a.type, a.details, a.started_at, a.created_at FROM activities a
+        sql: `SELECT a.id, a.baby_id, a.type, a.details, a.started_at, a.created_at FROM activities a
               JOIN babies b ON a.baby_id = b.id
               WHERE b.household_id = ?
                 AND a.type IN (?, ?, ?, ?, ?, ?)
@@ -100,6 +101,12 @@ export async function GET(request: NextRequest) {
     ], "read");
 
     const householdRow = household.rows[0];
+    const selectedBabyId = babies.rows[0]?.id;
+    const recentMilkFeeds = selectRecentMilkFeeds(
+      pumpedLedger.rows as unknown as RecentMilkFeedActivity[],
+      selectedBabyId,
+      now.getTime(),
+    );
     const dailyMilkTotals = dailyMilk.rows.reduce((total, row) => {
       const typedRow = row as unknown as { type: string; details: string | null; started_at?: number };
       const details = parseActivityDetails(typedRow.details);
@@ -170,6 +177,7 @@ export async function GET(request: NextRequest) {
         pumpedMl: dailyMilkTotals.pumpedMl,
         expectedMl: expectedMilkMl,
       },
+      recentMilkFeeds,
       pumpedMilk: {
         walletMl: bankState.availableMl,
         availableMl: bankState.availableMl,
