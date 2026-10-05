@@ -49,6 +49,7 @@
 
 ### Sleep state + breastmilk bank
 - Sleep uses an `Awake | Sleeping` state control. Transitions are immediate; the 10-second undo token is accepted only while that exact transition remains the newest server-side sleep change.
+- `Naps today` uses Singapore time: counting begins at the first recorded wake from 05:00, includes ongoing daytime naps, and stops at the first sleep beginning from 18:00. Overnight sleep is excluded; a late nap beginning from 18:00 is treated as bedtime. The counter resets at Singapore midnight and waits for the next qualifying recorded wake.
 - Breastmilk is replayed as an auditable FIFO ledger with separate **Available** and **Frozen** balances. Existing pump/feed/`bankadjust` history retains the prior non-negative balance behavior; no data migration is required. New writes remain strict.
 - Available refrigerated milk has no in-app expiry; physical expiry is managed offline. Pump and thaw batches remain in Available until consumed, frozen, or reconciled.
 - `bankfreeze`, `bankthaw`, and `bankdiscard` activities are hidden from the baby timeline and shown in dedicated bank history. A freeze creates one indivisible packet; thaw and discard always address the whole packet.

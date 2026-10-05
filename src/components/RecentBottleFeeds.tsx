@@ -47,7 +47,7 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
 
   return (
     <div className="mt-3 border-t border-border/70 pt-3" aria-label="Recent bottle feeds">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Last 2 bottle feeds</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Latest feeds</p>
       {feeds.length > 0 ? (
         <div className="mt-1.5 divide-y divide-border/60">
           {feeds.map((feed) => {

@@ -12,9 +12,11 @@ import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk
 import { activityNoteText } from "@/lib/activity-note";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
 import { SleepStateControl } from "@/components/SleepStateControl";
+import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
 import type { SleepUndoToken } from "@/lib/sleep-transition";
+import type { DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
 
 interface Baby {
@@ -128,6 +130,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
   const [sleepState, setSleepState] = useState<SleepState>({ state: "awake", since: null, activity: null });
+  const [sleepActivities, setSleepActivities] = useState<DailyNapSession[]>([]);
   const [isChangingSleepState, setIsChangingSleepState] = useState(false);
   const [sleepUndo, setSleepUndo] = useState<{ token: SleepUndoToken; message: string } | null>(null);
   const [sleepNotice, setSleepNotice] = useState<string | null>(null);
@@ -316,6 +319,11 @@ export default function DashboardPage() {
           : [];
         const openSleep = sleeps.find((item: { ended_at?: unknown }) => item.ended_at == null);
         const latestClosed = sleeps.find((item: { ended_at?: unknown }) => item.ended_at != null);
+        setSleepActivities(sleeps.map((item: { id?: unknown; started_at?: unknown; ended_at?: unknown }) => ({
+          id: item.id == null ? undefined : String(item.id),
+          startedAt: Number(item.started_at),
+          endedAt: item.ended_at == null ? null : Number(item.ended_at),
+        })));
         setSleepState(openSleep
           ? { state: "sleeping", since: Number(openSleep.started_at), activity: openSleep as Activity }
           : { state: "awake", since: latestClosed ? Number(latestClosed.ended_at) : null, activity: latestClosed as Activity | null });
@@ -1034,6 +1042,7 @@ export default function DashboardPage() {
             disabled={isChangingSleepState}
             onSelect={handleSleepTransition}
           />
+          <DailyNapSummary sessions={sleepActivities} />
           {sleepState.since != null && sleepState.activity && (
             isEditingSleepSince ? (
               <div className="mt-3 flex flex-wrap items-end gap-2">
