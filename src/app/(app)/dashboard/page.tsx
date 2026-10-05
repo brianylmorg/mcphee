@@ -15,6 +15,7 @@ import { SleepStateControl } from "@/components/SleepStateControl";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
+import ActivityRecency from "@/components/ActivityRecency";
 import type { SleepUndoToken } from "@/lib/sleep-transition";
 import type { DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
@@ -1541,14 +1542,14 @@ export default function DashboardPage() {
               const isBreastfeed = type === "breastfeed";
               const label = type === "bottlefeed" ? "Bottlefeed" : type === "vomit" ? "Vomit" : type.charAt(0).toUpperCase() + type.slice(1);
               const ActivityIcon = activityIcons[type] ?? BabyIcon;
-              const meta = isBreastfeed && isStartingTimer
+              const statusMeta = isBreastfeed && isStartingTimer
                 ? "Starting…"
                 : isBreastfeed && isBreastfeeding
                 ? "Feeding…"
                 : isBreastfeed && !activeTimer && breastfeedPromptShown
                 ? "Tap again to start"
                 : last
-                ? timeSince(last.started_at)
+                ? null
                 : "No entries yet";
 
               return (
@@ -1562,7 +1563,11 @@ export default function DashboardPage() {
                     <ActivityIcon aria-hidden="true" className="h-5 w-5 shrink-0" />
                     <span className="text-sm font-medium">{label}</span>
                   </span>
-                  <span className={"shrink-0 text-xs tabular-nums " + (overdue ? "text-white" : "text-muted")}>{meta}</span>
+                  {statusMeta ? (
+                    <span className={"shrink-0 text-xs tabular-nums " + (overdue ? "text-white" : "text-muted")}>{statusMeta}</span>
+                  ) : last ? (
+                    <ActivityRecency startedAt={last.started_at} overdue={overdue} />
+                  ) : null}
                 </button>
               );
             })}
