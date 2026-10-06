@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { HouseholdProvider } from "@/lib/context/household-context";
 import { createDB } from "@/db";
 import CareModeTheme from "@/components/CareModeTheme";
+import { cache } from "react";
 
 export const metadata: Metadata = {
   title: "mcphee — Baby Activity Tracker",
@@ -27,9 +28,28 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#A85D3F",
-};
+const readCareMode = cache(async () => {
+  const cookieStore = await cookies();
+  const householdId = cookieStore.get("mcphee_hh")?.value;
+  if (householdId) {
+    try {
+      const result = await createDB().execute({
+        sql: `SELECT b.id, EXISTS(SELECT 1 FROM sick_mode_episodes e WHERE e.baby_id=b.id AND e.ended_at IS NULL) AS care_active
+              FROM babies b WHERE b.household_id=? LIMIT 1`,
+        args: [householdId],
+      });
+      if (result.rows[0]) return { babyId: String(result.rows[0].id), active: Number(result.rows[0].care_active) === 1 };
+    } catch {
+      // Older databases remain usable before the additive sick-mode migration.
+    }
+  }
+  return { babyId: undefined, active: false };
+});
+
+export async function generateViewport(): Promise<Viewport> {
+  const careMode = await readCareMode();
+  return { themeColor: careMode.active ? "#356B76" : "#A85D3F" };
+}
 
 export default async function RootLayout({
   children,
@@ -41,23 +61,7 @@ export default async function RootLayout({
   const userId = cookieStore.get("mcphee_user")?.value;
 
   let userName: string | undefined;
-  let initialBabyId: string | undefined;
-  let initialCareMode = false;
-  if (householdId) {
-    try {
-      const result = await createDB().execute({
-        sql: `SELECT b.id, EXISTS(SELECT 1 FROM sick_mode_episodes e WHERE e.baby_id=b.id AND e.ended_at IS NULL) AS care_active
-              FROM babies b WHERE b.household_id=? LIMIT 1`,
-        args: [householdId],
-      });
-      if (result.rows[0]) {
-        initialBabyId = String(result.rows[0].id);
-        initialCareMode = Number(result.rows[0].care_active) === 1;
-      }
-    } catch {
-      // Older databases remain usable before the additive sick-mode migration.
-    }
-  }
+  const { babyId: initialBabyId, active: initialCareMode } = await readCareMode();
   if (userId && householdId) {
     try {
       const db = createDB();

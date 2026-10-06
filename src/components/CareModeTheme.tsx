@@ -67,9 +67,17 @@ export default function CareModeTheme({ initialHouseholdId, initialBabyId, initi
     const root = document.documentElement;
     if (active) root.dataset.careMode = "sick";
     else delete root.dataset.careMode;
-    const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (themeMeta) themeMeta.content = active ? "#356B76" : "#A85D3F";
-    return () => { delete root.dataset.careMode; };
+    const syncThemeColor = () => {
+      const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+      const color = active ? "#356B76" : "#A85D3F";
+      if (themeMeta && themeMeta.content !== color) themeMeta.content = color;
+    };
+    // Prefetched navigation metadata may predate the latest episode mutation.
+    // Keep browser chrome aligned with this household's confirmed client state.
+    const observer = new MutationObserver(syncThemeColor);
+    observer.observe(document.head, { childList: true, subtree: true, attributes: true, attributeFilter: ["content"] });
+    syncThemeColor();
+    return () => { observer.disconnect(); delete root.dataset.careMode; };
   }, [active]);
 
   if (!active) return null;
