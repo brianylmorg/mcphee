@@ -1,3 +1,5 @@
+import { formatElapsedSince } from "../elapsed-time";
+
 const sgtTimeFormatter = new Intl.DateTimeFormat("en-SG", {
   hour: "2-digit",
   minute: "2-digit",
@@ -49,17 +51,8 @@ export function formatAge(birthDate: number | null): string {
   return `${months} month${months > 1 ? "s" : ""} ${remainWeeks} week${remainWeeks > 1 ? "s" : ""}`;
 }
 
-export function timeSince(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const minutes = Math.floor(diff / (1000 * 60));
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+export function timeSince(timestamp: number, now = Date.now()): string {
+  return formatElapsedSince(timestamp, now) ?? "";
 }
 
 export function formatTime(timestamp: number): string {

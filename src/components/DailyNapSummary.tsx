@@ -3,15 +3,9 @@
 import { useEffect, useId, useState } from "react";
 import { Info } from "lucide-react";
 import { calculateDailyNaps, type DailyNapSession } from "@/lib/daily-naps";
+import { formatElapsedDuration } from "@/lib/elapsed-time";
 
 const TICK_MS = 30 * 1000;
-
-function formatNapDuration(totalMs: number): string {
-  const totalMinutes = Math.max(0, Math.floor(totalMs / (60 * 1000)));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}h ${String(minutes).padStart(2, "0")}mins`;
-}
 
 export function DailyNapSummary({ sessions }: { sessions: readonly DailyNapSession[] }) {
   const [now, setNow] = useState(() => Date.now());
@@ -58,7 +52,7 @@ export function DailyNapSummary({ sessions }: { sessions: readonly DailyNapSessi
           </button>
         </div>
         <p className="shrink-0 text-sm font-semibold tabular-nums text-warm-brown">
-          {formatNapDuration(summary.totalMs)}
+          {formatElapsedDuration(summary.totalMs) ?? "0h 0m"}
         </p>
       </div>
       <p

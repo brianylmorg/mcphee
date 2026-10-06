@@ -10,7 +10,7 @@ test("nap summary exposes its waiting state and accessible calculation details",
 
   assert.match(html, />Naps today</);
   assert.match(html, />Waiting for morning wake</);
-  assert.match(html, />0h 00mins</);
+  assert.match(html, />0h 0m</);
   assert.match(html, /aria-label="How naps today is calculated"/);
   assert.match(html, /aria-expanded="false"/);
   assert.match(html, /aria-controls="[^"]+"/);

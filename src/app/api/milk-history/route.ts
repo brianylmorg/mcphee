@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
+import { isSickModeSchemaReady } from "@/db/sick-mode-schema";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { bottleVolumes, parseActivityDetails, sgtDateKey } from "@/lib/milk-volumes";
+import { episodeOverlapsSgtDate, type SickEpisodeRange } from "@/lib/sick-mode";
 
 export const runtime = "nodejs";
 
@@ -12,6 +14,7 @@ type MilkDay = {
   formulaMl: number;
   expectedMl: number | null;
   asOfNowMl: number;
+  isSickDay: boolean;
 };
 
 // Cap the replay window so the per-day reconstruction stays O(window) instead of
@@ -34,11 +37,28 @@ export async function GET(request: NextRequest) {
     }
 
     const historyCutoff = asOfTimestamp - HISTORY_WINDOW_MS;
+    let sickEpisodes: SickEpisodeRange[] = [];
+    if (await isSickModeSchemaReady(db)) {
+      let episodeSql = `SELECT e.started_at, e.ended_at FROM sick_mode_episodes e
+                        JOIN babies b ON b.id = e.baby_id
+                        WHERE b.household_id = ? AND e.started_at <= ?
+                          AND (e.ended_at IS NULL OR e.ended_at >= ?)`;
+      const episodeArgs: Array<string | number> = [householdId, asOfTimestamp, historyCutoff];
+      if (babyId) {
+        episodeSql += " AND e.baby_id = ?";
+        episodeArgs.push(babyId);
+      }
+      const episodeResult = await db.execute({ sql: episodeSql, args: episodeArgs });
+      sickEpisodes = episodeResult.rows.map((row) => ({
+        startedAt: Number(row.started_at),
+        endedAt: row.ended_at == null ? null : Number(row.ended_at),
+      }));
+    }
 
     let sql = `SELECT a.started_at, a.details FROM activities a
                JOIN babies b ON b.id = a.baby_id
-               WHERE b.household_id = ? AND a.type = ? AND a.started_at >= ?`;
-    const args: Array<string | number> = [householdId, "bottlefeed", historyCutoff];
+               WHERE b.household_id = ? AND a.type = ? AND a.started_at >= ? AND a.started_at <= ?`;
+    const args: Array<string | number> = [householdId, "bottlefeed", historyCutoff, asOfTimestamp];
     if (babyId) {
       sql += " AND a.baby_id = ?";
       args.push(babyId);
@@ -47,8 +67,8 @@ export async function GET(request: NextRequest) {
 
     let measurementSql = `SELECT m.measured_at, m.weight_g FROM measurements m
                           JOIN babies b ON b.id = m.baby_id
-                          WHERE b.household_id = ? AND m.weight_g IS NOT NULL AND m.measured_at >= ?`;
-    const measurementArgs: Array<string | number> = [householdId, historyCutoff];
+                          WHERE b.household_id = ? AND m.weight_g IS NOT NULL AND m.measured_at >= ? AND m.measured_at <= ?`;
+    const measurementArgs: Array<string | number> = [householdId, historyCutoff, asOfTimestamp];
     if (babyId) {
       measurementSql += " AND m.baby_id = ?";
       measurementArgs.push(babyId);
@@ -74,6 +94,7 @@ export async function GET(request: NextRequest) {
         formulaMl: 0,
         expectedMl: null,
         asOfNowMl: 0,
+        isSickDay: sickEpisodes.some((episode) => episodeOverlapsSgtDate(episode, date)),
       };
       current.breastmilkMl += volumes.breastmilkMl;
       current.formulaMl += volumes.formulaMl;
@@ -110,6 +131,7 @@ export async function GET(request: NextRequest) {
       }
       const totals = totalsByDate.get(date) ?? {
         date, totalMl: 0, breastmilkMl: 0, formulaMl: 0, expectedMl: null, asOfNowMl: 0,
+        isSickDay: sickEpisodes.some((episode) => episodeOverlapsSgtDate(episode, date)),
       };
       days.push({
         ...totals,

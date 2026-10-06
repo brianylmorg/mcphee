@@ -16,9 +16,12 @@ import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
 import ActivityRecency from "@/components/ActivityRecency";
+import SickModePanel from "@/components/SickModePanel";
 import type { SleepUndoToken } from "@/lib/sleep-transition";
 import type { DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
+import type { SickModeResponse } from "@/lib/sick-mode";
+import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 
 interface Baby {
   id: string;
@@ -53,6 +56,7 @@ interface MilkDaySummary {
   formulaMl: number;
   expectedMl: number | null;
   asOfNowMl: number;
+  isSickDay?: boolean;
 }
 
 interface RecentMilkFeed {
@@ -161,11 +165,14 @@ export default function DashboardPage() {
   const [milkHistoryCutoffAt, setMilkHistoryCutoffAt] = useState<number | null>(null);
   const [asOfDayOffset, setAsOfDayOffset] = useState(-1);
   const milkHistoryRequestRef = useRef(0);
+  const sickModeRequestRef = useRef(0);
   const dashboardRequestRef = useRef<AbortController | null>(null);
   const dashboardSnapshotRef = useRef("");
   const [selectedMilkDate, setSelectedMilkDate] = useState("");
   const [showMilkHistoryChart, setShowMilkHistoryChart] = useState(false);
   const [isMilkHistoryLoading, setIsMilkHistoryLoading] = useState(false);
+  const [sickMode, setSickMode] = useState<SickModeResponse | null>(null);
+  const [sickModeIsStale, setSickModeIsStale] = useState(false);
   const [activityDateFilter, setActivityDateFilter] = useState("");
   const [activityTypeFilters, setActivityTypeFilters] = useState<string[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
@@ -295,6 +302,25 @@ export default function DashboardPage() {
     }
   }, [householdId]);
 
+  const fetchSickMode = useCallback(async (babyId: string) => {
+    if (!householdId || !babyId) return;
+    const requestId = ++sickModeRequestRef.current;
+    try {
+      const response = await fetch(`/api/sick-mode?babyId=${encodeURIComponent(babyId)}`, { cache: "no-store" });
+      const data = await response.json().catch(() => null) as SickModeResponse | null;
+      if (requestId !== sickModeRequestRef.current) return;
+      if (response.ok && data) {
+        setSickMode(data);
+        setSickModeIsStale(false);
+      } else {
+        setSickModeIsStale(true);
+      }
+    } catch (error) {
+      console.error("Sick mode error:", error);
+      setSickModeIsStale(true);
+    }
+  }, [householdId]);
+
   const fetchData = useCallback(async () => {
     if (!householdId) return;
 
@@ -398,6 +424,22 @@ export default function DashboardPage() {
       document.removeEventListener("visibilitychange", refreshMilkHistory);
     };
   }, [baby?.id, fetchMilkHistory, activityFilterRefresh]);
+
+  useEffect(() => {
+    if (!baby?.id) return;
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void fetchSickMode(baby.id);
+    };
+    void fetchSickMode(baby.id);
+    const interval = window.setInterval(refreshIfVisible, 30_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [baby?.id, fetchSickMode, activityFilterRefresh]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -867,7 +909,7 @@ export default function DashboardPage() {
           return {
             title: "Woke up",
             subcategory: `Slept ${formatTime(source.started_at)}–${formatTime(Number(source.ended_at))}`,
-            quantity: formatElapsed(Number(source.ended_at) - source.started_at),
+            quantity: formatElapsedDuration(Number(source.ended_at) - source.started_at) ?? "",
           };
         }
         return { title: "Sleep", subcategory: "", quantity: "" };
@@ -912,11 +954,27 @@ export default function DashboardPage() {
 
   const activeMilkDate = selectedMilkDate || todayDateKey;
   const isSelectedMilkToday = activeMilkDate === todayDateKey;
+  const activeSickSummary = sickMode?.schemaReady && sickMode.activeEpisode ? sickMode.summary : null;
   const historicalMilkSummary = milkHistory.find((day) => day.date === activeMilkDate);
-  const selectedMilkSummary: MilkDaySummary = isSelectedMilkToday
+  const defaultSelectedMilkSummary: MilkDaySummary = isSelectedMilkToday
     ? { date: todayDateKey, totalMl: dailyMilkMl, breastmilkMl: dailyBreastmilkMl, formulaMl: dailyFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: dailyMilkMl }
     : historicalMilkSummary ?? { date: activeMilkDate, totalMl: 0, breastmilkMl: 0, formulaMl: 0, expectedMl: null, asOfNowMl: 0 };
-  const selectedExpectedMilkMl = selectedMilkSummary.expectedMl;
+  const selectedMilkSummary: MilkDaySummary = isSelectedMilkToday && activeSickSummary
+    ? {
+        ...defaultSelectedMilkSummary,
+        totalMl: activeSickSummary.todayConsumedMl,
+        breastmilkMl: activeSickSummary.todayBreastmilkMl,
+        formulaMl: activeSickSummary.todayFormulaMl,
+        asOfNowMl: activeSickSummary.todayConsumedMl,
+        expectedMl: activeSickSummary.expectedDailyMl,
+      }
+    : defaultSelectedMilkSummary;
+  const selectedExpectedMilkMl = isSelectedMilkToday && activeSickSummary
+    ? activeSickSummary.expectedDailyMl
+    : selectedMilkSummary.expectedMl;
+  const selectedThresholdMilkMl = isSelectedMilkToday && activeSickSummary
+    ? activeSickSummary.thresholdMl
+    : null;
   const milkProgress = selectedExpectedMilkMl
     ? Math.min(100, Math.round((selectedMilkSummary.totalMl / selectedExpectedMilkMl) * 100))
     : 0;
@@ -951,7 +1009,7 @@ export default function DashboardPage() {
   const medianWindowStart = shiftMilkDate(todayDateKey, -7);
   const medianWindowEnd = shiftMilkDate(todayDateKey, -1);
   const medianDataDays = milkHistory.filter(
-    (day) => day.date >= medianWindowStart && day.date <= medianWindowEnd && day.totalMl > 0
+    (day) => day.date >= medianWindowStart && day.date <= medianWindowEnd && day.totalMl > 0 && day.isSickDay !== true
   );
   const asOfMedianMl = medianDataDays.length > 0
     ? median(medianDataDays.map((day) => day.asOfNowMl))
@@ -965,7 +1023,8 @@ export default function DashboardPage() {
   // or zero, where a percentage would be meaningless.
   const todayDeltaPct = (referenceMl: number | null | undefined): string | null => {
     if (referenceMl == null || referenceMl <= 0) return null;
-    const pct = Math.round(((dailyMilkMl - referenceMl) / referenceMl) * 100);
+    const todayTotalMl = activeSickSummary?.todayConsumedMl ?? dailyMilkMl;
+    const pct = Math.round(((todayTotalMl - referenceMl) / referenceMl) * 100);
     return (pct > 0 ? "+" : "") + pct + "%";
   };
   const comparisonDeltaPct = todayDeltaPct(comparisonMilkSummary?.asOfNowMl);
@@ -979,7 +1038,9 @@ export default function DashboardPage() {
 
   const chartMilkDays = [
     ...milkHistory.filter((day) => day.date !== todayDateKey),
-    { date: todayDateKey, totalMl: dailyMilkMl, breastmilkMl: dailyBreastmilkMl, formulaMl: dailyFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: dailyMilkMl },
+    activeSickSummary
+      ? { date: todayDateKey, totalMl: activeSickSummary.todayConsumedMl, breastmilkMl: activeSickSummary.todayBreastmilkMl, formulaMl: activeSickSummary.todayFormulaMl, expectedMl: activeSickSummary.expectedDailyMl, asOfNowMl: activeSickSummary.todayConsumedMl, isSickDay: true }
+      : { date: todayDateKey, totalMl: dailyMilkMl, breastmilkMl: dailyBreastmilkMl, formulaMl: dailyFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: dailyMilkMl },
   ].sort((a, b) => a.date.localeCompare(b.date)).slice(-MILK_CHART_WINDOW_DAYS);
 
   const asOfMilkDays = chartMilkDays.filter((day) => day.date <= todayDateKey);
@@ -1071,6 +1132,18 @@ export default function DashboardPage() {
             <p className="mt-2 text-xs text-muted">Awake time starts after the first recorded sleep.</p>
           )}
         </section>
+        {baby?.id && (sickMode || sickModeIsStale) && (
+          <SickModePanel
+            babyId={baby.id}
+            data={sickMode}
+            isStale={sickModeIsStale}
+            onRefresh={async () => {
+              await fetchSickMode(baby.id);
+              await fetchData();
+              setActivityFilterRefresh((value) => value + 1);
+            }}
+          />
+        )}
         {/* Daily Milk Total */}
         <section className="rounded-lg border border-border bg-surface p-4 shadow-sm">
           <div className="flex items-start justify-between gap-4">
@@ -1124,7 +1197,7 @@ export default function DashboardPage() {
               <span className="text-base text-warm-brown-light">ml</span>
             </div>
             <div className="border-l border-border pl-4 text-right">
-              <p className="text-xs text-muted">Expected</p>
+              <p className="text-xs text-muted">{activeSickSummary && isSelectedMilkToday ? "Usual daily" : "Expected"}</p>
               <p className="font-display text-base tabular-nums text-warm-brown">
                 {selectedExpectedMilkMl ? selectedExpectedMilkMl + " ml" : "-- ml"}
               </p>
@@ -1134,17 +1207,28 @@ export default function DashboardPage() {
           <p className="mt-2 text-sm leading-relaxed text-muted">
             {selectedMilkSummary.breastmilkMl}ml breastmilk ({breastmilkPercent}%) + {selectedMilkSummary.formulaMl}ml formula ({formulaPercent}%) consumed
           </p>
+          {activeSickSummary && isSelectedMilkToday && !activeSickSummary.todayFeedDataAvailable && (
+            <p className="mt-1 text-xs font-medium text-muted">No consumed feeds logged yet today.</p>
+          )}
 
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-cream">
+          <div className="relative mt-4 h-3 rounded-full bg-cream" aria-label={activeSickSummary && isSelectedMilkToday ? `Today ${selectedMilkSummary.totalMl} ml; usual daily intake ${selectedExpectedMilkMl} ml; 50% intake threshold ${selectedThresholdMilkMl} ml` : undefined}>
             <div
               className="h-full rounded-full bg-terracotta transition-[width]"
               style={{ width: selectedExpectedMilkMl ? milkProgress + "%" : "0%" }}
             />
+            {activeSickSummary && isSelectedMilkToday && selectedThresholdMilkMl != null && (
+              <><span aria-hidden="true" className="absolute inset-y-[-3px] left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-danger" /><span aria-hidden="true" className="absolute inset-y-[-3px] right-0 w-0.5 rounded-full bg-warning" /></>
+            )}
           </div>
-          <div className="mt-2 flex items-center justify-between text-xs text-muted">
-            <span>Total for day</span>
-            <span>{selectedExpectedMilkMl ? milkProgress + "%" : "Target pending"}</span>
-          </div>
+          {activeSickSummary && isSelectedMilkToday ? (
+            <div className="mt-2 grid grid-cols-2 gap-3 text-[11px] leading-tight text-muted">
+              <span><span className="inline-block h-2 w-0.5 bg-danger" /> 50% intake threshold · {selectedThresholdMilkMl} ml</span>
+              <span className="text-right"><span className="inline-block h-2 w-0.5 bg-warning" /> Usual daily · {selectedExpectedMilkMl} ml</span>
+              <span className="col-span-2 text-xs">Full-day values; today is still in progress.</span>
+            </div>
+          ) : (
+            <div className="mt-2 flex items-center justify-between text-xs text-muted"><span>Total for day</span><span>{selectedExpectedMilkMl ? milkProgress + "%" : "Target pending"}</span></div>
+          )}
 
           <div className="mt-2 flex items-center justify-between gap-3">
             <p className="min-w-0 text-left text-xs text-muted">
@@ -1198,7 +1282,7 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <RecentBottleFeeds feeds={recentMilkFeeds} />
+          <RecentBottleFeeds feeds={activeSickSummary?.latestFeeds?.map((feed) => ({ id: feed.id, startedAt: feed.startedAt, amountMl: feed.totalMl })) ?? recentMilkFeeds} />
 
           {baby?.id && (
             <MilkBank
@@ -1941,10 +2025,7 @@ function LogModal({
   const noteIsInvalid = type === "note" && !notes.trim();
   const pumpAgeLabel = (timestamp: number | null) => {
     if (!timestamp) return "";
-    const hours = Math.max(0, (Date.now() - timestamp) / (60 * 60 * 1000));
-    if (hours < 1) return "<1h ago";
-    const roundedHours = hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours);
-    return roundedHours + "h ago";
+    return formatElapsedSince(timestamp) ?? "";
   };
   const lastPumpHint = !isEditing && type === "pump" && lastPumpedMl > 0
     ? "Last pump: " + Math.round(lastPumpedMl) + " ml" + (lastPumpedAt ? " · " + pumpAgeLabel(lastPumpedAt) : "")
@@ -2084,11 +2165,11 @@ function LogModal({
 
   const whenOptions = [
     { label: "Now", value: "now" },
-    { label: "5m ago", value: "5m" },
-    { label: "15m ago", value: "15m" },
-    { label: "30m ago", value: "30m" },
-    { label: "1h ago", value: "1h" },
-    { label: "2h ago", value: "2h" },
+    { label: "0h 5m ago", value: "5m" },
+    { label: "0h 15m ago", value: "15m" },
+    { label: "0h 30m ago", value: "30m" },
+    { label: "1h 0m ago", value: "1h" },
+    { label: "2h 0m ago", value: "2h" },
     { label: "Custom", value: "custom" },
   ];
 

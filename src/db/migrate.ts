@@ -1,4 +1,5 @@
 import { createClient } from "@libsql/client";
+import { applySickModeSchema } from "./sick-mode-schema";
 
 const client = createClient({
   url: process.env.TURSO_DATABASE_URL!,
@@ -117,6 +118,7 @@ async function migrate() {
     for (const statement of statements) {
       await client.execute(statement);
     }
+    await applySickModeSchema(client);
     console.log("Migrations completed successfully.");
   } catch (error) {
     console.error("Migration failed:", error);

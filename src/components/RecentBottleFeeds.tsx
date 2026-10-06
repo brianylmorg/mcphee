@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatDate, formatTime } from "@/lib/utils";
+import { formatElapsedSince } from "@/lib/elapsed-time";
 import { sgtDateKey } from "@/lib/milk-volumes";
 
 export interface RecentBottleFeedItem {
@@ -11,13 +12,6 @@ export interface RecentBottleFeedItem {
 }
 
 const ELAPSED_TICK_MS = 30 * 1000;
-
-function formatElapsedLabel(startedAt: number, now: number): string {
-  const totalMinutes = Math.max(0, Math.floor((now - startedAt) / (60 * 1000)));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}h ${String(minutes).padStart(2, "0")}mins ago`;
-}
 
 /**
  * Recent bottle feeds with a self-updating elapsed label. Kept as its own
@@ -54,7 +48,7 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
             const when = sgtDateKey(feed.startedAt) === todayDateKey
               ? formatTime(feed.startedAt)
               : `${formatDate(feed.startedAt)} · ${formatTime(feed.startedAt)}`;
-            const elapsed = formatElapsedLabel(feed.startedAt, now);
+            const elapsed = formatElapsedSince(feed.startedAt, now);
 
             return (
               <div key={feed.id} className="flex items-baseline justify-between gap-3 py-1.5 first:pt-0 last:pb-0">

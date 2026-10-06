@@ -56,6 +56,13 @@
 - Frozen expiry is three calendar months from the recorded freeze time in `Asia/Singapore`. Month-end dates clamp to the target month’s last day (for example, 31 January → 30 April) while preserving local time.
 - Frozen reconciliation is packet-based: add, correct, or safely remove explicit packets. Transfer edits replay all later events and are rejected if they make a balance or packet state impossible.
 
+### Sick mode
+- Sick mode is manually started and ended per baby, shared across household caregivers, and retained as episode history. Its usual daily milk baseline is frozen from the seven completed Singapore calendar days before activation; incomplete history must be confirmed or replaced with a clearly labelled manual baseline. Sick-mode days remain in history but are excluded from normal seven-day medians.
+- The milk card uses selected-baby consumed breastmilk + formula during an active episode. The same progress bar marks usual full-day intake and the 50% full-day intake threshold; a partial day is not presented as an automatic emergency result. The three latest consumed feeds remain visible.
+- The health check-in shows temperature recency (overdue only after 60 minutes from the measurement), today’s pee units and wet-diaper count, the last wet diaper, and three latest diapers. Missing logs are stated as missing rather than interpreted as zero.
+- Medications are caregiver-entered free text with prescribed dose text, optional entered interval, and as-needed status. Every concurrent medication remains visible as a compact row; dose/window details expand. McPhee never calculates a dose or presents an entered interval as a safe-to-dose recommendation. Dose logging is idempotent, caregiver-attributed, editable, and protected against stale concurrent changes.
+- Textual elapsed labels use `Yh Xm ago` throughout; duration labels use `Yh Xm`. Live second-by-second stopwatches retain their timer format.
+
 ### Stage 4 — Growth Tracking
 - Weight (g), length (mm), optional head (mm), backdatable
 - Chart view (recharts)
