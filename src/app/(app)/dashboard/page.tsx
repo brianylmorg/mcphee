@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
 import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Plus, Scale, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
@@ -17,6 +16,8 @@ import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
 import ActivityRecency from "@/components/ActivityRecency";
 import SickModePanel from "@/components/SickModePanel";
+import BabyCareMenu from "@/components/BabyCareMenu";
+import { publishCareMode } from "@/lib/care-mode";
 import type { SleepUndoToken } from "@/lib/sleep-transition";
 import type { DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
@@ -312,6 +313,7 @@ export default function DashboardPage() {
       if (response.ok && data) {
         setSickMode(data);
         setSickModeIsStale(false);
+        publishCareMode({ householdId, babyId, active: data.schemaReady && Boolean(data.activeEpisode) });
       } else {
         setSickModeIsStale(true);
       }
@@ -1058,19 +1060,9 @@ export default function DashboardPage() {
       <header className="bg-surface border-b border-border px-4 py-3 sm:px-5 sm:py-4">
         <div className="mx-auto max-w-lg">
           <div className="text-center">
-            <div className="inline-flex max-w-full items-center justify-center gap-2">
-              <Image
-                src="/icon.svg"
-                alt=""
-                width={36}
-                height={40}
-                priority
-                className="h-9 w-8 shrink-0 object-contain"
-              />
-              <h1 className="truncate font-display text-2xl text-accent-strong">
-                {baby?.name || "Baby"}
-              </h1>
-            </div>
+            <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
+              {baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); }} />}
+            </BabyCareMenu>
             {(baby?.birth_date || latestWeight) && (
               <p className="mt-1 text-center text-sm text-warm-brown-light">
                 {baby?.birth_date ? formatAge(baby.birth_date) : ""}

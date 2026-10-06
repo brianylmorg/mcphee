@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Droplets, Plus, Thermometer, Trash2, X } from "lucide-react";
+import { ChevronDown, Droplets, Pencil, Plus, Thermometer, Trash2, X } from "lucide-react";
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
 import type { SickDose, SickMedication, SickModeResponse } from "@/lib/sick-mode";
@@ -19,6 +19,7 @@ type Props = {
   babyId: string;
   data: SickModeResponse | null;
   isStale?: boolean;
+  display?: "dashboard" | "controls";
   onRefresh: () => Promise<void> | void;
 };
 
@@ -174,6 +175,7 @@ function DoseHistory({
   busy,
   onBusy,
   onChanged,
+  editRequest = 0,
 }: {
   babyId: string;
   episodeId: string;
@@ -181,6 +183,7 @@ function DoseHistory({
   busy: boolean;
   onBusy: (busy: boolean) => void;
   onChanged: () => Promise<void> | void;
+  editRequest?: number;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [givenAt, setGivenAt] = useState(() => sgtDateTimeInput());
@@ -320,6 +323,12 @@ function DoseHistory({
     setEditingMedication(true);
   };
 
+  useEffect(() => {
+    if (editRequest > 0) beginMedicationEdit();
+    // Capture the current prescription/revision only on an explicit edit request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequest]);
+
   return (
     <div className="mt-3 border-t border-border/70 pt-3">
       <div className="flex items-start justify-between gap-2">
@@ -399,9 +408,12 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
 
 function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onChanged }: { babyId: string; episodeId: string; medication: SickMedication; now: number; busy: boolean; onBusy: (busy: boolean) => void; onChanged: () => Promise<void> | void }) {
   const latest = medication.latestDose;
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [editRequest, setEditRequest] = useState(0);
   return (
-    <details className="group border-b border-border/70 last:border-b-0">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
+    <div className="relative border-b border-border/70 last:border-b-0">
+    <details ref={detailsRef} className="group">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 py-2 pr-11 [&::-webkit-details-marker]:hidden">
         <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
             <span className="min-w-0 break-words text-xs font-medium leading-snug text-warm-brown">{medication.name}</span>
@@ -413,8 +425,10 @@ function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onCha
         </div>
         <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
       </summary>
-      <DoseHistory babyId={babyId} episodeId={episodeId} medication={medication} busy={busy} onBusy={onBusy} onChanged={onChanged} />
+      <DoseHistory babyId={babyId} episodeId={episodeId} medication={medication} busy={busy} onBusy={onBusy} onChanged={onChanged} editRequest={editRequest} />
     </details>
+    <button type="button" aria-label={`Edit medication ${medication.name}`} title="Edit medication" disabled={busy} onClick={() => { if (detailsRef.current) detailsRef.current.open = true; setEditRequest(value => value + 1); }} className="absolute right-0 top-0 flex h-12 w-11 items-center justify-center rounded-lg text-accent-strong hover:bg-surface-muted disabled:opacity-50"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+    </div>
   );
 }
 
@@ -491,7 +505,7 @@ function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeRespon
   );
 }
 
-export default function SickModePanel({ babyId, data, isStale = false, onRefresh }: Props) {
+export default function SickModePanel({ babyId, data, isStale = false, display = "dashboard", onRefresh }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [showStart, setShowStart] = useState(false);
   const [showAddMedication, setShowAddMedication] = useState(false);
@@ -615,8 +629,10 @@ export default function SickModePanel({ babyId, data, isStale = false, onRefresh
     }
   };
 
+  if (display === "dashboard" && (!data?.schemaReady || !activeEpisode)) return null;
+
   if (!data) {
-    if (!isStale) return null;
+    if (!isStale) return <p role="status" className="text-sm text-muted">Loading sick-mode settings…</p>;
     return (
       <section className="rounded-lg border border-warning/30 bg-surface p-4 shadow-sm" aria-label="Sick mode could not load">
         <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-warning">Couldn’t load sick-mode details. The rest of the dashboard is still available.</p></div><button type="button" onClick={() => void onRefresh()} className="min-h-11 shrink-0 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Retry</button></div>
@@ -638,7 +654,7 @@ export default function SickModePanel({ babyId, data, isStale = false, onRefresh
         {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-amber-50 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
         <div className="flex items-center justify-between gap-3">
           <div><h2 id="sick-mode-heading" className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-muted">Track fever, medication, feeds and pee in one place.</p></div>
-          <button type="button" disabled={isStale} onClick={() => setShowStart((value) => !value)} aria-expanded={showStart} className="min-h-11 shrink-0 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-sm font-semibold text-accent-strong disabled:opacity-50">{showStart ? "Cancel" : "Start"}</button>
+          <button type="button" disabled={isStale} onClick={() => { if (!showStart) { setStartedAtInput(sgtDateTimeInput()); setPreview(data.baselinePreview); setConfirmIncomplete(false); setManualBaseline(""); } setShowStart(value => !value); }} aria-expanded={showStart} className="min-h-11 shrink-0 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-sm font-semibold text-accent-strong disabled:opacity-50">{showStart ? "Cancel" : "Start"}</button>
         </div>
         {showStart && (
           <div className="mt-4 border-t border-border pt-4">
@@ -665,6 +681,22 @@ export default function SickModePanel({ babyId, data, isStale = false, onRefresh
     );
   }
 
+  if (display === "controls") {
+    return (
+      <section aria-label="Sick-mode settings" className="space-y-4">
+        {isStale && <p role="status" className="rounded-lg border border-warning/30 bg-surface-muted px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Actions are paused until it reconnects.</p>}
+        <div className="rounded-xl border border-terracotta/30 bg-surface-muted p-4">
+          <p className="text-sm font-semibold text-accent-strong">Sick mode active</p>
+          <p className="mt-1 text-xs text-muted">Since {formatDate(activeEpisode.startedAt)} · {formatTime(activeEpisode.startedAt)}</p>
+          <p className="mt-3 text-sm leading-relaxed text-warm-brown">The app stays in its care theme until you end this episode. Temperature, pee and medications remain on your dashboard.</p>
+          <p className="mt-3 text-xs text-muted">Usual daily intake: {activeEpisode.baselineDailyMl} ml · 50% full-day threshold: {activeEpisode.baselineDailyMl / 2} ml</p>
+          <button type="button" onClick={endSickMode} disabled={busy || isStale} className="mt-4 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-warm-brown disabled:opacity-50">End mode</button>
+        </div>
+        <EpisodeArchive babyId={babyId} data={data} />
+      </section>
+    );
+  }
+
   const summary = data.summary;
   const temperature = summary?.latestTemperature ?? null;
   const temperatureElapsed = temperature ? formatElapsedSince(temperature.measuredAt, now) : null;
@@ -676,7 +708,6 @@ export default function SickModePanel({ babyId, data, isStale = false, onRefresh
       {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-amber-50 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
       <div className="flex items-start justify-between gap-3">
         <div><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong">Sick mode active</p><h2 id="sick-mode-heading" className="mt-0.5 text-lg font-semibold text-warm-brown">Health check-in</h2><p className="mt-0.5 text-xs text-muted">Since {formatDate(activeEpisode.startedAt)} · {formatTime(activeEpisode.startedAt)}</p></div>
-        <button type="button" onClick={endSickMode} disabled={busy || isStale} className="min-h-11 shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-warm-brown disabled:opacity-50">End mode</button>
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -703,7 +734,6 @@ export default function SickModePanel({ babyId, data, isStale = false, onRefresh
       </div>
 
       {summary?.lastCompletedDayConcern && <p className="mt-4 rounded-lg border border-danger/20 bg-red-50 px-3 py-2 text-xs leading-relaxed text-danger">On {summary.lastCompletedDayConcern.date}, {summary.lastCompletedDayConcern.totalMl} ml was logged—below the episode’s {summary.lastCompletedDayConcern.thresholdMl} ml 50% full-day intake threshold.</p>}
-      <EpisodeArchive babyId={babyId} data={data} />
     </section>
   );
 }

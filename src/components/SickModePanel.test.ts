@@ -131,11 +131,36 @@ test("schema-not-ready response keeps sick mode compact and disabled", () => {
   const html = renderToStaticMarkup(createElement(SickModePanel, {
     babyId: "baby-1",
     data: response,
+    display: "controls",
     onRefresh: () => undefined,
   }));
   assert.match(html, /Sick mode unavailable/);
   assert.match(html, /Database setup is required/);
   assert.match(html, /disabled=""/);
+});
+
+test("inactive sick mode lives in baby settings, not a dashboard start card", () => {
+  const data = activeResponse();
+  data.activeEpisode = null;
+  data.summary = null;
+  const dashboard = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined }));
+  assert.equal(dashboard, "");
+  const controls = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, display: "controls", onRefresh: () => undefined }));
+  assert.match(controls, /Track fever, medication, feeds and pee/);
+  assert.match(controls, />Start<\/button>/);
+});
+
+test("active episode lifecycle is in settings while health and medication editing stay on dashboard", () => {
+  const data = activeResponse();
+  const controls = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, display: "controls", onRefresh: () => undefined }));
+  assert.match(controls, /End mode/);
+  assert.match(controls, /until you end this episode/);
+  assert.doesNotMatch(controls, /Health check-in/);
+  const dashboard = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined }));
+  assert.match(dashboard, /Health check-in/);
+  assert.doesNotMatch(dashboard, />End mode<\/button>/);
+  assert.equal((dashboard.match(/title="Edit medication"/g) ?? []).length, 4);
+  assert.match(dashboard, /aria-label="Edit medication Medication 2"/);
 });
 
 test("medication edits carry the captured optimistic-concurrency revision", () => {

@@ -31,6 +31,35 @@
   --color-warning: rgb(var(--rgb-warning));
 }
 
+/* Care mode is an episode state, not a fever severity or a safety assessment. */
+html[data-care-mode="sick"] {
+  --rgb-canvas: 235 244 245;
+  --rgb-surface: 249 253 253;
+  --rgb-surface-muted: 221 237 240;
+  --rgb-accent: 83 135 148;
+  --rgb-accent-strong: 53 107 118;
+  --rgb-text: 28 53 60;
+  --rgb-text-muted: 71 99 107;
+  --rgb-border: 187 211 216;
+  --rgb-info: 53 107 118;
+}
+
+body,
+body main,
+body header,
+.care-mode-strip {
+  transition: background-color 350ms ease, border-color 350ms ease, color 350ms ease;
+}
+
+.baby-care-dialog {
+  max-height: calc(100dvh - 3rem);
+}
+
+.baby-care-dialog::backdrop {
+  background: rgb(var(--rgb-text) / 0.3);
+  backdrop-filter: blur(3px);
+}
+
 html,
 body {
   overflow-x: clip;

@@ -3,6 +3,7 @@ import "./globals.css";
 import { cookies } from "next/headers";
 import { HouseholdProvider } from "@/lib/context/household-context";
 import { createDB } from "@/db";
+import CareModeTheme from "@/components/CareModeTheme";
 
 export const metadata: Metadata = {
   title: "mcphee — Baby Activity Tracker",
@@ -40,6 +41,23 @@ export default async function RootLayout({
   const userId = cookieStore.get("mcphee_user")?.value;
 
   let userName: string | undefined;
+  let initialBabyId: string | undefined;
+  let initialCareMode = false;
+  if (householdId) {
+    try {
+      const result = await createDB().execute({
+        sql: `SELECT b.id, EXISTS(SELECT 1 FROM sick_mode_episodes e WHERE e.baby_id=b.id AND e.ended_at IS NULL) AS care_active
+              FROM babies b WHERE b.household_id=? LIMIT 1`,
+        args: [householdId],
+      });
+      if (result.rows[0]) {
+        initialBabyId = String(result.rows[0].id);
+        initialCareMode = Number(result.rows[0].care_active) === 1;
+      }
+    } catch {
+      // Older databases remain usable before the additive sick-mode migration.
+    }
+  }
   if (userId && householdId) {
     try {
       const db = createDB();
@@ -54,7 +72,7 @@ export default async function RootLayout({
   }
 
   return (
-    <html lang="en">
+    <html lang="en" data-care-mode={initialCareMode ? "sick" : undefined} suppressHydrationWarning>
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
@@ -64,6 +82,7 @@ export default async function RootLayout({
           initialUserId={userId}
           initialUserName={userName}
         >
+          <CareModeTheme initialHouseholdId={householdId} initialBabyId={initialBabyId} initialActive={initialCareMode} />
           {children}
         </HouseholdProvider>
       </body>
