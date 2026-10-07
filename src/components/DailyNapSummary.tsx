@@ -31,7 +31,7 @@ export function DailyNapSummary({ sessions, trailingAction }: { sessions: readon
   const summary = calculateDailyNaps(sessions, now);
 
   return (
-    <div className="mt-1 border-t border-current/10 pt-1">
+    <div className="daily-nap-summary mt-1 border-t border-current/10 pt-1">
       <div className="flex min-h-8 items-center justify-between gap-3" aria-live="polite">
         <div className="flex min-w-0 items-center">
           <div className="min-w-0">

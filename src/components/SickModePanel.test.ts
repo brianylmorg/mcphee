@@ -125,6 +125,26 @@ test("temperature absence and overdue states are explicit", () => {
   assert.match(emptyHtml, /No temperature recorded/);
 });
 
+test("compact health overview retains readings, all three diapers, all medications and intake warnings", () => {
+  const data = activeResponse();
+  assert.ok(data.summary);
+  data.summary.latestDiapers = [1, 2, 3].map(index => ({ id: `diaper-${index}`, startedAt: NOW - index * 60 * 60 * 1000, peeUnits: index, isWet: true, poop: "small" }));
+  data.summary.lastCompletedDayConcern = { date: "2026-10-05", totalMl: 300, thresholdMl: 400 };
+  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined }));
+  assert.match(html, /health-readings.*grid-cols-2/);
+  assert.match(html, />38.1 °C/);
+  assert.match(html, /Last measured/);
+  assert.match(html, /Overdue/);
+  assert.match(html, /ear/);
+  assert.match(html, /4 units/);
+  assert.match(html, /2 wet diapers/);
+  assert.equal((html.match(/data-diaper-row=/g) ?? []).length, 3);
+  assert.equal((html.match(/data-medication-row=/g) ?? []).length, 4);
+  assert.match(html, /Poo small/);
+  assert.match(html, /below the episode’s 400 ml 50% full-day intake threshold/);
+  assert.doesNotMatch(html, /Sick mode active/);
+});
+
 test("schema-not-ready response keeps sick mode compact and disabled", () => {
   const response = activeResponse();
   response.schemaReady = false;

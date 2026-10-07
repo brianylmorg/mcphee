@@ -1069,10 +1069,10 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-dvh bg-cream pb-24">
-      <header className="bg-surface border-b border-border px-4 py-2 sm:px-5 sm:py-3">
-        <div className="mx-auto max-w-lg">
-          <div className="text-center">
+    <main data-care-overview={Boolean(sickMode?.activeEpisode)} className="min-h-dvh bg-cream pb-24">
+      <header className="dashboard-header bg-surface border-b border-border px-4 py-2 sm:px-5 sm:py-3">
+        <div className="dashboard-header-inner mx-auto max-w-lg">
+          <div className="dashboard-baby-identity text-center">
             <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
               {baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); }} />}
             </BabyCareMenu>
@@ -1085,7 +1085,7 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
-          <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="dashboard-header-tools mt-2 flex items-center justify-between gap-3">
             <Link
               href="/weight"
               className="inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-xs font-semibold text-accent-strong shadow-sm transition-colors hover:bg-terracotta/15"
@@ -1101,9 +1101,10 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="max-w-lg mx-auto px-3 py-3 sm:px-5 sm:py-4 space-y-2">
+      <div className="dashboard-overview max-w-lg mx-auto px-3 py-3 sm:px-5 sm:py-4 space-y-2">
         <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45")} aria-label="Sleep status">
           <SleepStateControl
+            compact={Boolean(sickMode?.activeEpisode)}
             state={sleepState.state}
             since={sleepState.since}
             disabled={isChangingSleepState}
@@ -1132,13 +1133,28 @@ export default function DashboardPage() {
             <p className="mt-2 text-xs text-muted">Awake time starts after the first recorded sleep.</p>
           )}
         </section>
+        {baby?.id && (sickMode || sickModeIsStale) && (
+          <SickModePanel
+            babyId={baby.id}
+            data={sickMode}
+            isStale={sickModeIsStale}
+            onLogActivity={type => { void handleActivityAction(type); }}
+            onLogMedication={medicationId => { if (!sickModeIsStale && activeSickEpisodeId) { setShowActivityMenu(false); setMedicationLog({ episodeId: activeSickEpisodeId, medicationId }); } }}
+            onRefresh={async () => {
+              await fetchSickMode(baby.id);
+              await fetchData();
+              setActivityFilterRefresh((value) => value + 1);
+            }}
+          />
+        )}
         {/* Daily Milk Total */}
         <section className="milk-consumption-card rounded-lg border border-border bg-surface p-2.5 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="font-display text-base leading-tight text-accent-strong">
-                {isSelectedMilkToday ? "Today’s milk consumption" : "Milk consumption"}
+              <h2 aria-label={isSelectedMilkToday ? "Today’s milk consumption" : "Milk consumption"} className="font-display text-base leading-tight text-accent-strong">
+                {isSelectedMilkToday ? activeSickSummary ? "Today’s milk" : "Today’s milk consumption" : "Milk consumption"}
               </h2>
+              {activeSickSummary && isSelectedMilkToday && <p className="care-milk-total font-display text-[22px] font-semibold leading-6 tabular-nums text-warm-brown">{selectedMilkSummary.totalMl} <span className="text-sm font-normal text-muted">ml</span></p>}
               {!isSelectedMilkToday && <p className="mt-0.5 text-[11px] text-muted">{selectedMilkDateLabel}</p>}
             </div>
             <div className="-mt-2 flex shrink-0 gap-1">
@@ -1177,7 +1193,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="mt-2 flex items-end justify-between gap-4">
+          {!(activeSickSummary && isSelectedMilkToday) && <div className="milk-amounts mt-2 flex items-end justify-between gap-4">
             <div className="flex items-baseline gap-2">
               <span className="font-display text-2xl font-semibold tabular-nums text-warm-brown">
                 {selectedMilkSummary.totalMl}
@@ -1190,16 +1206,16 @@ export default function DashboardPage() {
                 {selectedExpectedMilkMl ? selectedExpectedMilkMl + " ml" : "-- ml"}
               </p>
             </div>
-          </div>
+          </div>}
 
-          <p className="mt-1 text-xs leading-snug text-muted">
-            {selectedMilkSummary.breastmilkMl}ml breastmilk ({breastmilkPercent}%) + {selectedMilkSummary.formulaMl}ml formula ({formulaPercent}%) consumed
+          <p className="milk-breakdown mt-1 text-xs leading-snug text-muted">
+            {selectedMilkSummary.breastmilkMl}ml breastmilk ({breastmilkPercent}%) + {selectedMilkSummary.formulaMl}ml formula ({formulaPercent}%){activeSickSummary && isSelectedMilkToday ? "" : " consumed"}
           </p>
           {activeSickSummary && isSelectedMilkToday && !activeSickSummary.todayFeedDataAvailable && (
             <p className="mt-1 text-xs font-medium text-muted">No consumed feeds logged yet today.</p>
           )}
 
-          <div className="relative mt-3 h-2 rounded-full bg-cream" aria-label={activeSickSummary && isSelectedMilkToday ? `Today ${selectedMilkSummary.totalMl} ml; usual daily intake ${selectedExpectedMilkMl} ml; 50% intake threshold ${selectedThresholdMilkMl} ml` : undefined}>
+          <div className="milk-progress relative mt-3 h-2 rounded-full bg-cream" aria-label={activeSickSummary && isSelectedMilkToday ? `Today ${selectedMilkSummary.totalMl} ml; usual daily intake ${selectedExpectedMilkMl} ml; 50% intake threshold ${selectedThresholdMilkMl} ml` : undefined}>
             <div
               className="h-full rounded-full bg-terracotta transition-[width]"
               style={{ width: selectedExpectedMilkMl ? milkProgress + "%" : "0%" }}
@@ -1209,7 +1225,7 @@ export default function DashboardPage() {
             )}
           </div>
           {activeSickSummary && isSelectedMilkToday ? (
-            <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] leading-tight text-muted">
+            <div className="milk-threshold-legend mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] leading-tight text-muted">
               <span><span className="inline-block h-2 w-0.5 bg-danger" /> 50% intake threshold · {selectedThresholdMilkMl} ml</span>
               <span className="text-right"><span className="inline-block h-2 w-0.5 bg-warning" /> Usual daily · {selectedExpectedMilkMl} ml</span>
               <span className="col-span-2 text-xs">Full-day values; today is still in progress.</span>
@@ -1218,7 +1234,7 @@ export default function DashboardPage() {
             <div className="mt-2 flex items-center justify-between text-xs text-muted"><span>Total for day</span><span>{selectedExpectedMilkMl ? milkProgress + "%" : "Target pending"}</span></div>
           )}
 
-          <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="milk-comparison mt-2 flex items-center justify-between gap-3">
             <p className="min-w-0 text-left text-xs text-muted">
               <span className="font-semibold tabular-nums text-warm-brown">{comparisonMilkSummary?.asOfNowMl ?? 0}ml</span>
               {comparisonDeltaPct && (
@@ -1255,7 +1271,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="mt-1 flex items-center justify-between gap-3">
+          <div className="milk-median mt-1 flex items-center justify-between gap-3">
             <p className="min-w-0 text-left text-xs text-muted">
               <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>
               {medianDeltaPct && (
@@ -1266,26 +1282,12 @@ export default function DashboardPage() {
                   {medianDeltaPct}
                 </span>
               )}{" "}
-              median · same time, last 7 days{medianDataDayCountLabel}
+              {activeSickSummary ? "7-day median · same time" : "median · same time, last 7 days"}{medianDataDayCountLabel}
             </p>
           </div>
 
           <RecentBottleFeeds feeds={activeSickSummary?.latestFeeds?.map((feed) => ({ id: feed.id, startedAt: feed.startedAt, amountMl: feed.totalMl })) ?? recentMilkFeeds} />
         </section>
-        {baby?.id && (sickMode || sickModeIsStale) && (
-          <SickModePanel
-            babyId={baby.id}
-            data={sickMode}
-            isStale={sickModeIsStale}
-            onLogActivity={type => { void handleActivityAction(type); }}
-            onLogMedication={medicationId => { if (!sickModeIsStale && activeSickEpisodeId) { setShowActivityMenu(false); setMedicationLog({ episodeId: activeSickEpisodeId, medicationId }); } }}
-            onRefresh={async () => {
-              await fetchSickMode(baby.id);
-              await fetchData();
-              setActivityFilterRefresh((value) => value + 1);
-            }}
-          />
-        )}
         {baby?.id && (
             <MilkBank
               standalone

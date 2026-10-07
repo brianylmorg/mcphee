@@ -40,7 +40,7 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
   const todayDateKey = sgtDateKey(now);
 
   return (
-    <div className="mt-2 border-t border-border/70 pt-2" aria-label="Recent bottle feeds">
+    <div className="latest-feeds mt-2 border-t border-border/70 pt-2" aria-label="Recent bottle feeds">
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Latest feeds</p>
       {feeds.length > 0 ? (
         <div className="mt-1 divide-y divide-border/60 pr-12 sm:pr-0">

@@ -8,6 +8,7 @@ type SleepStateControlProps = {
   elapsedLabel?: string;
   since?: number | null;
   disabled: boolean;
+  compact?: boolean;
   onSelect: (state: "awake" | "sleeping") => void;
 };
 
@@ -26,7 +27,7 @@ function formatElapsed(ms: number): string {
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function SleepStateControl({ state, since = null, elapsedLabel, disabled, onSelect }: SleepStateControlProps) {
+export function SleepStateControl({ state, since = null, elapsedLabel, disabled, compact = false, onSelect }: SleepStateControlProps) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
@@ -34,10 +35,10 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
   }, []);
   const displayedElapsed = elapsedLabel ?? (since == null ? "Not timed yet" : formatElapsed(Math.max(0, now - since)));
   return (
-    <div>
+    <div data-compact={compact} className={compact ? "sleep-control-compact flex items-center gap-3" : undefined}>
       <div
         data-state={state}
-        className={"relative overflow-hidden rounded-xl border p-1 shadow-inner transition-[background-color,border-color,box-shadow] duration-700 motion-reduce:transition-none " + (state === "awake"
+        className={"relative min-w-0 flex-1 overflow-hidden rounded-xl border p-1 shadow-inner transition-[background-color,border-color,box-shadow] duration-700 motion-reduce:transition-none " + (state === "awake"
           ? "border-amber-200/90 bg-gradient-to-br from-amber-50 via-orange-50/80 to-rose-50/70 shadow-amber-100/70"
           : "border-sky-300/70 bg-gradient-to-br from-slate-100 via-sky-50 to-indigo-100/70 shadow-sky-200/60")}
         aria-label="Sleep state"
@@ -63,7 +64,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                 onClick={() => {
                   if (!active) onSelect(optionState);
                 }}
-                className={"relative z-10 flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none " + (active
+                className={"relative z-10 flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none " + (compact ? "min-h-8 px-2 py-1 text-xs " : "min-h-10 px-3 py-1.5 text-sm ") + (active
                   ? awake ? "text-amber-950" : "text-sky-50"
                   : state === "awake" ? "text-amber-950/55 hover:text-amber-950" : "text-slate-600 hover:text-slate-900") + " disabled:opacity-50"}
               >
@@ -79,11 +80,11 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
           })}
         </div>
       </div>
-      <div className="mt-2 flex items-baseline justify-between gap-4" aria-live="polite">
-        <p className={"font-display text-xl font-semibold transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
+      <div className={compact ? "shrink-0 text-right" : "mt-2 flex items-baseline justify-between gap-4"} aria-live="polite">
+        <p className={(compact ? "text-[11px] " : "font-display text-xl ") + "font-semibold transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
           {state === "awake" ? "Awake" : "Sleeping"}
         </p>
-        <p className={"font-display text-xl font-semibold tabular-nums transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
+        <p className={"font-display " + (compact ? "text-lg " : "text-xl ") + "font-semibold tabular-nums transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
           {displayedElapsed}
         </p>
       </div>

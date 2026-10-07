@@ -76,6 +76,241 @@ body header,
   backdrop-filter: blur(3px);
 }
 
+/* A glanceable care overview, in reading order. Content grows naturally for
+   long prescriptions, overdue readings, warnings, or opened editors. */
+[data-care-overview="true"] .dashboard-header {
+  padding: 2px 12px;
+}
+[data-care-overview="true"] .dashboard-header-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 4px;
+}
+[data-care-overview="true"] .dashboard-baby-identity {
+  display: contents;
+}
+[data-care-overview="true"] .dashboard-baby-identity h1 {
+  display: flex;
+  text-align: left;
+  font-size: 18px;
+}
+[data-care-overview="true"] .dashboard-baby-identity h1 > button {
+  padding: 0;
+  gap: 4px;
+}
+[data-care-overview="true"] .dashboard-baby-identity > p {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-top: 0;
+  text-align: left;
+  font-size: 11px;
+  line-height: 16px;
+}
+[data-care-overview="true"] .dashboard-header-tools {
+  grid-column: 2;
+  grid-row: 1;
+  margin-top: 0;
+  gap: 4px;
+}
+[data-care-overview="true"] .dashboard-header-tools > a {
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  padding: 0;
+  font-size: 0;
+  gap: 0;
+}
+[data-care-overview="true"] .dashboard-header-tools > div {
+  flex-direction: column;
+  align-items: start;
+  gap: 0;
+  padding: 2px 6px;
+}
+[data-care-overview="true"] .dashboard-header-tools > div > span:first-child {
+  font-size: 9px;
+  line-height: 12px;
+}
+[data-care-overview="true"] .dashboard-header-tools > div > span:last-child {
+  font-size: 12px;
+  line-height: 16px;
+}
+[data-care-overview="true"] .dashboard-overview {
+  padding-top: 4px;
+  padding-bottom: 6px;
+}
+[data-care-overview="true"] .dashboard-overview > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 3px;
+}
+[data-care-overview="true"] .health-check-in {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+[data-care-overview="true"] .sleep-status-card {
+  padding: 6px 8px;
+}
+[data-care-overview="true"] .daily-nap-summary {
+  margin-top: 2px;
+  padding-top: 0;
+}
+[data-care-overview="true"] .daily-nap-summary > div,
+[data-care-overview="true"] .daily-nap-summary button {
+  min-height: 24px;
+  height: 24px;
+}
+[data-care-overview="true"] .daily-nap-summary button {
+  width: 28px;
+}
+.health-reading:first-child:has(.temperature-value) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
+  align-items: center;
+  column-gap: 4px;
+}
+.health-reading > button {
+  font-size: 11px;
+  gap: 4px;
+}
+.temperature-value {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 12px;
+}
+.temperature-value > span {
+  display: block;
+  margin-left: 0;
+  line-height: 12px;
+}
+.temperature-recency {
+  grid-column: 1 / -1;
+}
+.health-reading:first-child > button > svg {
+  display: none;
+}
+[data-care-overview="true"] .milk-consumption-card {
+  padding: 6px 8px;
+}
+[data-care-overview="true"] .milk-consumption-card h2 {
+  font-size: 14px;
+  line-height: 18px;
+}
+[data-care-overview="true"] .milk-consumption-card button {
+  width: 28px;
+  height: 28px;
+}
+[data-care-overview="true"] .milk-consumption-card > div:first-child {
+  gap: 4px;
+}
+[data-care-overview="true"] .milk-consumption-card > div:first-child > div:first-child:has(.care-milk-total) {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 8px;
+}
+.care-milk-total {
+  white-space: nowrap;
+}
+[data-care-overview="true"] .milk-consumption-card > div:first-child > div:last-child {
+  margin-top: -2px;
+  gap: 0;
+}
+[data-care-overview="true"] .milk-amounts {
+  margin-top: 0;
+  align-items: center;
+}
+[data-care-overview="true"] .milk-amounts > div:last-child {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding-left: 8px;
+}
+[data-care-overview="true"] .milk-amounts > div:first-child > span:first-child {
+  font-size: 22px;
+  line-height: 28px;
+}
+[data-care-overview="true"] .milk-breakdown {
+  margin-top: 0;
+  font-size: 11px;
+  line-height: 14px;
+}
+[data-care-overview="true"] .milk-progress {
+  margin-top: 4px;
+  height: 6px;
+}
+[data-care-overview="true"] .milk-threshold-legend {
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  margin-top: 3px;
+  gap: 2px;
+  font-size: 10px;
+  line-height: 13px;
+}
+[data-care-overview="true"] .milk-threshold-legend > span:last-child {
+  font-size: 11px;
+  line-height: 14px;
+}
+[data-care-overview="true"] .milk-comparison {
+  margin-top: 2px;
+  gap: 4px;
+}
+[data-care-overview="true"] .milk-comparison p,
+[data-care-overview="true"] .milk-median p {
+  font-size: 11px;
+  line-height: 14px;
+}
+[data-care-overview="true"] .milk-comparison button {
+  height: 24px;
+  width: 24px;
+}
+[data-care-overview="true"] :is(.milk-comparison, .milk-median) span[title] {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 14px;
+}
+[data-care-overview="true"] .milk-median {
+  margin-top: 0;
+}
+[data-care-overview="true"] .latest-feeds {
+  margin-top: 3px;
+  padding-top: 3px;
+}
+[data-care-overview="true"] .latest-feeds > div {
+  margin-top: 0;
+}
+[data-care-overview="true"] .latest-feeds > div > div {
+  padding-top: 0;
+  padding-bottom: 0;
+  min-height: 16px;
+}
+[data-care-overview="true"] .latest-feeds :is(p, span) {
+  line-height: 16px;
+}
+.health-diapers {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 4px;
+  padding-top: 2px;
+}
+.health-diapers > button {
+  text-align: left;
+  font-size: 10px;
+}
+@media (max-width: 360px) {
+  .temperature-recency,
+  .pee-recency {
+    font-size: 10px;
+    line-height: 14px;
+  }
+  .medication-dose-separator {
+    display: none;
+  }
+  .medication-last-dose > span:not(.medication-dose-separator) {
+    display: block;
+    line-height: 12px;
+  }
+}
+
 html,
 body {
   overflow-x: clip;

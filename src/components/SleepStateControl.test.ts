@@ -32,3 +32,14 @@ test("compact sleeping control keeps the pressed state, timer and sliding animat
   assert.match(html, />0:42</);
   assert.equal((html.match(/min-h-10/g) ?? []).length, 2);
 });
+
+test("care overview places the live timer beside the compact animated toggle", () => {
+  const html = renderToStaticMarkup(createElement(SleepStateControl, { state: "sleeping", compact: true, elapsedLabel: "1:02:03", disabled: true, onSelect: () => undefined }));
+  assert.match(html, /data-compact="true"/);
+  assert.match(html, /sleep-control-compact flex items-center/);
+  assert.match(html, /aria-label="Set state to Sleeping"[^>]*aria-pressed="true"[^>]*disabled=""/);
+  assert.match(html, /translateX\(calc\(100% \+ 0.25rem\)\)/);
+  assert.match(html, />1:02:03</);
+  assert.equal((html.match(/min-h-8/g) ?? []).length, 2);
+  assert.match(html, /aria-live="polite"/);
+});
