@@ -28,6 +28,7 @@ import type { DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
 import type { SickModeResponse } from "@/lib/sick-mode";
 import type { MedicationDoseReference } from "@/lib/activity-timeline";
+import type { HistoricalMedicationReference } from "@/lib/historical-medication";
 import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type MedicationEntry, type MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
 import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 import { mutateSickMode } from "@/lib/sick-mode-client";
@@ -46,6 +47,7 @@ interface Activity {
   details: string | Record<string, unknown>; // JSON string from API, parsed client-side
   created_by?: string;
   medicationDose?: MedicationDoseReference;
+  historicalMedication?: HistoricalMedicationReference;
 }
 
 interface SleepState {
@@ -578,12 +580,39 @@ export default function DashboardPage() {
     if (!deleteActivity || !baby?.id) return;
     const record = deleteActivity;
     const dose = record.medicationDose;
-    if (record.type === "medication" && !dose) {
-      alert("This dose is missing its source details and can’t be deleted here. Refresh and try again.");
+    const historical = record.historicalMedication;
+    if (record.type === "medication" && !dose && !historical) {
+      alert("This medication activity is missing its source details and can’t be deleted here. Refresh and try again.");
       return;
     }
     setIsDeletingActivity(true);
     try {
+      if (record.type === "medication" && !dose && historical) {
+        // Imported records are removed through their own revisioned contract,
+        // never the sick-mode delete or the generic activity API.
+        const res = await fetch("/api/historical-medications", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: record.id, babyId: baby.id, expectedRevision: historical.revision }),
+        });
+        if (res.status === 409) {
+          setDeleteActivity(null);
+          await fetchSickMode(baby.id);
+          setActivityFilterRefresh((value) => value + 1);
+          alert("This activity changed on another device. The latest details have been loaded for review.");
+          return;
+        }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error || "Failed to delete activity");
+        }
+        setDeleteActivity(null);
+        await fetchSickMode(baby.id);
+        await fetchData();
+        setActivityFilterRefresh((value) => value + 1);
+        return;
+      }
+
       if (record.type === "medication" && dose) {
         try {
           await mutateSickMode({
@@ -998,9 +1027,16 @@ export default function DashboardPage() {
       }
       case "medication": {
         const name = activity.medicationDose?.medicationName
+          ?? activity.historicalMedication?.medicationName
           ?? (typeof d.medicationName === "string" ? d.medicationName : "");
         const givenText = activity.medicationDose?.doseText
+          ?? activity.historicalMedication?.doseText
           ?? (typeof d.doseText === "string" ? d.doseText : "");
+        // Imported procedures group under the medication filter but are shown
+        // as a procedure with no quantity (they carry no amount).
+        if (activity.historicalMedication?.eventKind === "procedure") {
+          return { title: name || "Procedure", subcategory: "Procedure", quantity: "" };
+        }
         return { title: name || "Medication", subcategory: "Medication", quantity: givenText };
       }
       case "bankfreeze":
@@ -1624,11 +1660,12 @@ export default function DashboardPage() {
                           setShowLogModal(false);
                           setEditingActivity(null);
                           setMedicationEntry(null);
-                          // A dose without its source reference cannot be
-                          // safely edited; surface that instead of routing it
-                          // through the generic activity editor.
-                          if (!record.medicationDose) {
-                            alert("This medication dose is missing its source details and can’t be edited here. Refresh and try again.");
+                          setEditingDose(null);
+                          // A record without its canonical or historical source
+                          // reference cannot be safely edited; fail closed
+                          // instead of routing it through the generic editor.
+                          if (!record.medicationDose && !record.historicalMedication) {
+                            alert("This medication activity is missing its source details and can’t be edited here. Refresh and try again.");
                             return;
                           }
                           setEditingDose(record);
@@ -1902,15 +1939,16 @@ export default function DashboardPage() {
         />
       )}
 
-      {editingDose?.medicationDose && baby?.id && (
+      {editingDose && (editingDose.medicationDose || editingDose.historicalMedication) && baby?.id && (
         <MedicationDoseEditModal
-          key={`${baby.id}:${editingDose.id}:${editingDose.medicationDose.doseId}`}
+          key={`${baby.id}:${editingDose.id}:${editingDose.medicationDose?.doseId ?? editingDose.historicalMedication?.revision ?? ""}`}
           babyId={baby.id}
           activity={{
             id: editingDose.id,
             type: editingDose.type,
             started_at: editingDose.started_at,
-            medicationDose: editingDose.medicationDose,
+            ...(editingDose.medicationDose ? { medicationDose: editingDose.medicationDose } : {}),
+            ...(editingDose.historicalMedication ? { historicalMedication: editingDose.historicalMedication } : {}),
           }}
           onClose={() => setEditingDose(null)}
           onRefresh={async () => {

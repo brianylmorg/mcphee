@@ -1,6 +1,11 @@
 import type { Client } from "@libsql/client";
 import { isSickModeSchemaReady } from "@/db/sick-mode-schema";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
+import {
+  historicalMedicationReference,
+  parseHistoricalMedicationDetails,
+  type HistoricalMedicationReference,
+} from "@/lib/historical-medication";
 
 export const TIMELINE_TYPES = new Set([
   "bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "bankadjust",
@@ -28,10 +33,12 @@ export type TimelineRecord = Record<string, unknown> & {
   created_at: number;
   created_by: string | null;
   medicationDose?: MedicationDoseReference;
+  historicalMedication?: HistoricalMedicationReference;
 };
 
-/** One diary view over the existing records. Medication doses are never copied
- * into activities, so historical edits/deletions have one source of truth. */
+/** One diary view over the existing records. Canonical sick-mode doses are
+ * never copied into activities; reviewed pre-sick-mode note history uses the
+ * separate versioned standalone-activity contract. */
 export async function readActivityTimeline(
   db: Pick<Client, "execute" | "batch">,
   householdId: string,
@@ -45,7 +52,10 @@ export async function readActivityTimeline(
   const args: Array<string | number> = [householdId];
   let activityWhere = "b.household_id = ?";
   if (babyId) { activityWhere += " AND a.baby_id = ?"; args.push(babyId); }
-  const ordinaryTypes = types.filter(type => type !== "medication");
+  // Versioned standalone historical medication rows live in activities,
+  // while current sick-mode doses are appended from their canonical tables.
+  // A medication filter must therefore select from both sources.
+  const ordinaryTypes = types;
   if (types.length) {
     activityWhere += ordinaryTypes.length
       ? ` AND a.type IN (${ordinaryTypes.map(() => "?").join(",")})`
@@ -81,20 +91,32 @@ export async function readActivityTimeline(
       WHERE ${doseWhere}`;
   }
   sql = `SELECT * FROM (${sql}) ORDER BY started_at DESC, created_at DESC, id DESC`;
-  if (limit != null) { sql += " LIMIT ?"; args.push(limit); }
   const [result, users] = await db.batch([
     { sql, args },
     { sql: "SELECT name FROM users WHERE household_id = ?", args: [householdId] },
   ], "read");
-  const rows = result.rows.map(row => {
+  // The versioned browser-safe parser is the one authority for recognizing a
+  // historical row. Filter before applying the public limit so a newest
+  // soft-deleted import cannot hide the next visible diary entry. This reads
+  // only the already household/baby/date-scoped result set.
+  const rows = result.rows.flatMap(row => {
     const { medication_dose_json, ...record } = row as unknown as Record<string, unknown>;
-    return {
+    const historicalDetails = record.type === "medication"
+      ? parseHistoricalMedicationDetails(record.details)
+      : null;
+    if (historicalDetails?.historicalMedication.deletedAt != null) return [];
+    const historicalMedication = record.type === "medication"
+      ? historicalMedicationReference(String(record.id), record.details)
+      : null;
+    return [{
       ...record,
       created_by: record.created_by,
       ...(medication_dose_json == null ? {} : {
         medicationDose: JSON.parse(String(medication_dose_json)) as MedicationDoseReference,
       }),
-    };
+      ...(historicalMedication == null ? {} : { historicalMedication }),
+    }];
   });
-  return normalizeActivityCreators(rows, users.rows.map(row => ({ name: row.name }))) as TimelineRecord[];
+  const visibleRows = limit == null ? rows : rows.slice(0, limit);
+  return normalizeActivityCreators(visibleRows, users.rows.map(row => ({ name: row.name }))) as TimelineRecord[];
 }

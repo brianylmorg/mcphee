@@ -5,6 +5,7 @@ import { createDB } from "@/db";
 import { isSickModeSchemaReady } from "@/db/sick-mode-schema";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { bottleVolumes, parseActivityDetails, sgtDateKey } from "@/lib/milk-volumes";
+import { medicationScheduleValidationError } from "@/lib/medication-entry";
 import {
   buildBaselinePreview,
   episodeOverlapsSgtDate,
@@ -733,6 +734,11 @@ export async function POST(request: NextRequest) {
         if (minIntervalHours != null && maxIntervalHours != null && minIntervalHours > maxIntervalHours) {
           throw new SickModeApiError(400, "minIntervalHours cannot exceed maxIntervalHours");
         }
+        const scheduleError = medicationScheduleValidationError({
+          asNeeded,
+          minIntervalHours: minIntervalHours == null ? "" : String(minIntervalHours),
+          maxIntervalHours: maxIntervalHours == null ? "" : String(maxIntervalHours),
+        });
         const minMinutes = minIntervalHours == null ? null : Math.round(minIntervalHours * 60);
         const maxMinutes = maxIntervalHours == null ? null : Math.round(maxIntervalHours * 60);
         if (action === "addMedication") {
@@ -754,6 +760,7 @@ export async function POST(request: NextRequest) {
             }
             result = { ok: true, id: medicationId, episodeId, idempotent: true };
           } else {
+            if (scheduleError) throw new SickModeApiError(400, scheduleError);
             await executor.execute({
               sql: `INSERT INTO sick_mode_medications
                     (id, episode_id, name, dose_text, as_needed, min_interval_minutes,
@@ -764,6 +771,7 @@ export async function POST(request: NextRequest) {
             result = { ok: true, id: medicationId, episodeId };
           }
         } else {
+          if (scheduleError) throw new SickModeApiError(400, scheduleError);
           const medicationId = requiredId(body, "medicationId");
           await requireOwnedMedication(executor, householdId, babyId, episodeId, medicationId);
           const revision = Number(body.expectedRevision);

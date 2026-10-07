@@ -3,7 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, buildResumePayload, buildUpdateStartPayload, evaluateResumeEligibility, isSickModeConflict, selectResumeCapture } from "./SickModePanel";
+import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, buildResumePayload, buildUpdateStartPayload, evaluateResumeEligibility, isSickModeConflict, isUntouchedMedicationDraft, MedicationFields, medicationIntervalText, selectResumeCapture } from "./SickModePanel";
 import type { SickEpisode, SickMedication, SickModeResponse } from "@/lib/sick-mode";
 import { formatDate, formatTime } from "@/lib/utils";
 
@@ -571,4 +571,71 @@ test("stale sick-mode data disables the resume CTA", () => {
     onRefresh: () => undefined,
   }));
   assert.match(resumeButtonTag(controls), /disabled=""/);
+});
+
+test("entered intervals read as a cadence, one value, or a preserved range", () => {
+  assert.equal(medicationIntervalText({ asNeeded: false, minIntervalHours: 6, maxIntervalHours: null }), "Every 6h");
+  // Equal bounds collapse to one interval rather than a 6–6h range.
+  assert.equal(medicationIntervalText({ asNeeded: false, minIntervalHours: 6, maxIntervalHours: 6 }), "Every 6h");
+  // A genuinely unequal range is preserved.
+  assert.equal(medicationIntervalText({ asNeeded: false, minIntervalHours: 4, maxIntervalHours: 6 }), "Every 4–6h");
+  // As-needed intervals keep the existing "Entered interval" wording.
+  assert.equal(medicationIntervalText({ asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 }), "Entered interval 4–6h");
+  assert.equal(medicationIntervalText({ asNeeded: true, minIntervalHours: null, maxIntervalHours: null }), null);
+});
+
+test("a scheduled min-only medication shows Every 6h in the compact row and details", () => {
+  const data = activeResponse();
+  data.medications = [medication(1, { name: "Paracetamol", asNeeded: false, minIntervalHours: 6, maxIntervalHours: null })];
+  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined }));
+
+  assert.match(html, /class="medication-schedule[^"]*">Every 6h</);
+  assert.match(html, /medication-prescription[^>]*>Prescribed dose: 3\.5ml · Every 6h</);
+  assert.doesNotMatch(html, /As needed/);
+});
+
+test("the entered next window renders one time when equal and a range when unequal", () => {
+  const givenAt = NOW - 2 * 60 * 60 * 1000;
+  const dose = { id: "dose-1", medicationId: "med-1", givenAt, doseText: "3.5ml", givenBy: "Caregiver", createdAt: NOW, updatedAt: NOW, revision: 1 };
+  const build = (min: number, max: number | null) => {
+    const data = activeResponse();
+    data.medications = [medication(1, { name: "Paracetamol", asNeeded: false, minIntervalHours: min, maxIntervalHours: max, latestDose: dose, doses: [dose] })];
+    return renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined }));
+  };
+
+  const equal = build(6, 6);
+  const equalNext = equal.match(/Entered next window:([^<]*)</)?.[1] ?? "";
+  assert.ok(equalNext.includes(formatTime(givenAt + 6 * 60 * 60 * 1000)));
+  assert.doesNotMatch(equalNext, /–/);
+  assert.match(equal, /This is not a safe-to-dose recommendation\./);
+
+  const range = build(4, 6);
+  const rangeNext = range.match(/Entered next window:([^<]*)</)?.[1] ?? "";
+  assert.ok(rangeNext.includes(formatTime(givenAt + 4 * 60 * 60 * 1000)));
+  assert.ok(rangeNext.includes(formatTime(givenAt + 6 * 60 * 60 * 1000)));
+  assert.match(rangeNext, /–/);
+});
+
+test("onboarding drops a row only when every medication field is untouched", () => {
+  const untouched = { name: "", doseText: "", asNeeded: true, minIntervalHours: "", maxIntervalHours: "" };
+  assert.equal(isUntouchedMedicationDraft(untouched), true);
+  // A partially entered interval or an unchecked As needed is intent, not a blank row.
+  assert.equal(isUntouchedMedicationDraft({ ...untouched, minIntervalHours: "6" }), false);
+  assert.equal(isUntouchedMedicationDraft({ ...untouched, maxIntervalHours: "6" }), false);
+  assert.equal(isUntouchedMedicationDraft({ ...untouched, asNeeded: false }), false);
+  assert.equal(isUntouchedMedicationDraft({ ...untouched, name: "Paracetamol" }), false);
+});
+
+test("the shared medication fields use scheduled labels and an inline interval message", () => {
+  const render = (draft: { key: string; name: string; doseText: string; asNeeded: boolean; minIntervalHours: string; maxIntervalHours: string }) =>
+    renderToStaticMarkup(createElement(MedicationFields, { draft, onChange: () => undefined, suggestions: [] }));
+
+  const scheduled = render({ key: "k", name: "Paracetamol", doseText: "3.5ml", asNeeded: false, minIntervalHours: "", maxIntervalHours: "" });
+  assert.match(scheduled, /Every \(hours\)/);
+  assert.match(scheduled, /Latest interval \(hours, optional\)/);
+  assert.match(scheduled, /Enter how often this medication should be given\./);
+
+  const prn = render({ key: "k", name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: "", maxIntervalHours: "" });
+  assert.match(prn, /Earliest interval \(hours, optional\)/);
+  assert.doesNotMatch(prn, /Enter how often this medication should be given\./);
 });

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createClient } from "@libsql/client";
 import { NextRequest } from "next/server";
@@ -57,6 +58,18 @@ async function createBaseSchema(client: ReturnType<typeof createClient>) {
     { sql: "INSERT INTO babies VALUES (?, ?, ?, NULL, ?)", args: ["baby-2", "house-1", "Baby Two", FIXED_NOW] },
     { sql: "INSERT INTO babies VALUES (?, ?, ?, NULL, ?)", args: ["foreign-baby", "house-2", "Other Baby", FIXED_NOW] },
   ], "write");
+}
+
+function medicationIdForTestRequest(
+  householdId: string,
+  babyId: string,
+  episodeId: string,
+  requestId: string,
+): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([householdId, babyId, episodeId, requestId]))
+    .digest("hex");
+  return `med_${digest}`;
 }
 
 test("sick-mode API is fail-closed, scoped, repeat-migratable, and preserves frozen clinical snapshots", async () => {
@@ -166,7 +179,101 @@ test("sick-mode API is fail-closed, scoped, repeat-migratable, and preserves fro
     const missingMedicationRequestId = await post({ action: "addMedication", babyId: "baby-1", episodeId, name: "No request id", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
     assert.equal(missingMedicationRequestId.status, 400);
 
-    const firstMedicationPayload = { action: "addMedication", babyId: "baby-1", episodeId, requestId: "medication-request-1", name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 };
+    const scheduledWithoutInterval = await post({
+      action: "addMedication",
+      babyId: "baby-1",
+      episodeId,
+      requestId: "scheduled-without-interval",
+      name: "Scheduled medicine",
+      doseText: "3.5ml",
+      asNeeded: false,
+    });
+    assert.equal(scheduledWithoutInterval.status, 400);
+    assert.equal((await scheduledWithoutInterval.json()).error, "Enter how often this medication should be given.");
+    assert.equal(Number((await client.execute("SELECT COUNT(*) AS n FROM sick_mode_medications")).rows[0].n), 0);
+
+    const legacyRequestId = "legacy-scheduled-without-interval";
+    const legacyMedicationId = medicationIdForTestRequest("house-1", "baby-1", episodeId, legacyRequestId);
+    const legacyMedicationPayload = {
+      action: "addMedication",
+      babyId: "baby-1",
+      episodeId,
+      requestId: legacyRequestId,
+      name: "Legacy scheduled medicine",
+      doseText: "3.5ml",
+      asNeeded: false,
+    };
+    await client.execute({
+      sql: `INSERT INTO sick_mode_medications
+            (id, episode_id, name, dose_text, as_needed, min_interval_minutes,
+             max_interval_minutes, created_at, created_by, updated_at, revision)
+            VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, 1)`,
+      args: [
+        legacyMedicationId,
+        episodeId,
+        legacyMedicationPayload.name,
+        legacyMedicationPayload.doseText,
+        FIXED_NOW,
+        "Parent One",
+        FIXED_NOW,
+      ],
+    });
+    const legacyReplay = await post(legacyMedicationPayload);
+    assert.equal(legacyReplay.status, 200);
+    assert.deepEqual(await legacyReplay.json(), {
+      ok: true,
+      id: legacyMedicationId,
+      episodeId,
+      idempotent: true,
+    });
+    const changedLegacyReplay = await post({ ...legacyMedicationPayload, doseText: "7ml" });
+    assert.equal(changedLegacyReplay.status, 409);
+    assert.equal((await changedLegacyReplay.json()).code, "REQUEST_ID_CONFLICT");
+    const legacyUpdateWithoutInterval = await post({
+      action: "updateMedication",
+      babyId: "baby-1",
+      episodeId,
+      medicationId: legacyMedicationId,
+      name: legacyMedicationPayload.name,
+      doseText: legacyMedicationPayload.doseText,
+      asNeeded: false,
+      expectedRevision: 1,
+    });
+    assert.equal(legacyUpdateWithoutInterval.status, 400);
+    const legacyAfterRejectedUpdate = (await client.execute({
+      sql: "SELECT revision, min_interval_minutes, max_interval_minutes FROM sick_mode_medications WHERE id = ?",
+      args: [legacyMedicationId],
+    })).rows[0];
+    assert.equal(Number(legacyAfterRejectedUpdate.revision), 1);
+    assert.equal(legacyAfterRejectedUpdate.min_interval_minutes, null);
+    assert.equal(legacyAfterRejectedUpdate.max_interval_minutes, null);
+    await client.execute({
+      sql: "DELETE FROM sick_mode_medications WHERE id = ?",
+      args: [legacyMedicationId],
+    });
+
+    for (const [requestId, minIntervalHours, maxIntervalHours] of [
+      ["invalid-zero-interval", 0, undefined],
+      ["invalid-negative-interval", -1, undefined],
+      ["invalid-nonnumeric-interval", "not-a-number", undefined],
+      ["invalid-reversed-interval", 6, 4],
+    ] as const) {
+      const invalidInterval = await post({
+        action: "addMedication",
+        babyId: "baby-1",
+        episodeId,
+        requestId,
+        name: "Invalid schedule",
+        doseText: "3.5ml",
+        asNeeded: requestId === "invalid-reversed-interval",
+        minIntervalHours,
+        maxIntervalHours,
+      });
+      assert.equal(invalidInterval.status, 400);
+    }
+    assert.equal(Number((await client.execute("SELECT COUNT(*) AS n FROM sick_mode_medications")).rows[0].n), 0);
+
+    const firstMedicationPayload = { action: "addMedication", babyId: "baby-1", episodeId, requestId: "medication-request-1", name: "Paracetamol", doseText: "3.5ml", asNeeded: false, minIntervalHours: 6 };
     const committedMedication = await post(firstMedicationPayload);
     assert.equal(committedMedication.status, 200);
     const committedMedicationId = (await committedMedication.json()).id;
@@ -203,16 +310,34 @@ test("sick-mode API is fail-closed, scoped, repeat-migratable, and preserves fro
 
     const medicationIds: string[] = [committedMedicationId];
     for (const [index, name] of ["Ibuprofen", "Medicine C", "Medicine D"].entries()) {
-      const response = await post({ action: "addMedication", babyId: "baby-1", episodeId, requestId: `medication-request-${index + 2}`, name, doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
+      const response = await post({
+        action: "addMedication",
+        babyId: "baby-1",
+        episodeId,
+        requestId: `medication-request-${index + 2}`,
+        name,
+        doseText: "3.5ml",
+        asNeeded: true,
+        ...(index === 0 ? {} : { minIntervalHours: 4, maxIntervalHours: 6 }),
+      });
       assert.equal(response.status, 200);
       medicationIds.push((await response.json()).id);
     }
     const medicationId = medicationIds[0];
     const staleMedicationEdit = await post({ action: "updateMedication", babyId: "baby-1", episodeId, medicationId, name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6, expectedRevision: 9 });
     assert.equal(staleMedicationEdit.status, 409);
-    const medicationEdit = await post({ action: "updateMedication", babyId: "baby-1", episodeId, medicationId, name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6, expectedRevision: 1 });
+    const missingScheduleEdit = await post({ action: "updateMedication", babyId: "baby-1", episodeId, medicationId, name: "Paracetamol", doseText: "3.5ml", asNeeded: false, expectedRevision: 1 });
+    assert.equal(missingScheduleEdit.status, 400);
+    const unchangedAfterRejectedEdit = (await client.execute({
+      sql: "SELECT revision, as_needed, min_interval_minutes FROM sick_mode_medications WHERE id = ?",
+      args: [medicationId],
+    })).rows[0];
+    assert.equal(Number(unchangedAfterRejectedEdit.revision), 1);
+    assert.equal(Number(unchangedAfterRejectedEdit.as_needed), 0);
+    assert.equal(Number(unchangedAfterRejectedEdit.min_interval_minutes), 360);
+    const medicationEdit = await post({ action: "updateMedication", babyId: "baby-1", episodeId, medicationId, name: "Paracetamol", doseText: "3.5ml", asNeeded: false, minIntervalHours: 6, expectedRevision: 1 });
     assert.equal(medicationEdit.status, 200);
-    const repeatedMedicationEdit = await post({ action: "updateMedication", babyId: "baby-1", episodeId, medicationId, name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6, expectedRevision: 1 });
+    const repeatedMedicationEdit = await post({ action: "updateMedication", babyId: "baby-1", episodeId, medicationId, name: "Paracetamol", doseText: "3.5ml", asNeeded: false, minIntervalHours: 6, expectedRevision: 1 });
     assert.equal(repeatedMedicationEdit.status, 409);
     const firstDosePayload = { action: "logDose", babyId: "baby-1", episodeId, medicationId, givenAt: ts("2026-10-06", "10:00"), doseText: "3.5ml", requestId: "dose-request-1", expectedLatestDoseId: null };
     const firstDose = await post(firstDosePayload);

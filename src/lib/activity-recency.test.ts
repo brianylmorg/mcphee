@@ -22,9 +22,9 @@ test("formatElapsedSince keeps minutes unpadded", () => {
   assert.equal(formatElapsedSince(START, START + (2 * 60 + 5) * MINUTE), "2h 5m ago");
 });
 
-test("formatElapsedSince does not cap hours across multiple days", () => {
-  assert.equal(formatElapsedSince(START, START + (26 * 60) * MINUTE), "26h 0m ago");
-  assert.equal(formatElapsedSince(START, START + (49 * 60 + 30) * MINUTE), "49h 30m ago");
+test("formatElapsedSince includes days for multi-day activity ages", () => {
+  assert.equal(formatElapsedSince(START, START + (26 * 60) * MINUTE), "1d, 2h, 00m ago");
+  assert.equal(formatElapsedSince(START, START + (49 * 60 + 30) * MINUTE), "2d, 1h, 30m ago");
 });
 
 test("formatElapsedSince clamps future timestamps to zero", () => {

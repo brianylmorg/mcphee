@@ -6,6 +6,7 @@ import { parseActivityDetails } from "@/lib/milk-volumes";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { MilkLedgerError, replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
 import { readActivityTimeline, TIMELINE_TYPES } from "@/lib/activity-timeline";
+import { parseHistoricalMedicationDetails } from "@/lib/historical-medication";
 
 export const runtime = "nodejs";
 
@@ -271,9 +272,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Activity ID required" }, { status: 400 });
     }
 
-    const inputError = validateActivityInput(body);
-    if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
-
     const db = createDB();
 
     // Fetch existing activity to merge details and verify household ownership.
@@ -285,9 +283,19 @@ export async function PUT(request: NextRequest) {
     if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Activity not found" }, { status: 404 });
     }
+    if (String(existing.rows[0].type) === "medication"
+      && parseHistoricalMedicationDetails(existing.rows[0].details)) {
+      return NextResponse.json(
+        { error: "Historical medication activities must be changed through the historical medication editor" },
+        { status: 400 },
+      );
+    }
     if (["bankfreeze", "bankthaw", "bankdiscard"].includes(String(existing.rows[0].type))) {
       return NextResponse.json({ error: "Bank transfers must be changed through the milk bank" }, { status: 400 });
     }
+
+    const inputError = validateActivityInput(body);
+    if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
 
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
@@ -397,12 +405,19 @@ export async function DELETE(request: NextRequest) {
     const db = createDB();
 
     const ownedActivity = await db.execute({
-      sql: `SELECT id, type FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+      sql: `SELECT id, type, details FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
       args: [activityId, householdId],
     });
 
     if (ownedActivity.rows.length === 0) {
       return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+    }
+    if (String(ownedActivity.rows[0].type) === "medication"
+      && parseHistoricalMedicationDetails(ownedActivity.rows[0].details)) {
+      return NextResponse.json(
+        { error: "Historical medication activities must be changed through the historical medication editor" },
+        { status: 400 },
+      );
     }
     if (["bankfreeze", "bankthaw", "bankdiscard"].includes(String(ownedActivity.rows[0].type))) {
       return NextResponse.json({ error: "Bank transfers must be changed through the milk bank" }, { status: 400 });

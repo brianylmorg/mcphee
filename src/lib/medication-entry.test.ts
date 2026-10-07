@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry } from "./medication-entry";
+import {
+  entryForActiveEpisode,
+  medicationAddEntry,
+  medicationLogEntry,
+  medicationScheduleValidationError,
+} from "./medication-entry";
 
 test("medication entry is a single discriminated owner when flows switch", () => {
   let entry = medicationAddEntry("episode-1");
@@ -27,4 +32,60 @@ test("medication entry survives refreshes for its episode and closes on episode 
   assert.equal(entryForActiveEpisode(entry, "episode-1"), entry);
   assert.equal(entryForActiveEpisode(entry, "episode-2"), null);
   assert.equal(entryForActiveEpisode(entry, undefined), null);
+});
+
+test("scheduled medication drafts require a valid positive interval", () => {
+  assert.equal(medicationScheduleValidationError({
+    asNeeded: false,
+    minIntervalHours: "",
+    maxIntervalHours: "",
+  }), "Enter how often this medication should be given.");
+  assert.equal(medicationScheduleValidationError({
+    asNeeded: false,
+    minIntervalHours: "6",
+    maxIntervalHours: "",
+  }), null);
+  assert.equal(medicationScheduleValidationError({
+    asNeeded: false,
+    minIntervalHours: String(1 / 60),
+    maxIntervalHours: "168",
+  }), null);
+  assert.match(medicationScheduleValidationError({
+    asNeeded: false,
+    minIntervalHours: "0",
+    maxIntervalHours: "",
+  }) ?? "", /must be between/);
+  assert.match(medicationScheduleValidationError({
+    asNeeded: false,
+    minIntervalHours: "Infinity",
+    maxIntervalHours: "",
+  }) ?? "", /must be between/);
+  assert.match(medicationScheduleValidationError({
+    asNeeded: false,
+    minIntervalHours: "168.01",
+    maxIntervalHours: "",
+  }) ?? "", /must be between/);
+});
+
+test("as-needed medication drafts allow blank or valid optional intervals", () => {
+  assert.equal(medicationScheduleValidationError({
+    asNeeded: true,
+    minIntervalHours: "",
+    maxIntervalHours: "",
+  }), null);
+  assert.equal(medicationScheduleValidationError({
+    asNeeded: true,
+    minIntervalHours: "",
+    maxIntervalHours: "6",
+  }), null);
+  assert.match(medicationScheduleValidationError({
+    asNeeded: true,
+    minIntervalHours: "6",
+    maxIntervalHours: "4",
+  }) ?? "", /cannot be earlier/);
+  assert.match(medicationScheduleValidationError({
+    asNeeded: true,
+    minIntervalHours: "-1",
+    maxIntervalHours: "",
+  }) ?? "", /must be between/);
 });

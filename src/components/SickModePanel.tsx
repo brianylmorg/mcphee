@@ -8,6 +8,7 @@ import { sgtDateKey } from "@/lib/milk-volumes";
 import LatestEntriesDisclosure from "@/components/LatestEntriesDisclosure";
 import {
   identifyMedicationPrescriptionDraft,
+  medicationScheduleValidationError,
   type MedicationPrescriptionDraftInput,
 } from "@/lib/medication-entry";
 import type { SickBaselinePreview, SickDiaperSummary, SickDose, SickEpisode, SickMedication, SickModeResponse } from "@/lib/sick-mode";
@@ -15,6 +16,10 @@ import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-m
 
 const MAX_MANUAL_BASELINE_ML = 10_000;
 const DIAPER_HISTORY_COUNT = 3;
+// Bounds shared with the sick-mode API so the browser never offers a value the
+// server would reject (1 minute minimum, one week maximum).
+const MIN_INTERVAL_HOURS = "0.016666666666666666";
+const MAX_INTERVAL_HOURS = "168";
 
 /** Pee/poo text shared by the collapsed diaper summary and its history rows. */
 function diaperContentsLabel(diaper: SickDiaperSummary): string {
@@ -57,6 +62,38 @@ function numericOrUndefined(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+/**
+ * A blank row may be dropped from onboarding only while every field is still
+ * untouched. Entering an interval or unchecking As needed counts as intent, so
+ * that partially filled row must be carried forward (and validated) instead of
+ * being silently discarded.
+ */
+export function isUntouchedMedicationDraft(draft: MedicationPrescriptionDraftInput): boolean {
+  return !draft.name.trim()
+    && !draft.doseText.trim()
+    && !draft.minIntervalHours.trim()
+    && !draft.maxIntervalHours.trim()
+    && draft.asNeeded;
+}
+
+/**
+ * One phrase for a medication's entered interval. Scheduled medications read as
+ * a cadence ("Every 6h"), a single value when min equals max, and keep the range
+ * when they differ. As-needed intervals keep the "Entered interval" wording.
+ */
+export function medicationIntervalText(medication: {
+  asNeeded: boolean;
+  minIntervalHours: number | null;
+  maxIntervalHours: number | null;
+}): string | null {
+  const min = medication.minIntervalHours;
+  const max = medication.maxIntervalHours;
+  if (min == null && max == null) return null;
+  const prefix = medication.asNeeded ? "Entered interval" : "Every";
+  if (min != null && max != null && min !== max) return `${prefix} ${min}–${max}h`;
+  return `${prefix} ${min ?? max}h`;
 }
 
 export function buildOnboardingMedicationAddPayload({
@@ -215,7 +252,7 @@ export function buildUpdateStartPayload({
   return payload;
 }
 
-function MedicationFields({
+export function MedicationFields({
   draft,
   onChange,
   onRemove,
@@ -228,6 +265,8 @@ function MedicationFields({
   suggestions: string[];
   removable?: boolean;
 }) {
+  const scheduled = !draft.asNeeded;
+  const scheduleError = medicationScheduleValidationError(draft);
   return (
     <div className="rounded-lg border border-border bg-surface p-3">
       <div className="flex items-start gap-2">
@@ -256,20 +295,21 @@ function MedicationFields({
           className="mt-1 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown outline-none focus:border-accent-strong"
         />
       </label>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <label className="text-xs font-medium text-warm-brown-light">
-          Earliest interval (hours)
-          <input type="number" min="0" step="0.5" inputMode="decimal" value={draft.minIntervalHours} onChange={(event) => onChange({ ...draft, minIntervalHours: event.target.value })} placeholder="4" className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong" />
-        </label>
-        <label className="text-xs font-medium text-warm-brown-light">
-          Latest interval (hours)
-          <input type="number" min="0" step="0.5" inputMode="decimal" value={draft.maxIntervalHours} onChange={(event) => onChange({ ...draft, maxIntervalHours: event.target.value })} placeholder="6" className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong" />
-        </label>
-      </div>
       <label className="mt-3 flex min-h-9 items-center gap-2 text-sm text-warm-brown">
         <input type="checkbox" checked={draft.asNeeded} onChange={(event) => onChange({ ...draft, asNeeded: event.target.checked })} className="h-5 w-5 rounded border-border text-terracotta-dark" />
         As needed
       </label>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="text-xs font-medium text-warm-brown-light">
+          {scheduled ? "Every (hours)" : "Earliest interval (hours, optional)"}
+          <input type="number" required={scheduled} min={MIN_INTERVAL_HOURS} max={MAX_INTERVAL_HOURS} step="any" inputMode="decimal" value={draft.minIntervalHours} onChange={(event) => onChange({ ...draft, minIntervalHours: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong" />
+        </label>
+        <label className="text-xs font-medium text-warm-brown-light">
+          Latest interval (hours, optional)
+          <input type="number" min={MIN_INTERVAL_HOURS} max={MAX_INTERVAL_HOURS} step="any" inputMode="decimal" value={draft.maxIntervalHours} onChange={(event) => onChange({ ...draft, maxIntervalHours: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong" />
+        </label>
+      </div>
+      {scheduleError && <p role="alert" className="mt-1 text-xs leading-snug text-danger">{scheduleError}</p>}
       <datalist id={`sick-medication-suggestions-${draft.key}`}>
         {suggestions.map((name) => <option key={name} value={name} />)}
       </datalist>
@@ -306,6 +346,7 @@ function DoseHistory({
     maxIntervalHours: medication.maxIntervalHours == null ? "" : String(medication.maxIntervalHours),
   }));
   const doses = Array.isArray(medication.doses) ? medication.doses : [];
+  const intervalText = medicationIntervalText(medication);
 
   useEffect(() => {
     if (editingMedication) return;
@@ -360,7 +401,7 @@ function DoseHistory({
   };
 
   const updateMedication = async () => {
-    if (!medicationDraft.name.trim() || !medicationDraft.doseText.trim() || busy) return;
+    if (!medicationDraft.name.trim() || !medicationDraft.doseText.trim() || medicationScheduleValidationError(medicationDraft) || busy) return;
     onBusy(true);
     try {
       await mutateSickMode(buildMedicationUpdatePayload({
@@ -406,22 +447,20 @@ function DoseHistory({
       <div className="flex items-start justify-between gap-2">
         <p className="medication-prescription min-w-0 text-muted">
           Prescribed dose: {medication.doseText}
-          {medication.minIntervalHours != null && medication.maxIntervalHours != null
-            ? ` · Entered interval ${medication.minIntervalHours}–${medication.maxIntervalHours}h`
-            : medication.minIntervalHours != null ? ` · Entered interval ${medication.minIntervalHours}h` : ""}
+          {intervalText ? ` · ${intervalText}` : ""}
         </p>
         <button type="button" disabled={busy} onClick={() => editingMedication ? setEditingMedication(false) : beginMedicationEdit()} className="min-h-9 shrink-0 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">{editingMedication ? "Cancel edit" : "Edit medication"}</button>
       </div>
       {editingMedication && (
         <div className="mt-2 rounded-lg bg-cream/60 p-2">
           <MedicationFields draft={medicationDraft} onChange={setMedicationDraft} suggestions={[]} />
-          <button type="button" onClick={updateMedication} disabled={busy || !medicationDraft.name.trim() || !medicationDraft.doseText.trim()} className="mt-2 min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication</button>
+          <button type="button" onClick={updateMedication} disabled={busy || !medicationDraft.name.trim() || !medicationDraft.doseText.trim() || medicationScheduleValidationError(medicationDraft) != null} className="mt-2 min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication</button>
         </div>
       )}
       {medication.latestDose && medication.minIntervalHours != null && (
         <p className="mt-1 text-xs text-muted">
           Entered next window: {formatTime(medication.latestDose.givenAt + medication.minIntervalHours * 60 * 60 * 1000)}
-          {medication.maxIntervalHours != null ? `–${formatTime(medication.latestDose.givenAt + medication.maxIntervalHours * 60 * 60 * 1000)}` : ""}. This is not a safe-to-dose recommendation.
+          {medication.maxIntervalHours != null && medication.maxIntervalHours !== medication.minIntervalHours ? `–${formatTime(medication.latestDose.givenAt + medication.maxIntervalHours * 60 * 60 * 1000)}` : ""}. This is not a safe-to-dose recommendation.
         </p>
       )}
       {doses.length > 0 && (
@@ -475,6 +514,7 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
 
 function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onChanged, onLog }: { babyId: string; episodeId: string; medication: SickMedication; now: number; busy: boolean; onBusy: (busy: boolean) => void; onChanged: () => Promise<void> | void; onLog?: (medicationId?: string) => void }) {
   const latest = medication.latestDose;
+  const medicationSchedule = medicationIntervalText(medication);
   const [expanded, setExpanded] = useState(false);
   const [editRequest, setEditRequest] = useState(0);
   return (
@@ -483,6 +523,7 @@ function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onCha
         <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
           <button type="button" aria-label={`Log ${medication.name}`} disabled={busy || !onLog} onClick={() => onLog?.(medication.id)} className="medication-name health-log-action min-h-6 min-w-0 max-w-full break-words text-left font-semibold leading-snug text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">{medication.name}</button>
           {medication.asNeeded && <span className="whitespace-nowrap rounded-full bg-terracotta/10 px-1.5 py-0.5 text-[11px] font-normal text-accent-strong">As needed</span>}
+          {!medication.asNeeded && medicationSchedule && <span className="medication-schedule whitespace-nowrap text-[11px] font-normal text-muted">{medicationSchedule}</span>}
         </div>
         <button type="button" aria-label={`Dose history for ${medication.name}`} aria-expanded={expanded} aria-controls={`medication-history-${medication.id}`} onClick={() => setExpanded(value => !value)} className="medication-row-control flex min-h-6 min-w-8 shrink-0 items-center gap-1 rounded-lg px-1 text-right text-xs text-muted">
           <span aria-label={latest ? `Last given ${formatTime(latest.givenAt)}, ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"} className="medication-last-dose font-semibold tabular-nums">{latest ? <><span>{formatTime(latest.givenAt).replace(/ hrs$/, "")}</span><span aria-hidden="true" className="medication-dose-separator"> · </span><span className="medication-dose-elapsed">{formatElapsedSince(latest.givenAt, now)}</span></> : "No doses logged"}</span>
@@ -921,10 +962,20 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
 
   const startSickMode = async () => {
     const startedAt = parseSgtDateTime(startedAtInput);
-    const validMedications = medicationDrafts.filter((draft) => draft.name.trim() || draft.doseText.trim());
+    // Drop a row only when it is entirely untouched; a partially entered
+    // interval or an unchecked As needed must reach validation instead of
+    // being silently discarded.
+    const medicationInputs = medicationDrafts.filter((draft) => !isUntouchedMedicationDraft(draft));
     if (startedAt == null || busy) return;
-    if (validMedications.some((draft) => !draft.name.trim() || !draft.doseText.trim())) {
+    if (medicationInputs.some((draft) => !draft.name.trim() || !draft.doseText.trim())) {
       alert("Each medication needs a name and prescribed dose.");
+      return;
+    }
+    const scheduleError = medicationInputs
+      .map((draft) => medicationScheduleValidationError(draft))
+      .find((message): message is string => Boolean(message));
+    if (scheduleError) {
+      alert(scheduleError);
       return;
     }
     if (preview?.requiresIncompleteConfirmation && !confirmIncomplete && !manualBaseline.trim()) {
@@ -936,9 +987,9 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
       const start = await mutateSickMode({ action: "start", babyId, startedAt, confirmIncomplete, ...(manualBaseline.trim() ? { manualBaselineMl: Number(manualBaseline) } : {}) });
       const episodeId = String(start.data.episodeId ?? start.data.id ?? "");
       if (!episodeId) throw new Error("Sick mode started, but its medication setup could not be linked. Refresh and add medications from the active episode.");
-      const pending = [...validMedications];
+      const pending = [...medicationInputs];
       try {
-        for (const medication of validMedications) {
+        for (const medication of medicationInputs) {
           await mutateSickMode(buildOnboardingMedicationAddPayload({ babyId, episodeId, medication }));
           pending.shift();
         }

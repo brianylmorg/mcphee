@@ -4,12 +4,18 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Pill, Plus, X } from "lucide-react";
 import {
   identifyMedicationPrescriptionDraft,
+  medicationScheduleValidationError,
   type IdentifiedMedicationPrescriptionDraftInput,
   type MedicationPrescriptionDraftInput,
 } from "@/lib/medication-entry";
 import { mutateSickMode } from "@/lib/sick-mode-client";
 
 type MedicationDraft = IdentifiedMedicationPrescriptionDraftInput & { key: string };
+
+// Bounds shared with the sick-mode API so the browser never offers a value the
+// server would reject (1 minute minimum, one week maximum).
+const MIN_INTERVAL_HOURS = "0.016666666666666666";
+const MAX_INTERVAL_HOURS = "168";
 
 export function prepareMedicationPrescriptionDraft(
   draft: MedicationPrescriptionDraftInput,
@@ -87,6 +93,8 @@ function MedicationFields({
   autoFocus?: boolean;
   disabled?: boolean;
 }) {
+  const scheduled = !draft.asNeeded;
+  const scheduleError = medicationScheduleValidationError(draft);
   return (
     <div className="rounded-lg border border-border bg-surface p-3">
       <div className="flex items-start gap-2">
@@ -118,20 +126,21 @@ function MedicationFields({
           className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown outline-none focus:border-accent-strong disabled:opacity-60"
         />
       </label>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <label className="text-xs font-medium text-warm-brown-light">
-          Earliest interval (hours)
-          <input disabled={disabled} type="number" min="0" step="0.5" inputMode="decimal" value={draft.minIntervalHours} onChange={(event) => onChange({ ...draft, minIntervalHours: event.target.value })} placeholder="4" className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong disabled:opacity-60" />
-        </label>
-        <label className="text-xs font-medium text-warm-brown-light">
-          Latest interval (hours)
-          <input disabled={disabled} type="number" min="0" step="0.5" inputMode="decimal" value={draft.maxIntervalHours} onChange={(event) => onChange({ ...draft, maxIntervalHours: event.target.value })} placeholder="6" className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong disabled:opacity-60" />
-        </label>
-      </div>
       <label className="mt-3 flex min-h-9 items-center gap-2 text-sm text-warm-brown">
         <input disabled={disabled} type="checkbox" checked={draft.asNeeded} onChange={(event) => onChange({ ...draft, asNeeded: event.target.checked })} className="h-5 w-5 rounded border-border text-terracotta-dark disabled:opacity-60" />
         As needed
       </label>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="text-xs font-medium text-warm-brown-light">
+          {scheduled ? "Every (hours)" : "Earliest interval (hours, optional)"}
+          <input disabled={disabled} type="number" required={scheduled} min={MIN_INTERVAL_HOURS} max={MAX_INTERVAL_HOURS} step="any" inputMode="decimal" value={draft.minIntervalHours} onChange={(event) => onChange({ ...draft, minIntervalHours: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong disabled:opacity-60" />
+        </label>
+        <label className="text-xs font-medium text-warm-brown-light">
+          Latest interval (hours, optional)
+          <input disabled={disabled} type="number" min={MIN_INTERVAL_HOURS} max={MAX_INTERVAL_HOURS} step="any" inputMode="decimal" value={draft.maxIntervalHours} onChange={(event) => onChange({ ...draft, maxIntervalHours: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong disabled:opacity-60" />
+        </label>
+      </div>
+      {scheduleError && <p role="alert" className="mt-1 text-xs leading-snug text-danger">{scheduleError}</p>}
       <datalist id={`medication-prescription-suggestions-${draft.key}`}>
         {suggestions.map((name) => <option key={name} value={name} />)}
       </datalist>
@@ -161,7 +170,10 @@ export default function MedicationPrescriptionModal({
   const [drafts, setDrafts] = useState<MedicationDraft[]>(() => initialDrafts?.length ? initialDrafts.map(withKey) : [emptyMedication()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const valid = drafts.length > 0 && drafts.every((draft) => draft.name.trim() && draft.doseText.trim());
+  const valid = drafts.length > 0 && drafts.every((draft) =>
+    Boolean(draft.name.trim() && draft.doseText.trim())
+    && medicationScheduleValidationError(draft) == null,
+  );
   const dirty = hasUnsavedMedicationPrescription(drafts);
 
   useEffect(() => {
@@ -183,6 +195,15 @@ export default function MedicationPrescriptionModal({
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting.current || isStale || !valid) return;
+    // Re-check the schedule against the exact drafts being submitted so a
+    // scheduled medication can never be sent without its required interval.
+    const scheduleError = drafts
+      .map((draft) => medicationScheduleValidationError(draft))
+      .find((message): message is string => Boolean(message));
+    if (scheduleError) {
+      setError(scheduleError);
+      return;
+    }
     submitting.current = true;
     setBusy(true);
     setError(null);
