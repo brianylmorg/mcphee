@@ -3,8 +3,8 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, buildUpdateStartPayload, isSickModeConflict } from "./SickModePanel";
-import type { SickMedication, SickModeResponse } from "@/lib/sick-mode";
+import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, buildResumePayload, buildUpdateStartPayload, evaluateResumeEligibility, isSickModeConflict, selectResumeCapture } from "./SickModePanel";
+import type { SickEpisode, SickMedication, SickModeResponse } from "@/lib/sick-mode";
 
 const NOW = Date.now();
 
@@ -324,4 +324,142 @@ test("active settings expose an inline edit sick-mode start time control while t
 
   const dashboard = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), onRefresh: () => undefined }));
   assert.doesNotMatch(dashboard, /Edit sick-mode start time/);
+});
+
+function sickEpisode(overrides: Partial<SickEpisode> = {}): SickEpisode {
+  return {
+    id: "episode-1",
+    babyId: "baby-1",
+    startedAt: NOW - 3 * 60 * 60 * 1000,
+    endedAt: NOW - 2 * 60 * 60 * 1000,
+    baselineDailyMl: 800,
+    baselineKind: "calculated",
+    baselineAvailableDayCount: 7,
+    baselineSourceDays: [],
+    createdAt: NOW,
+    createdBy: "Caregiver",
+    endedBy: "Caregiver",
+    ...overrides,
+  };
+}
+
+function settingsData(episodes: SickEpisode[], activeEpisode: SickEpisode | null = null): SickModeResponse {
+  const data = activeResponse();
+  data.episodes = episodes;
+  data.activeEpisode = activeEpisode;
+  if (!activeEpisode) data.summary = null;
+  return data;
+}
+
+function resumeButtonTag(html: string): string {
+  return html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*?Resume episode<\/button>/)?.[0] ?? "";
+}
+
+test("resume payload captures the archived episode's expected start and end", () => {
+  const archived = sickEpisode({ id: "episode-old", startedAt: NOW - 48 * 60 * 60 * 1000, endedAt: NOW - 40 * 60 * 60 * 1000 });
+  assert.deepEqual(buildResumePayload({ babyId: "baby-1", episode: archived }), {
+    action: "resume",
+    babyId: "baby-1",
+    episodeId: "episode-old",
+    expectedStartedAt: NOW - 48 * 60 * 60 * 1000,
+    expectedEndedAt: NOW - 40 * 60 * 60 * 1000,
+  });
+  assert.throws(() => buildResumePayload({
+    babyId: "baby-1",
+    episode: sickEpisode({ id: "episode-live", endedAt: null }),
+  }));
+});
+
+test("a retry reuses the frozen captured episode instead of refreshed timestamps", () => {
+  const rendered = sickEpisode({ id: "episode-old", startedAt: NOW - 48 * 60 * 60 * 1000, endedAt: NOW - 40 * 60 * 60 * 1000 });
+  // A background refresh has since changed the rendered end time.
+  const captured = sickEpisode({ id: "episode-old", startedAt: NOW - 48 * 60 * 60 * 1000, endedAt: NOW - 39 * 60 * 60 * 1000 });
+
+  const reused = selectResumeCapture(rendered, { episodeId: "episode-old", episode: captured });
+  assert.equal(reused.reusedCapture, true);
+  assert.equal(reused.episode.endedAt, captured.endedAt);
+  assert.deepEqual(buildResumePayload({ babyId: "baby-1", episode: reused.episode }).expectedEndedAt, NOW - 39 * 60 * 60 * 1000);
+
+  // Without a matching capture (e.g. after a 409 cleared it) the latest state is used.
+  const fresh = selectResumeCapture(rendered, null);
+  assert.equal(fresh.reusedCapture, false);
+  assert.equal(fresh.episode, rendered);
+  const other = selectResumeCapture(rendered, { episodeId: "episode-mid", episode: captured });
+  assert.equal(other.reusedCapture, false);
+  assert.equal(other.episode, rendered);
+});
+
+test("resume eligibility needs an ended episode clear of any later or active episode", () => {
+  const candidate = sickEpisode({ id: "episode-old", startedAt: 1_000_000, endedAt: 2_000_000 });
+  assert.deepEqual(evaluateResumeEligibility(candidate, [candidate]), { eligible: true });
+
+  // An earlier episode that fully precedes the candidate does not block resuming.
+  const earlier = sickEpisode({ id: "episode-earlier", startedAt: 0, endedAt: 1_000_000 });
+  assert.deepEqual(evaluateResumeEligibility(candidate, [candidate, earlier]), { eligible: true });
+
+  // Anything ending after the candidate began would overlap the reopened continuous span.
+  const later = sickEpisode({ id: "episode-later", startedAt: 3_000_000, endedAt: 4_000_000 });
+  assert.deepEqual(evaluateResumeEligibility(candidate, [candidate, later]), { eligible: false, reason: "overlap" });
+
+  // An active episode blocks too, and cannot itself be a resume candidate.
+  const active = sickEpisode({ id: "episode-live", startedAt: 3_000_000, endedAt: null });
+  assert.deepEqual(evaluateResumeEligibility(candidate, [candidate, active]), { eligible: false, reason: "active-episode" });
+  assert.deepEqual(evaluateResumeEligibility(active, [active]), { eligible: false, reason: "not-archived" });
+});
+
+test("an eligible archived episode offers a resume CTA in settings but never on the dashboard", () => {
+  const archived = sickEpisode({ id: "episode-old", startedAt: NOW - 48 * 60 * 60 * 1000, endedAt: NOW - 40 * 60 * 60 * 1000 });
+
+  const controls = renderToStaticMarkup(createElement(SickModePanel, {
+    babyId: "baby-1",
+    data: settingsData([archived]),
+    display: "controls",
+    onRefresh: () => undefined,
+  }));
+  assert.match(controls, />Resume episode</);
+  assert.match(controls, /continuous sick mode\. Medications and recorded doses are kept/);
+  assert.doesNotMatch(resumeButtonTag(controls), /disabled=""/);
+
+  const activeDashboard = renderToStaticMarkup(createElement(SickModePanel, {
+    babyId: "baby-1",
+    data: settingsData([archived], sickEpisode({ id: "episode-live", endedAt: null })),
+    onRefresh: () => undefined,
+  }));
+  assert.doesNotMatch(activeDashboard, /Resume episode/);
+});
+
+test("an overlapping or active episode explains why resuming is unavailable instead of offering a button", () => {
+  const candidate = sickEpisode({ id: "episode-old", startedAt: NOW - 48 * 60 * 60 * 1000, endedAt: NOW - 40 * 60 * 60 * 1000 });
+  const active = sickEpisode({ id: "episode-live", startedAt: NOW - 60 * 60 * 1000, endedAt: null });
+  const controls = renderToStaticMarkup(createElement(SickModePanel, {
+    babyId: "baby-1",
+    data: settingsData([candidate, active], active),
+    display: "controls",
+    onRefresh: () => undefined,
+  }));
+  assert.match(controls, /resume while another sick-mode episode is active/);
+  assert.equal(resumeButtonTag(controls), "");
+
+  // Two mutually overlapping ended episodes each block the other, so no resume button appears.
+  const later = sickEpisode({ id: "episode-mid", startedAt: NOW - 44 * 60 * 60 * 1000, endedAt: NOW - 42 * 60 * 60 * 1000 });
+  const overlap = renderToStaticMarkup(createElement(SickModePanel, {
+    babyId: "baby-1",
+    data: settingsData([candidate, later]),
+    display: "controls",
+    onRefresh: () => undefined,
+  }));
+  assert.match(overlap, /a later episode would overlap this one/);
+  assert.equal(resumeButtonTag(overlap), "");
+});
+
+test("stale sick-mode data disables the resume CTA", () => {
+  const archived = sickEpisode({ id: "episode-old", startedAt: NOW - 48 * 60 * 60 * 1000, endedAt: NOW - 40 * 60 * 60 * 1000 });
+  const controls = renderToStaticMarkup(createElement(SickModePanel, {
+    babyId: "baby-1",
+    data: settingsData([archived]),
+    display: "controls",
+    isStale: true,
+    onRefresh: () => undefined,
+  }));
+  assert.match(resumeButtonTag(controls), /disabled=""/);
 });

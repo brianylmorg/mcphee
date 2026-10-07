@@ -582,6 +582,44 @@ export async function POST(request: NextRequest) {
           ],
         });
         result = { ok: true, episodeId };
+      } else if (action === "resume") {
+        const episodeId = requiredId(body, "episodeId");
+        const episode = await requireOwnedEpisode(executor, householdId, babyId, episodeId);
+        const expectedStartedAt = requiredTimestamp(body, "expectedStartedAt", now);
+        const expectedEndedAt = requiredTimestamp(body, "expectedEndedAt", now);
+        const storedStartedAt = Number(episode.started_at);
+        const storedEndedAt = episode.ended_at == null ? null : Number(episode.ended_at);
+
+        // A retry after a committed resume is safe only when it still names the
+        // same captured episode start. The old end is necessarily gone.
+        if (storedEndedAt == null) {
+          if (expectedStartedAt !== storedStartedAt) {
+            throw new SickModeApiError(409, "Sick mode episode changed on another device", "STALE_EPISODE");
+          }
+          result = { ok: true, episodeId, idempotent: true };
+        } else {
+          if (expectedStartedAt !== storedStartedAt || expectedEndedAt !== storedEndedAt) {
+            throw new SickModeApiError(409, "Sick mode episode changed on another device", "STALE_EPISODE");
+          }
+          const overlap = await executor.execute({
+            sql: `SELECT id FROM sick_mode_episodes
+                  WHERE baby_id = ? AND id <> ? AND started_at <= ?
+                    AND (ended_at IS NULL OR ended_at > ?) LIMIT 1`,
+            args: [babyId, episodeId, now, storedStartedAt],
+          });
+          if (overlap.rows[0]) {
+            throw new SickModeApiError(409, "Sick mode cannot overlap another episode", "EPISODE_OVERLAP");
+          }
+          const update = await executor.execute({
+            sql: `UPDATE sick_mode_episodes SET ended_at = NULL, ended_by = NULL
+                  WHERE id = ? AND started_at = ? AND ended_at = ?`,
+            args: [episodeId, expectedStartedAt, expectedEndedAt],
+          });
+          if ((update.rowsAffected ?? 0) !== 1) {
+            throw new SickModeApiError(409, "Sick mode episode changed on another device", "STALE_EPISODE");
+          }
+          result = { ok: true, episodeId };
+        }
       } else if (action === "updateStart") {
         const episodeId = requiredId(body, "episodeId");
         const episode = await requireOwnedEpisode(executor, householdId, babyId, episodeId);

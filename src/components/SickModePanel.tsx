@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Droplets, Pencil, Plus, Thermometer, Trash2, X } from "lucide-react";
+import { ChevronDown, Droplets, Pencil, Plus, RotateCcw, Thermometer, Trash2, X } from "lucide-react";
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
 import { sgtDateKey } from "@/lib/milk-volumes";
@@ -74,6 +74,73 @@ export function isSickModeConflict(error: unknown, code: string): boolean {
   if (typeof error !== "object" || error === null) return false;
   const candidate = error as { status?: unknown; code?: unknown };
   return candidate.status === 409 && candidate.code === code;
+}
+
+export type ResumeEligibility =
+  | { eligible: true }
+  | { eligible: false; reason: "not-archived" | "active-episode" | "overlap" };
+
+/**
+ * An ended episode can be reopened only when no other episode would end up
+ * sharing the recovered span: any episode still active (endedAt == null) or
+ * ending after this candidate began overlaps the continuous sick mode that a
+ * resume would create. Earlier, fully preceding episodes are fine.
+ */
+export function evaluateResumeEligibility(
+  candidate: SickEpisode,
+  episodes: SickEpisode[],
+): ResumeEligibility {
+  if (candidate.endedAt == null) return { eligible: false, reason: "not-archived" };
+  const others = episodes.filter((episode) => episode.id !== candidate.id);
+  if (others.some((episode) => episode.endedAt == null)) return { eligible: false, reason: "active-episode" };
+  if (others.some((episode) => episode.endedAt != null && episode.endedAt > candidate.startedAt)) {
+    return { eligible: false, reason: "overlap" };
+  }
+  return { eligible: true };
+}
+
+export function resumeEligibilityMessage(eligibility: ResumeEligibility): string | null {
+  if (eligibility.eligible) return null;
+  if (eligibility.reason === "not-archived") return "Only ended episodes can be resumed.";
+  if (eligibility.reason === "active-episode") return "Can’t resume while another sick-mode episode is active.";
+  return "Can’t resume: a later episode would overlap this one.";
+}
+
+/**
+ * Captures the archived episode's frozen start/end so the server can both
+ * reopen the same episode idempotently and reject a stale capture.
+ */
+export function buildResumePayload({
+  babyId,
+  episode,
+}: {
+  babyId: string;
+  episode: SickEpisode;
+}): Record<string, unknown> {
+  if (episode.endedAt == null) throw new Error("Only an ended episode can be resumed.");
+  return {
+    action: "resume",
+    babyId,
+    episodeId: episode.id,
+    expectedStartedAt: episode.startedAt,
+    expectedEndedAt: episode.endedAt,
+  };
+}
+
+/** A failed attempt's frozen episode, retained so a retry reuses the exact capture. */
+export type ResumeCapture = { episodeId: string; episode: SickEpisode };
+
+/**
+ * Retries must build from the snapshot that produced the failed payload: a
+ * background refresh can change endedAt, and substituting it would silently
+ * reopen a different span than the caregiver confirmed.
+ */
+export function selectResumeCapture(
+  rendered: SickEpisode,
+  capture: ResumeCapture | null,
+): { episode: SickEpisode; reusedCapture: boolean } {
+  if (capture && capture.episodeId === rendered.id) return { episode: capture.episode, reusedCapture: true };
+  return { episode: rendered, reusedCapture: false };
 }
 
 export function buildMedicationUpdatePayload({
@@ -415,13 +482,89 @@ function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onCha
   );
 }
 
-function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeResponse }) {
+type ResumeOutcome =
+  | { status: "resumed" }
+  | { status: "cancelled" }
+  | { status: "blocked" }
+  | { status: "stale" }
+  | { status: "overlap" }
+  | { status: "error"; message: string };
+
+function EpisodeArchive({
+  babyId,
+  data,
+  busy,
+  isStale,
+  startFlowOpen,
+  onResume,
+  onRefresh,
+}: {
+  babyId: string;
+  data: SickModeResponse;
+  busy: boolean;
+  isStale: boolean;
+  startFlowOpen: boolean;
+  onResume: (episode: SickEpisode, options?: { skipConfirm?: boolean }) => Promise<ResumeOutcome>;
+  onRefresh: () => Promise<void> | void;
+}) {
   const archived = data.episodes.filter((episode) => episode.endedAt != null);
+  // The active episode may or may not also appear in `episodes`; fold it in so
+  // overlap/eligibility checks always see the full picture.
+  const allEpisodes = useMemo(() => {
+    const list = [...data.episodes];
+    const active = data.activeEpisode;
+    if (active && !list.some((episode) => episode.id === active.id)) list.push(active);
+    return list;
+  }, [data.episodes, data.activeEpisode]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedData, setSelectedData] = useState<SickModeResponse | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resumeFeedback, setResumeFeedback] = useState<{ episodeId: string; kind: "conflict" | "retry" | "committed"; message: string } | null>(null);
+  const [resumeCapture, setResumeCapture] = useState<ResumeCapture | null>(null);
+  const [resumingId, setResumingId] = useState<string | null>(null);
   if (archived.length === 0) return null;
+
+  // A failed refresh callback must never reject an unhandled event promise.
+  const refreshQuietly = () => {
+    void Promise.resolve().then(onRefresh).catch(() => {});
+  };
+
+  const runResume = async (episode: SickEpisode, skipConfirm: boolean) => {
+    if (busy || isStale) return;
+    setResumeFeedback(null);
+    setResumingId(episode.id);
+    try {
+      const outcome = await onResume(episode, { skipConfirm });
+      if (outcome.status === "stale") {
+        // A 409 means the capture is out of date: drop it so a later attempt
+        // confirms the latest state instead of replaying the old snapshot.
+        setResumeCapture(null);
+        setResumeFeedback({ episodeId: episode.id, kind: "conflict", message: "This episode changed on another device or is no longer ended. Refresh to review the latest details." });
+      } else if (outcome.status === "overlap") {
+        setResumeCapture(null);
+        setResumeFeedback({ episodeId: episode.id, kind: "conflict", message: "Another sick-mode episode now overlaps this time. Refresh to review the latest details." });
+      } else if (outcome.status === "resumed") {
+        // The mutation committed; only a refresh may be pending.
+        setResumeCapture(null);
+        setResumeFeedback({ episodeId: episode.id, kind: "committed", message: "Episode resumed. Refresh to load the latest details." });
+      } else if (outcome.status === "error") {
+        setResumeCapture({ episodeId: episode.id, episode });
+        setResumeFeedback({ episodeId: episode.id, kind: "retry", message: outcome.message });
+      } else {
+        setResumeCapture(null);
+      }
+    } finally {
+      setResumingId(null);
+    }
+  };
+
+  // The main CTA reuses a captured snapshot when retry feedback is on screen,
+  // so a background refresh cannot swap in fresh timestamps.
+  const resumeFromPrimary = (episode: SickEpisode) => {
+    const { episode: source, reusedCapture } = selectResumeCapture(episode, resumeCapture);
+    void runResume(source, reusedCapture);
+  };
 
   const toggleEpisode = async (episodeId: string) => {
     if (selectedId === episodeId) {
@@ -453,12 +596,46 @@ function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeRespon
         <ChevronDown aria-hidden="true" className="h-4 w-4 text-muted" />
       </summary>
       <div className="divide-y divide-border/60">
-        {archived.map((episode) => (
+        {archived.map((episode) => {
+          const eligibility = evaluateResumeEligibility(episode, allEpisodes);
+          const feedback = resumeFeedback?.episodeId === episode.id ? resumeFeedback : null;
+          return (
           <div key={episode.id} className="py-1 text-xs leading-relaxed text-muted">
             <button type="button" aria-expanded={selectedId === episode.id} onClick={() => void toggleEpisode(episode.id)} className="flex min-h-9 w-full items-center justify-between gap-3 py-2 text-left">
               <span><span className="font-semibold tabular-nums text-warm-brown">{formatDate(episode.startedAt)} · {formatTime(episode.startedAt)}</span><span className="block">Ended {episode.endedAt == null ? "—" : `${formatDate(episode.endedAt)} · ${formatTime(episode.endedAt)}`}</span></span>
               <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 transition-transform ${selectedId === episode.id ? "rotate-180" : ""}`} />
             </button>
+            {eligibility.eligible ? (
+              startFlowOpen ? (
+                <p className="pb-2 text-[11px] leading-relaxed text-muted">Finish or cancel starting a new episode before resuming this one.</p>
+              ) : feedback?.kind === "committed" ? (
+                <div className="pb-2">
+                  <p role="status" className="text-[11px] leading-relaxed text-muted">{feedback.message}</p>
+                  <button type="button" disabled={busy} onClick={refreshQuietly} className="mt-1 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold text-warm-brown disabled:opacity-50">Refresh</button>
+                </div>
+              ) : (
+                <div className="pb-2">
+                  <button type="button" disabled={busy || isStale} onClick={() => resumeFromPrimary(episode)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 text-xs font-semibold text-accent-strong disabled:opacity-50">
+                    <RotateCcw aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                    {resumingId === episode.id ? "Resuming…" : "Resume episode"}
+                  </button>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted">Reopens this same episode and treats the time since it ended as continuous sick mode. Medications and recorded doses are kept.</p>
+                  {feedback && (
+                    <p role="alert" className="mt-1 text-[11px] leading-relaxed text-danger">
+                      {feedback.message}
+                      {feedback.kind === "retry" && (
+                        <> <button type="button" disabled={busy || isStale} onClick={() => { if (resumeCapture?.episodeId === episode.id) void runResume(resumeCapture.episode, true); }} className="font-semibold text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">Try again</button></>
+                      )}
+                      {feedback.kind === "conflict" && (
+                        <> <button type="button" disabled={busy || isStale} onClick={refreshQuietly} className="font-semibold text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">Refresh</button></>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )
+            ) : (
+              <p className="pb-2 text-[11px] leading-relaxed text-muted">{resumeEligibilityMessage(eligibility)}</p>
+            )}
             {selectedId === episode.id && (
               <div className="pb-3 pl-3">
                 <p>Usual daily intake used: {episode.baselineDailyMl} ml · {episode.baselineKind === "manual" ? "manual" : `${episode.baselineAvailableDayCount}/7 logged days`}</p>
@@ -482,7 +659,8 @@ function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeRespon
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </details>
   );
@@ -784,6 +962,35 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
     }
   };
 
+  // Shares the parent's single-writer busy guard with start/end so sibling
+  // lifecycle actions can never race.
+  const resumeEpisode = async (episode: SickEpisode, options?: { skipConfirm?: boolean }): Promise<ResumeOutcome> => {
+    if (busy || isStale || episode.endedAt == null) return { status: "blocked" };
+    if (!options?.skipConfirm && !confirm("Resume this sick-mode episode? The time since it ended becomes continuous sick mode. Medications and recorded doses are kept.")) {
+      return { status: "cancelled" };
+    }
+    const payload = buildResumePayload({ babyId, episode });
+    setBusy(true);
+    try {
+      await mutateSickMode(payload);
+      // The mutation already committed; a failed refresh must not surface as a failed save.
+      try { await onRefresh(); } catch {}
+      return { status: "resumed" };
+    } catch (error) {
+      if (isSickModeConflict(error, "STALE_EPISODE")) {
+        try { await onRefresh(); } catch {}
+        return { status: "stale" };
+      }
+      if (isSickModeConflict(error, "EPISODE_OVERLAP")) {
+        try { await onRefresh(); } catch {}
+        return { status: "overlap" };
+      }
+      return { status: "error", message: error instanceof Error ? error.message : "Could not resume this episode." };
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (display === "dashboard" && (!data?.schemaReady || !activeEpisode)) return null;
 
   if (!data) {
@@ -809,7 +1016,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
         {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-amber-50 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
         <div className="flex items-center justify-between gap-3">
           <div><h2 id="sick-mode-heading" className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-muted">Track fever, medication, feeds and pee in one place.</p></div>
-          <button type="button" disabled={isStale} onClick={() => { if (!showStart) { setStartedAtInput(sgtDateTimeInput()); setPreview(data.baselinePreview); setConfirmIncomplete(false); setManualBaseline(""); } setShowStart(value => !value); }} aria-expanded={showStart} className="min-h-9 shrink-0 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-sm font-semibold text-accent-strong disabled:opacity-50">{showStart ? "Cancel" : "Start"}</button>
+          <button type="button" disabled={busy || isStale} onClick={() => { if (!showStart) { setStartedAtInput(sgtDateTimeInput()); setPreview(data.baselinePreview); setConfirmIncomplete(false); setManualBaseline(""); } setShowStart(value => !value); }} aria-expanded={showStart} className="min-h-9 shrink-0 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-sm font-semibold text-accent-strong disabled:opacity-50">{showStart ? "Cancel" : "Start"}</button>
         </div>
         {showStart && (
           <div className="mt-4 border-t border-border pt-4">
@@ -831,7 +1038,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
             <button type="button" onClick={startSickMode} disabled={busy} className="mt-4 min-h-9 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Starting…" : "Start sick mode"}</button>
           </div>
         )}
-        <EpisodeArchive babyId={babyId} data={data} />
+        <EpisodeArchive babyId={babyId} data={data} busy={busy} isStale={isStale} startFlowOpen={showStart} onResume={resumeEpisode} onRefresh={onRefresh} />
       </section>
     );
   }
@@ -858,7 +1065,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
           )}
           <button type="button" onClick={endSickMode} disabled={busy || isStale || editingStart} className="mt-4 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-warm-brown disabled:opacity-50">End mode</button>
         </div>
-        <EpisodeArchive babyId={babyId} data={data} />
+        <EpisodeArchive babyId={babyId} data={data} busy={busy} isStale={isStale} startFlowOpen={showStart} onResume={resumeEpisode} onRefresh={onRefresh} />
       </section>
     );
   }

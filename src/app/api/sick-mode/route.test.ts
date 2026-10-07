@@ -470,3 +470,220 @@ test("updateStart moves an active episode's start within its guards and refreshe
     client.close();
   }
 });
+
+test("resume reopens the same ended episode continuously without rewriting its clinical records", async () => {
+  const originalNow = Date.now;
+  Date.now = () => FIXED_NOW;
+  const dbPath = `/tmp/mcphee-sick-mode-resume-${process.pid}-${Math.random().toString(36).slice(2)}.db`;
+  process.env.TURSO_DATABASE_URL = `file:${dbPath}`;
+  delete process.env.TURSO_AUTH_TOKEN;
+  const client = createClient({ url: process.env.TURSO_DATABASE_URL });
+  const episodeId = "resume-episode";
+  const originalStartedAt = ts("2026-10-03", "08:00");
+  const originalEndedAt = ts("2026-10-03", "20:00");
+  const resumePayload = {
+    action: "resume",
+    babyId: "baby-1",
+    episodeId,
+    expectedStartedAt: originalStartedAt,
+    expectedEndedAt: originalEndedAt,
+  };
+  try {
+    await createBaseSchema(client);
+    await applySickModeSchema(client);
+
+    const feedDays: Array<[string, number]> = [
+      ["2026-09-25", 100], ["2026-09-26", 200], ["2026-09-27", 300],
+      ["2026-09-28", 400], ["2026-09-29", 500], ["2026-09-30", 600],
+      ["2026-10-01", 700], ["2026-10-02", 800], ["2026-10-03", 900],
+      ["2026-10-04", 1000], ["2026-10-05", 1100],
+    ];
+    await client.batch(feedDays.map(([date, amount], index) => ({
+      sql: "INSERT INTO activities VALUES (?, ?, 'bottlefeed', ?, NULL, ?, ?, ?)",
+      args: [
+        `resume-feed-${index}`,
+        "baby-1",
+        ts(date),
+        JSON.stringify({ milkType: "formula", amount }),
+        ts(date),
+        "Parent One",
+      ],
+    })), "write");
+    await client.execute({
+      sql: `INSERT INTO sick_mode_episodes
+            (id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind,
+             baseline_available_day_count, baseline_source_days, created_at, created_by, ended_by)
+            VALUES (?, ?, ?, ?, ?, 'calculated', ?, ?, ?, ?, ?)`,
+      args: [
+        episodeId,
+        "baby-1",
+        originalStartedAt,
+        originalEndedAt,
+        777.5,
+        7,
+        JSON.stringify([{ date: "2026-10-02", totalMl: 777.5 }]),
+        ts("2026-10-03", "08:01"),
+        "Parent One",
+        "Parent One",
+      ],
+    });
+    await client.batch([
+      {
+        sql: `INSERT INTO sick_mode_medications
+              (id, episode_id, name, dose_text, as_needed, min_interval_minutes,
+               max_interval_minutes, created_at, created_by, updated_at, revision)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: ["resume-med", episodeId, "Paracetamol", "3.5ml", 1, 240, 360, ts("2026-10-03", "08:30"), "Parent One", ts("2026-10-03", "08:30"), 1],
+      },
+      {
+        sql: `INSERT INTO sick_mode_doses
+              (id, medication_id, given_at, dose_text, given_by, request_id,
+               created_at, updated_at, revision, deleted_at, deleted_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+        args: ["resume-dose", "resume-med", ts("2026-10-03", "12:00"), "3.5ml", "Parent One", "resume-dose-request", ts("2026-10-03", "12:00"), ts("2026-10-03", "12:00"), 1],
+      },
+    ], "write");
+
+    const episodeBefore = { ...(await client.execute({ sql: "SELECT * FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0] };
+    const medicationsBefore = (await client.execute({ sql: "SELECT * FROM sick_mode_medications WHERE episode_id = ? ORDER BY id", args: [episodeId] })).rows.map((row) => ({ ...row }));
+    const dosesBefore = (await client.execute({ sql: `SELECT d.* FROM sick_mode_doses d
+                                                       JOIN sick_mode_medications m ON m.id = d.medication_id
+                                                       WHERE m.episode_id = ? ORDER BY d.id`, args: [episodeId] })).rows.map((row) => ({ ...row }));
+    const activitiesBefore = (await client.execute("SELECT * FROM activities ORDER BY id")).rows.map((row) => ({ ...row }));
+
+    const beforeHistory = await (await getMilkHistory(request("/api/milk-history?babyId=baby-1"))).json();
+    assert.equal(beforeHistory.days.find((day: { date: string }) => day.date === "2026-10-04").isSickDay, false, "the ended episode initially leaves a healthy gap");
+
+    for (const invalidPayload of [
+      { ...resumePayload, expectedStartedAt: "" },
+      { ...resumePayload, expectedStartedAt: -1 },
+      { ...resumePayload, expectedStartedAt: "not-a-time" },
+      { ...resumePayload, expectedStartedAt: FIXED_NOW + 1 },
+      { ...resumePayload, expectedEndedAt: "" },
+      { ...resumePayload, expectedEndedAt: -1 },
+      { ...resumePayload, expectedEndedAt: "not-a-time" },
+      { ...resumePayload, expectedEndedAt: FIXED_NOW + 1 },
+    ]) {
+      const invalid = await post(invalidPayload);
+      assert.equal(invalid.status, 400, "invalid or future captured timestamps must fail closed");
+    }
+
+    const unknown = await post({ ...resumePayload, episodeId: "missing-episode" });
+    assert.equal(unknown.status, 404);
+    const wrongBaby = await post({ ...resumePayload, babyId: "baby-2" });
+    assert.equal(wrongBaby.status, 404);
+    const foreignHousehold = await postForHousehold(
+      { ...resumePayload, babyId: "foreign-baby" },
+      "house-2",
+      "user-2",
+    );
+    assert.equal(foreignHousehold.status, 404);
+
+    const staleStart = await post({ ...resumePayload, expectedStartedAt: ts("2026-10-03", "07:59") });
+    assert.equal(staleStart.status, 409);
+    assert.equal((await staleStart.json()).code, "STALE_EPISODE");
+    const staleEnd = await post({ ...resumePayload, expectedEndedAt: ts("2026-10-03", "19:59") });
+    assert.equal(staleEnd.status, 409);
+    assert.equal((await staleEnd.json()).code, "STALE_EPISODE");
+
+    await client.execute({
+      sql: `INSERT INTO sick_mode_episodes
+            (id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind,
+             baseline_available_day_count, baseline_source_days, created_at, created_by, ended_by)
+            VALUES (?, ?, ?, NULL, ?, 'manual', 0, '[]', ?, ?, NULL)`,
+      args: ["resume-active-overlap", "baby-1", ts("2026-10-05", "08:00"), 600, ts("2026-10-05", "08:00"), "Parent One"],
+    });
+    const activeOverlap = await post(resumePayload);
+    assert.equal(activeOverlap.status, 409);
+    assert.equal((await activeOverlap.json()).code, "EPISODE_OVERLAP");
+    await client.execute({ sql: "DELETE FROM sick_mode_episodes WHERE id = ?", args: ["resume-active-overlap"] });
+
+    await client.execute({
+      sql: `INSERT INTO sick_mode_episodes
+            (id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind,
+             baseline_available_day_count, baseline_source_days, created_at, created_by, ended_by)
+            VALUES (?, ?, ?, ?, ?, 'manual', 0, '[]', ?, ?, ?)`,
+      args: ["resume-newer-ended", "baby-1", ts("2026-10-04", "08:00"), ts("2026-10-05", "08:00"), 600, ts("2026-10-04", "08:00"), "Parent One", "Parent One"],
+    });
+    const endedOverlap = await post(resumePayload);
+    assert.equal(endedOverlap.status, 409, "an older episode cannot resume through a newer ended episode");
+    assert.equal((await endedOverlap.json()).code, "EPISODE_OVERLAP");
+    await client.execute({ sql: "DELETE FROM sick_mode_episodes WHERE id = ?", args: ["resume-newer-ended"] });
+
+    // A fully earlier episode is not part of the proposed continuous interval.
+    await client.execute({
+      sql: `INSERT INTO sick_mode_episodes
+            (id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind,
+             baseline_available_day_count, baseline_source_days, created_at, created_by, ended_by)
+            VALUES (?, ?, ?, ?, ?, 'manual', 0, '[]', ?, ?, ?)`,
+      args: ["resume-earlier", "baby-1", ts("2026-09-30", "00:00"), ts("2026-10-01", "00:00"), 600, ts("2026-09-30", "00:00"), "Parent One", "Parent One"],
+    });
+
+    const resumed = await post(resumePayload);
+    assert.equal(resumed.status, 200);
+    assert.deepEqual(await resumed.json(), { ok: true, episodeId });
+
+    const episodeAfter = { ...(await client.execute({ sql: "SELECT * FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0] };
+    assert.deepEqual(episodeAfter, { ...episodeBefore, ended_at: null, ended_by: null }, "resume must only clear the episode end fields");
+    const medicationsAfter = (await client.execute({ sql: "SELECT * FROM sick_mode_medications WHERE episode_id = ? ORDER BY id", args: [episodeId] })).rows.map((row) => ({ ...row }));
+    const dosesAfter = (await client.execute({ sql: `SELECT d.* FROM sick_mode_doses d
+                                                      JOIN sick_mode_medications m ON m.id = d.medication_id
+                                                      WHERE m.episode_id = ? ORDER BY d.id`, args: [episodeId] })).rows.map((row) => ({ ...row }));
+    assert.deepEqual(medicationsAfter, medicationsBefore, "medication setup must be preserved exactly");
+    assert.deepEqual(dosesAfter, dosesBefore, "dose history must be preserved exactly");
+    assert.deepEqual((await client.execute("SELECT * FROM activities ORDER BY id")).rows.map((row) => ({ ...row })), activitiesBefore, "resume must not write activity rows");
+
+    const active = await (await GET(request("/api/sick-mode?babyId=baby-1"))).json();
+    assert.equal(active.activeEpisode.id, episodeId);
+    const afterHistory = await (await getMilkHistory(request("/api/milk-history?babyId=baby-1"))).json();
+    assert.equal(afterHistory.days.find((day: { date: string }) => day.date === "2026-10-04").isSickDay, true, "the former gap becomes part of the resumed continuous episode");
+
+    const lostSuccessRetry = await post(resumePayload);
+    assert.equal(lostSuccessRetry.status, 200);
+    assert.deepEqual(await lostSuccessRetry.json(), { ok: true, episodeId, idempotent: true });
+    const activeStaleStart = await post({ ...resumePayload, expectedStartedAt: ts("2026-10-03", "07:59") });
+    assert.equal(activeStaleStart.status, 409);
+    assert.equal((await activeStaleStart.json()).code, "STALE_EPISODE");
+
+    // Once reopened, the existing editor can move the start and recompute a calculated baseline.
+    const movedStartAt = ts("2026-10-02", "08:00");
+    const moved = await post({
+      action: "updateStart",
+      babyId: "baby-1",
+      episodeId,
+      startedAt: movedStartAt,
+      expectedStartedAt: originalStartedAt,
+      confirmIncomplete: true,
+    });
+    assert.equal(moved.status, 200);
+    const movedRow = (await client.execute({
+      sql: `SELECT started_at, baseline_daily_ml, baseline_kind,
+                   baseline_available_day_count, baseline_source_days
+            FROM sick_mode_episodes WHERE id = ?`,
+      args: [episodeId],
+    })).rows[0];
+    assert.equal(Number(movedRow.started_at), movedStartAt);
+    assert.equal(Number(movedRow.baseline_daily_ml), 350);
+    assert.equal(String(movedRow.baseline_kind), "calculated");
+    assert.equal(Number(movedRow.baseline_available_day_count), 6);
+    assert.notEqual(String(movedRow.baseline_source_days), String(episodeBefore.baseline_source_days));
+    assert.deepEqual((await client.execute("SELECT * FROM activities ORDER BY id")).rows.map((row) => ({ ...row })), activitiesBefore, "editing the resumed start must not rewrite activities");
+
+    const reEndedAt = ts("2026-10-06", "11:30");
+    const reEnded = await post({ action: "end", babyId: "baby-1", episodeId, endedAt: reEndedAt });
+    assert.equal(reEnded.status, 200);
+    const staleSecondResume = await post({
+      ...resumePayload,
+      expectedStartedAt: movedStartAt,
+      expectedEndedAt: originalEndedAt,
+    });
+    assert.equal(staleSecondResume.status, 409, "a later end must invalidate the previously captured end time");
+    assert.equal((await staleSecondResume.json()).code, "STALE_EPISODE");
+    const finalRow = (await client.execute({ sql: "SELECT ended_at, ended_by FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(finalRow.ended_at), reEndedAt);
+    assert.equal(String(finalRow.ended_by), "Parent One");
+  } finally {
+    Date.now = originalNow;
+    client.close();
+  }
+});
