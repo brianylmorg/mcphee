@@ -601,7 +601,7 @@ export default function DashboardPage() {
     sleepUndoTimerRef.current = window.setTimeout(() => {
       setSleepUndo(null);
       sleepUndoTimerRef.current = null;
-    }, 10_000);
+    }, 5_000);
   };
 
   const handleSleepTransition = async (target: "awake" | "sleeping") => {
