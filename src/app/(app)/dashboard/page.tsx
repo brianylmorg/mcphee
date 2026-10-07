@@ -1607,7 +1607,7 @@ export default function DashboardPage() {
       {/* Floating Add Activity Menu */}
       <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
         {showActivityMenu && (
-          <div className="max-h-[calc(100dvh-7rem)] w-[min(320px,calc(100vw-2.5rem))] overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
+          <div className="activity-picker flex max-h-[calc(100dvh-7rem)] w-[min(320px,calc(100vw-2.5rem))] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
             {activityActionTypes.map((type) => {
               const last = getLastActivity(type);
               const overdue = isOverdue(type);
@@ -1630,7 +1630,7 @@ export default function DashboardPage() {
                   key={type}
                   onClick={() => handleActivityAction(type)}
                   disabled={(isBreastfeed && isStartingTimer) || (type === "medication" && sickModeIsStale)}
-                  className={"flex min-h-9 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors " + (overdue ? "bg-terracotta-dark text-white" : "hover:bg-cream text-warm-brown") + " disabled:opacity-60"}
+                  className={"flex min-h-9 w-full shrink-0 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors " + (overdue ? "bg-terracotta-dark text-white" : "hover:bg-cream text-warm-brown") + " disabled:opacity-60"}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <ActivityIcon aria-hidden="true" className="h-5 w-5 shrink-0" />

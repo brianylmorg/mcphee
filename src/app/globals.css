@@ -360,6 +360,27 @@ body {
   outline-offset: 3px;
 }
 
+/* Keep highlights separate without shrinking targets or growing the overview. */
+.medication-row-control {
+  position: relative;
+  isolation: isolate;
+}
+.medication-row-control::before {
+  content: "";
+  position: absolute;
+  inset: 3px 0;
+  z-index: -1;
+  border-radius: 6px;
+  pointer-events: none;
+}
+.medication-row-control:hover:not(:disabled)::before {
+  background-color: var(--color-surface-muted);
+}
+.activity-picker > button:focus-visible,
+[data-medication-row] > div:first-child button:focus-visible {
+  outline-offset: -3px;
+}
+
 :is(button, [role="button"]):active:not(:disabled) {
   transform: translateY(1px);
 }

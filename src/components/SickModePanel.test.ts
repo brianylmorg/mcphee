@@ -104,6 +104,7 @@ test("active sick mode renders every medication as a compact row", () => {
   assert.match(html, /As needed/);
   assert.match(html, /Last given/);
   assert.match(html, /No doses logged/);
+  assert.equal((html.match(/class="medication-row-control /g) ?? []).length, 8);
 });
 
 test("temperature absence and overdue states are explicit", () => {

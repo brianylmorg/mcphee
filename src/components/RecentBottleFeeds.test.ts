@@ -22,6 +22,7 @@ test("latest feeds retain three records, dates and clearly separated elapsed lab
     assert.ok(html.includes(`${feed.amountMl} ml</span>`));
   }
   assert.match(html, /font-semibold tabular-nums text-muted/);
+  assert.doesNotMatch(html, /pr-12|sm:pr-0/);
   assert.doesNotMatch(html, /font-semibold[^"<>]*"[^>]*>90 ml/);
 });
 

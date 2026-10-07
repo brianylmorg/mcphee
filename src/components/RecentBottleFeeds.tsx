@@ -43,7 +43,7 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
     <div className="latest-feeds mt-2 border-t border-border/70 pt-2" aria-label="Recent bottle feeds">
       <p className="text-xs font-semibold text-muted">Latest feeds</p>
       {feeds.length > 0 ? (
-        <div className="mt-1 pr-12 sm:pr-0">
+        <div className="mt-1">
           {feeds.map((feed) => {
             const when = sgtDateKey(feed.startedAt) === todayDateKey
               ? formatTime(feed.startedAt)
