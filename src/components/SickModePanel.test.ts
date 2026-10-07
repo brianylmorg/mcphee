@@ -225,9 +225,10 @@ test("isSickModeConflict only matches a 409 error carrying the expected code", (
 });
 
 test("health-check labels and medication names expose distinct logging shortcuts", () => {
-  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined }));
+  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined, onAddMedication: () => undefined }));
   for (const label of ["Log temperature", "Log diaper", "Log a new diaper", "Log medication", "Log Medication 2", "Edit medication Medication 2", "Dose history for Medication 2", "Add medication prescription"]) assert.ok(html.includes(`aria-label="${label}"`));
   assert.match(html, /aria-expanded="false" aria-controls="medication-history-med-2"/);
+  assert.doesNotMatch(html, /Time Medication 2 was given|Dose of Medication 2 given|>Actual dose</);
 });
 
 test("health-check logging shortcuts pause while sick-mode data is stale", () => {

@@ -116,6 +116,7 @@ body header,
 [data-care-overview="true"] .dashboard-header-tools > a {
   width: 32px;
   height: 32px;
+  justify-content: center;
   overflow: hidden;
   padding: 0;
   font-size: 0;
@@ -253,11 +254,11 @@ body header,
   line-height: 14px;
 }
 [data-care-overview="true"] .milk-progress {
-  margin-top: 6px;
+  margin-top: 5px;
   height: 6px;
 }
 [data-care-overview="true"] .milk-threshold-legend {
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 5px;
   gap: 4px;
   font-size: 11px;

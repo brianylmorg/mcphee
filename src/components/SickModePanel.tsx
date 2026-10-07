@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Droplets, Pencil, Plus, Thermometer, Trash2, X } from "lucide-react";
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
+import type { MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
 import type { SickDose, SickMedication, SickModeResponse } from "@/lib/sick-mode";
 import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
 
@@ -24,6 +25,7 @@ type Props = {
   onRefresh: () => Promise<void> | void;
   onLogActivity?: (type: "temperature" | "diaper") => void;
   onLogMedication?: (medicationId?: string) => void;
+  onAddMedication?: (drafts?: MedicationPrescriptionDraftInput[], episodeId?: string) => void;
 };
 
 const EMPTY_MEDICATION = (): MedicationDraft => ({
@@ -154,8 +156,6 @@ function DoseHistory({
   editRequest?: number;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [givenAt, setGivenAt] = useState(() => sgtDateTimeInput());
-  const [doseText, setDoseText] = useState(medication.doseText);
   const [editingMedication, setEditingMedication] = useState(false);
   const [medicationEditRevision, setMedicationEditRevision] = useState(medication.revision);
   const [medicationDraft, setMedicationDraft] = useState<MedicationDraft>(() => ({
@@ -166,7 +166,6 @@ function DoseHistory({
     minIntervalHours: medication.minIntervalHours == null ? "" : String(medication.minIntervalHours),
     maxIntervalHours: medication.maxIntervalHours == null ? "" : String(medication.maxIntervalHours),
   }));
-  const requestAttemptRef = useRef<{ signature: string; id: string; expectedLatestDoseId: string | null } | null>(null);
   const doses = Array.isArray(medication.doses) ? medication.doses : [];
 
   useEffect(() => {
@@ -188,39 +187,6 @@ function DoseHistory({
     alert(status === 409
       ? "This medication changed on another device. The latest details have been loaded."
       : error instanceof Error ? error.message : "Could not update the dose.");
-  };
-
-  const submitDose = async () => {
-    const timestamp = parseSgtDateTime(givenAt);
-    if (timestamp == null || !doseText.trim() || busy) return;
-    const signature = `${timestamp}:${doseText.trim()}`;
-    if (requestAttemptRef.current?.signature !== signature) {
-      requestAttemptRef.current = { signature, id: crypto.randomUUID(), expectedLatestDoseId: medication.latestDose?.id ?? null };
-    }
-    onBusy(true);
-    try {
-      await mutateSickMode({
-        action: "logDose",
-        babyId,
-        episodeId,
-        medicationId: medication.id,
-        givenAt: timestamp,
-        doseText: doseText.trim(),
-        requestId: requestAttemptRef.current.id,
-        expectedLatestDoseId: requestAttemptRef.current.expectedLatestDoseId,
-      });
-      setGivenAt(sgtDateTimeInput());
-      setDoseText(medication.doseText);
-      requestAttemptRef.current = null;
-      await onChanged();
-    } catch (error) {
-      if (isSickModeConflict(error, "STALE_MEDICATION_HISTORY")) {
-        requestAttemptRef.current = null;
-      }
-      await reportError(error);
-    } finally {
-      onBusy(false);
-    }
   };
 
   const saveDose = async (dose: SickDose, nextTime: string, nextText: string, expectedRevision: number) => {
@@ -266,7 +232,6 @@ function DoseHistory({
         draft: medicationDraft,
       }));
       setEditingMedication(false);
-      setDoseText(medicationDraft.doseText.trim());
       await onChanged();
     } catch (error) {
       if (isSickModeConflict(error, "STALE_MEDICATION")) {
@@ -320,11 +285,6 @@ function DoseHistory({
           {medication.maxIntervalHours != null ? `–${formatTime(medication.latestDose.givenAt + medication.maxIntervalHours * 60 * 60 * 1000)}` : ""}. This is not a safe-to-dose recommendation.
         </p>
       )}
-      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-        <label className="text-xs font-medium text-warm-brown-light">Time given<input aria-label={`Time ${medication.name} was given`} type="datetime-local" value={givenAt} onChange={(event) => setGivenAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-warm-brown" /></label>
-        <label className="text-xs font-medium text-warm-brown-light">Actual dose<input aria-label={`Dose of ${medication.name} given`} value={doseText} onChange={(event) => setDoseText(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-warm-brown" /></label>
-        <button type="button" disabled={busy || !doseText.trim()} onClick={submitDose} className="min-h-9 self-end rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Log</button>
-      </div>
       {doses.length > 0 && (
         <div className="mt-3 space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Dose history</p>
@@ -469,10 +429,9 @@ function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeRespon
   );
 }
 
-export default function SickModePanel({ babyId, data, isStale = false, display = "dashboard", onRefresh, onLogActivity, onLogMedication }: Props) {
+export default function SickModePanel({ babyId, data, isStale = false, display = "dashboard", onRefresh, onLogActivity, onLogMedication, onAddMedication }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [showStart, setShowStart] = useState(false);
-  const [showAddMedication, setShowAddMedication] = useState(false);
   const [startedAtInput, setStartedAtInput] = useState(() => sgtDateTimeInput());
   const [preview, setPreview] = useState(data?.baselinePreview ?? null);
   const [confirmIncomplete, setConfirmIncomplete] = useState(false);
@@ -541,8 +500,13 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
           pending.shift();
         }
       } catch (error) {
-        setMedicationDrafts(pending.length > 0 ? pending : [EMPTY_MEDICATION()]);
-        setShowAddMedication(true);
+        const remaining = pending.length > 0 ? pending : [EMPTY_MEDICATION()];
+        if (onAddMedication && pending.length > 0) {
+          onAddMedication(pending, episodeId);
+          setMedicationDrafts([EMPTY_MEDICATION()]);
+        } else {
+          setMedicationDrafts(remaining);
+        }
         throw error;
       }
       setShowStart(false);
@@ -560,31 +524,6 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
     setBusy(true);
     try {
       await mutateSickMode({ action: "end", babyId, episodeId: activeEpisode.id });
-      await onRefresh();
-    } catch (error) {
-      await reportMutationError(error);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const addMedication = async () => {
-    const drafts = medicationDrafts.filter((draft) => draft.name.trim() || draft.doseText.trim());
-    if (!activeEpisode || drafts.length === 0 || drafts.some((draft) => !draft.name.trim() || !draft.doseText.trim()) || busy) return;
-    setBusy(true);
-    try {
-      const pending = [...drafts];
-      try {
-        for (const draft of drafts) {
-          await mutateSickMode({ action: "addMedication", babyId, episodeId: activeEpisode.id, name: draft.name.trim(), doseText: draft.doseText.trim(), asNeeded: draft.asNeeded, minIntervalHours: numericOrUndefined(draft.minIntervalHours), maxIntervalHours: numericOrUndefined(draft.maxIntervalHours) });
-          pending.shift();
-        }
-      } catch (error) {
-        setMedicationDrafts(pending.length > 0 ? pending : [EMPTY_MEDICATION()]);
-        throw error;
-      }
-      setMedicationDrafts([EMPTY_MEDICATION()]);
-      setShowAddMedication(false);
       await onRefresh();
     } catch (error) {
       await reportMutationError(error);
@@ -691,9 +630,8 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
       </div>
 
       <div className="health-medications mt-1 border-t border-border/70 pt-0">
-        <div className="flex items-center justify-between gap-3"><button type="button" aria-label="Log medication" disabled={busy || isStale || !onLogMedication} onClick={() => onLogMedication?.()} className="health-log-action min-h-6 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">Medications</button><button type="button" aria-label="Add medication prescription" disabled={busy || isStale} onClick={() => setShowAddMedication((value) => !value)} className="inline-flex min-h-6 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add</button></div>
+        <div className="flex items-center justify-between gap-3"><button type="button" aria-label="Log medication" disabled={busy || isStale || !onLogMedication} onClick={() => onLogMedication?.()} className="health-log-action min-h-6 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">Medications</button><button type="button" aria-label="Add medication prescription" disabled={busy || isStale || !onAddMedication} onClick={() => onAddMedication?.()} className="inline-flex min-h-6 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add</button></div>
         {data.medications.length > 0 ? <div>{data.medications.map((medication) => <MedicationRow key={medication.id} babyId={babyId} episodeId={activeEpisode.id} medication={medication} now={now} busy={busy || isStale} onBusy={setBusy} onChanged={onRefresh} onLog={onLogMedication} />)}</div> : <p className="mt-1 text-xs text-muted">No medications added.</p>}
-        {showAddMedication && <div className="mt-3 space-y-3">{medicationDrafts.map((draft, index) => <MedicationFields key={draft.key} draft={draft} onChange={(next) => setMedicationDrafts((items) => items.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => setMedicationDrafts((items) => items.filter((_, itemIndex) => itemIndex !== index))} removable={medicationDrafts.length > 1} suggestions={suggestions} />)}<button type="button" onClick={() => setMedicationDrafts((items) => [...items, EMPTY_MEDICATION()])} className="inline-flex min-h-6 items-center gap-1 px-2 text-xs font-semibold text-accent-strong"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button><div className="flex flex-wrap gap-2"><button type="button" onClick={addMedication} disabled={busy || medicationDrafts.some((draft) => !draft.name.trim() || !draft.doseText.trim())} className="min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication{medicationDrafts.length === 1 ? "" : "s"}</button><button type="button" onClick={() => setShowAddMedication(false)} className="min-h-9 rounded-lg border border-border px-4 text-sm font-semibold text-warm-brown">Cancel</button></div></div>}
       </div>
 
       {summary?.lastCompletedDayConcern && <p className="mt-4 rounded-lg border border-danger/20 bg-red-50 px-3 py-2 text-xs leading-relaxed text-danger">On {summary.lastCompletedDayConcern.date}, {summary.lastCompletedDayConcern.totalMl} ml was logged—below the episode’s {summary.lastCompletedDayConcern.thresholdMl} ml 50% full-day intake threshold.</p>}

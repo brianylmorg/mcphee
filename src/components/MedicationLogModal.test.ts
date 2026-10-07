@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import MedicationLogModal, { buildLogDosePayload, initialDoseTime } from "./MedicationLogModal";
+import MedicationLogModal, { buildLogDosePayload, initialDoseTime, isMedicationLogDirty } from "./MedicationLogModal";
 import { parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
 import type { SickMedication } from "@/lib/sick-mode";
 
@@ -11,7 +11,7 @@ const props = { babyId: "baby-1", episodeId: "episode-1", episodeStartedAt: Date
 
 test("dose modal provides medication selection, explicit actual amount and Singapore time", () => {
   const html = renderToStaticMarkup(createElement(MedicationLogModal, props));
-  assert.match(html, /<dialog[^>]+aria-labelledby="medication-log-title"/);
+  assert.match(html, /<dialog[^>]+data-medication-entry-form="log"[^>]+aria-labelledby="medication-log-title"/);
   assert.match(html, /Choose medication/);
   assert.match(html, /Medication A · As needed/);
   assert.match(html, /Amount given/);
@@ -19,6 +19,14 @@ test("dose modal provides medication selection, explicit actual amount and Singa
   assert.match(html, /does not calculate or recommend a dose/);
   assert.doesNotMatch(html, /value="Entered prescription"/);
   assert.match(html, /disabled=""[^>]*>Save dose/);
+});
+
+test("dirty dose detection protects an entered amount, medication choice or changed time", () => {
+  const pristine = { initialMedicationId: "med-1", medicationId: "med-1", initialGivenAt: "2026-10-07T10:00:00", givenAt: "2026-10-07T10:00:00", doseText: "" };
+  assert.equal(isMedicationLogDirty(pristine), false);
+  assert.equal(isMedicationLogDirty({ ...pristine, doseText: " 2.5 ml " }), true);
+  assert.equal(isMedicationLogDirty({ ...pristine, medicationId: "med-2" }), true);
+  assert.equal(isMedicationLogDirty({ ...pristine, givenAt: "2026-10-07T10:01:00" }), true);
 });
 
 test("individual medication shortcut preselects without pre-filling an actual dose", () => {
