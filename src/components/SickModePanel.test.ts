@@ -3,7 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, isSickModeConflict } from "./SickModePanel";
+import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, buildUpdateStartPayload, isSickModeConflict } from "./SickModePanel";
 import type { SickMedication, SickModeResponse } from "@/lib/sick-mode";
 
 const NOW = Date.now();
@@ -260,4 +260,68 @@ test("health-check labels and medication names expose distinct logging shortcuts
 test("health-check logging shortcuts pause while sick-mode data is stale", () => {
   const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), isStale: true, onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined }));
   for (const label of ["Log temperature", "Log diaper", "Log medication", "Log Medication 2"]) assert.ok(html.includes(`aria-label="${label}" disabled=""`));
+});
+
+test("update-start payload keeps the frozen baseline unless the Singapore day changes", () => {
+  const expected = Date.parse("2026-10-04T10:00:00+08:00");
+  const base = { babyId: "baby-1", episodeId: "episode-1", expectedStartedAt: expected };
+
+  // Same Singapore day: no baseline fields travel, so the frozen snapshot is preserved.
+  assert.deepEqual(buildUpdateStartPayload({
+    ...base,
+    startedAt: Date.parse("2026-10-04T06:00:00+08:00"),
+    baselineKind: "calculated",
+    confirmIncomplete: true,
+  }), {
+    action: "updateStart",
+    ...base,
+    startedAt: Date.parse("2026-10-04T06:00:00+08:00"),
+  });
+
+  // Changed day with a calculated baseline carries the incomplete confirmation.
+  assert.deepEqual(buildUpdateStartPayload({
+    ...base,
+    startedAt: Date.parse("2026-10-05T10:00:00+08:00"),
+    baselineKind: "calculated",
+    confirmIncomplete: true,
+  }), {
+    action: "updateStart",
+    ...base,
+    startedAt: Date.parse("2026-10-05T10:00:00+08:00"),
+    confirmIncomplete: true,
+  });
+
+  // A manual fallback is sent instead of the confirmation.
+  assert.deepEqual(buildUpdateStartPayload({
+    ...base,
+    startedAt: Date.parse("2026-10-05T10:00:00+08:00"),
+    baselineKind: "calculated",
+    manualBaseline: " 900 ",
+  }), {
+    action: "updateStart",
+    ...base,
+    startedAt: Date.parse("2026-10-05T10:00:00+08:00"),
+    manualBaselineMl: 900,
+  });
+
+  // An originally manual baseline travels with no baseline fields at all.
+  assert.deepEqual(buildUpdateStartPayload({
+    ...base,
+    startedAt: Date.parse("2026-10-05T10:00:00+08:00"),
+    baselineKind: "manual",
+  }), {
+    action: "updateStart",
+    ...base,
+    startedAt: Date.parse("2026-10-05T10:00:00+08:00"),
+  });
+});
+
+test("active settings expose an inline edit sick-mode start time control while the dashboard does not", () => {
+  const controls = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), display: "controls", onRefresh: () => undefined }));
+  assert.match(controls, /aria-label="Edit sick-mode start time"/);
+  assert.match(controls, /Since /);
+  assert.match(controls, /End mode/);
+
+  const dashboard = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), onRefresh: () => undefined }));
+  assert.doesNotMatch(dashboard, /Edit sick-mode start time/);
 });

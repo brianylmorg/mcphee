@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Droplets, Pencil, Plus, Thermometer, Trash2, X } from "lucide-react";
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
+import { sgtDateKey } from "@/lib/milk-volumes";
 import {
   identifyMedicationPrescriptionDraft,
   type MedicationPrescriptionDraftInput,
 } from "@/lib/medication-entry";
-import type { SickDose, SickMedication, SickModeResponse } from "@/lib/sick-mode";
+import type { SickBaselinePreview, SickDose, SickEpisode, SickMedication, SickModeResponse } from "@/lib/sick-mode";
 import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
+
+const MAX_MANUAL_BASELINE_ML = 10_000;
 
 type MedicationDraft = MedicationPrescriptionDraftInput & {
   key: string;
@@ -98,6 +101,38 @@ export function buildMedicationUpdatePayload({
     minIntervalHours: numericOrUndefined(draft.minIntervalHours),
     maxIntervalHours: numericOrUndefined(draft.maxIntervalHours),
   };
+}
+
+export function buildUpdateStartPayload({
+  babyId,
+  episodeId,
+  expectedStartedAt,
+  startedAt,
+  baselineKind,
+  manualBaseline,
+  confirmIncomplete,
+}: {
+  babyId: string;
+  episodeId: string;
+  expectedStartedAt: number;
+  startedAt: number;
+  baselineKind: "calculated" | "manual";
+  manualBaseline?: string;
+  confirmIncomplete?: boolean;
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    action: "updateStart",
+    babyId,
+    episodeId,
+    startedAt,
+    expectedStartedAt,
+  };
+  // Same Singapore day keeps the frozen snapshot, and a manual baseline keeps its amount and label.
+  if (baselineKind === "manual" || sgtDateKey(expectedStartedAt) === sgtDateKey(startedAt)) return payload;
+  const manual = manualBaseline?.trim() ?? "";
+  if (manual) payload.manualBaselineMl = Number(manual);
+  else payload.confirmIncomplete = confirmIncomplete === true;
+  return payload;
 }
 
 function MedicationFields({
@@ -453,9 +488,196 @@ function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeRespon
   );
 }
 
+function SickModeStartEditor({
+  babyId,
+  episode: liveEpisode,
+  now,
+  disabled,
+  busy,
+  onBusy,
+  onClose,
+  onRefresh,
+}: {
+  babyId: string;
+  episode: SickEpisode;
+  now: number;
+  disabled: boolean;
+  busy: boolean;
+  onBusy: (busy: boolean) => void;
+  onClose: () => void;
+  onRefresh: () => Promise<void> | void;
+}) {
+  // Freeze the whole opened episode so reference/baseline decisions survive background refreshes.
+  const [episode] = useState(liveEpisode);
+  const episodeId = episode.id;
+  const expectedStartedAt = episode.startedAt;
+  const snapshotDate = useMemo(() => sgtDateKey(episode.startedAt), [episode.startedAt]);
+  const initialInput = useMemo(() => sgtDateTimeInput(episode.startedAt, true), [episode.startedAt]);
+  const [value, setValue] = useState(initialInput);
+  const [confirmIncomplete, setConfirmIncomplete] = useState(false);
+  const [manualBaseline, setManualBaseline] = useState("");
+  const [preview, setPreview] = useState<SickBaselinePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const lastReferenceDate = useRef<string | null>(snapshotDate);
+
+  const proposed = parseSgtDateTime(value);
+  const proposedDate = proposed == null ? null : sgtDateKey(proposed);
+  const sameDate = proposedDate != null && proposedDate === snapshotDate;
+  const manualRetained = episode.baselineKind === "manual";
+
+  useEffect(() => {
+    if (lastReferenceDate.current === proposedDate) return;
+    lastReferenceDate.current = proposedDate;
+    setConfirmIncomplete(false);
+    setManualBaseline("");
+  }, [proposedDate]);
+
+  useEffect(() => {
+    const target = parseSgtDateTime(value);
+    const targetDate = target == null ? null : sgtDateKey(target);
+    if (target == null || targetDate === snapshotDate) {
+      setPreview(null);
+      setPreviewLoading(false);
+      setPreviewError(false);
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setPreview(null);
+    setPreviewLoading(true);
+    setPreviewError(false);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const url = `/api/sick-mode?babyId=${encodeURIComponent(babyId)}&startedAt=${target}&editingEpisodeId=${encodeURIComponent(episodeId)}`;
+          const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+          const next = await response.json().catch(() => null) as SickModeResponse | null;
+          if (!active) return;
+          if (!response.ok || !next?.schemaReady || !next.baselinePreview) throw new Error("preview");
+          setPreview(next.baselinePreview);
+          setPreviewError(false);
+        } catch {
+          if (!active || controller.signal.aborted) return;
+          setPreview(null);
+          setPreviewError(true);
+        } finally {
+          if (active) setPreviewLoading(false);
+        }
+      })();
+    }, 250);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+    // retryNonce intentionally re-runs the same fetch after a failed preview.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, snapshotDate, babyId, episodeId, retryNonce]);
+
+  // A preview only counts for the exact start value it was computed from.
+  const readyPreview = preview != null && proposed != null && preview.startedAt === proposed ? preview : null;
+  const manualInputRaw = manualBaseline.trim();
+  const manualInputProvided = manualInputRaw !== "";
+  const manualInputValue = Number(manualInputRaw);
+  const manualInputValid = manualInputProvided && Number.isFinite(manualInputValue) && manualInputValue > 0 && manualInputValue <= MAX_MANUAL_BASELINE_ML;
+  const effectiveDailyMl = manualInputValid ? Math.round(manualInputValue * 100) / 100 : readyPreview?.medianDailyMl ?? null;
+
+  let baselineBlocked = !sameDate && readyPreview == null;
+  if (!sameDate && !manualRetained) {
+    if (readyPreview == null) baselineBlocked = true;
+    else if (manualInputProvided) baselineBlocked = !manualInputValid;
+    else if (readyPreview.requiresManualBaseline) baselineBlocked = true;
+    else if (readyPreview.requiresIncompleteConfirmation && !confirmIncomplete) baselineBlocked = true;
+  }
+  const valid = proposed != null && proposed <= now;
+  // Compare to the stored start at whole-second precision so the second field's formatting never matters.
+  const unchanged = proposed != null && Math.floor(proposed / 1000) === Math.floor(expectedStartedAt / 1000);
+  const canSave = !disabled && !busy && valid && !unchanged && !previewLoading && !previewError && !baselineBlocked;
+
+  const save = async () => {
+    if (!canSave || proposed == null) return;
+    onBusy(true);
+    try {
+      await mutateSickMode(buildUpdateStartPayload({
+        babyId,
+        episodeId,
+        expectedStartedAt,
+        startedAt: proposed,
+        baselineKind: episode.baselineKind,
+        manualBaseline,
+        confirmIncomplete,
+      }));
+      onClose();
+      // The mutation already committed; a failed refresh must not surface as a failed save.
+      try { await onRefresh(); } catch {}
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (isSickModeConflict(error, "EPISODE_OVERLAP")) {
+        alert(error instanceof Error ? error.message : "That time overlaps another sick-mode episode.");
+      } else if (status === 409 || status === 404) {
+        // Stale, ended, or replaced episode: refresh and require reopening from the latest snapshot.
+        onClose();
+        try { await onRefresh(); } catch {}
+        alert(error instanceof Error ? error.message : "Sick mode changed on another device. The latest details have been loaded.");
+      } else {
+        alert(error instanceof Error ? error.message : "Could not update the sick-mode start time.");
+      }
+    } finally {
+      onBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 rounded-lg border border-border bg-surface p-3">
+      <label className="block text-xs font-medium text-warm-brown-light">
+        Sick mode start time
+        <input type="datetime-local" step={1} value={value} onChange={(event) => setValue(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown" />
+      </label>
+      <div className="mt-3 rounded-lg bg-cream/70 p-3 text-xs leading-relaxed text-muted">
+        {sameDate ? (
+          <>
+            <p className="font-semibold text-warm-brown">Usual daily intake: {episode.baselineDailyMl} ml</p>
+            <p className="mt-1">50% full-day threshold: {episode.baselineDailyMl / 2} ml. Moving within the same day keeps this episode’s frozen baseline.</p>
+          </>
+        ) : previewLoading ? (
+          <p role="status">Checking usual daily intake for this date…</p>
+        ) : previewError ? (
+          <div className="flex items-center justify-between gap-2">
+            <p role="alert" className="text-danger">Couldn’t check the baseline for this date.</p>
+            <button type="button" onClick={() => setRetryNonce((count) => count + 1)} className="min-h-9 shrink-0 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Retry</button>
+          </div>
+        ) : manualRetained ? (
+          <>
+            <p className="font-semibold text-warm-brown">Manual usual daily intake retained: {episode.baselineDailyMl} ml</p>
+            <p className="mt-1">50% full-day threshold: {episode.baselineDailyMl / 2} ml. Manually entered daily intake stays the same; changing the date updates which days count as sick.</p>
+          </>
+        ) : readyPreview ? (
+          <>
+            <p className="font-semibold text-warm-brown">Usual daily intake: {effectiveDailyMl != null ? `${effectiveDailyMl} ml` : "Not enough history"}</p>
+            <p className="mt-1">50% full-day threshold: {effectiveDailyMl != null ? `${effectiveDailyMl / 2} ml` : "—"}. Based on {readyPreview.availableDayCount} of 7 completed days before the new start. Unlogged days are not counted as zero.</p>
+            {readyPreview.requiresIncompleteConfirmation && (
+              <label className="mt-2 flex min-h-11 items-center gap-2"><input type="checkbox" checked={confirmIncomplete} onChange={(event) => setConfirmIncomplete(event.target.checked)} className="h-5 w-5 rounded border-border" />Use this incomplete baseline</label>
+            )}
+            {(readyPreview.requiresManualBaseline || readyPreview.requiresIncompleteConfirmation) && (
+              <label className="mt-2 block font-medium text-warm-brown-light">Or set usual daily intake manually<input type="number" min="1" inputMode="numeric" value={manualBaseline} onChange={(event) => setManualBaseline(event.target.value)} placeholder="ml per full day" className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown" /></label>
+            )}
+          </>
+        ) : null}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button type="button" onClick={save} disabled={!canSave} className="min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : "Save start time"}</button>
+        <button type="button" onClick={onClose} disabled={busy} className="min-h-9 rounded-lg border border-border px-4 text-sm font-semibold text-warm-brown disabled:opacity-50">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 export default function SickModePanel({ babyId, data, isStale = false, display = "dashboard", onRefresh, onLogActivity, onLogMedication, onAddMedication }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [showStart, setShowStart] = useState(false);
+  const [editingStart, setEditingStart] = useState(false);
   const [startedAtInput, setStartedAtInput] = useState(() => sgtDateTimeInput());
   const [preview, setPreview] = useState(data?.baselinePreview ?? null);
   const [confirmIncomplete, setConfirmIncomplete] = useState(false);
@@ -474,6 +696,12 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
 
   const suggestions = useMemo(() => Array.isArray(data?.medicationSuggestions) ? data.medicationSuggestions : [], [data?.medicationSuggestions]);
   const activeEpisode = data?.activeEpisode ?? null;
+  const activeEpisodeId = activeEpisode?.id ?? null;
+
+  useEffect(() => {
+    // An ended or replaced episode must not keep an open start-time editor.
+    setEditingStart(false);
+  }, [activeEpisodeId]);
 
   const fetchPreview = async (input = startedAtInput) => {
     const startedAt = parseSgtDateTime(input);
@@ -614,10 +842,21 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
         {isStale && <p role="status" className="rounded-lg border border-warning/30 bg-surface-muted px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Actions are paused until it reconnects.</p>}
         <div className="rounded-xl border border-terracotta/30 bg-surface-muted p-4">
           <p className="text-sm font-semibold text-accent-strong">Sick mode active</p>
-          <p className="mt-1 text-xs text-muted">Since {formatDate(activeEpisode.startedAt)} · {formatTime(activeEpisode.startedAt)}</p>
-          <p className="mt-3 text-sm leading-relaxed text-warm-brown">The app stays in its care theme until you end this episode. Temperature, pee and medications remain on your dashboard.</p>
-          <p className="mt-3 text-xs text-muted">Usual daily intake: {activeEpisode.baselineDailyMl} ml · 50% full-day threshold: {activeEpisode.baselineDailyMl / 2} ml</p>
-          <button type="button" onClick={endSickMode} disabled={busy || isStale} className="mt-4 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-warm-brown disabled:opacity-50">End mode</button>
+          <div className="mt-1 flex items-center gap-2">
+            <p className="text-xs text-muted">Since {formatDate(activeEpisode.startedAt)} · {formatTime(activeEpisode.startedAt)}</p>
+            {!editingStart && (
+              <button type="button" aria-label="Edit sick-mode start time" title="Edit sick-mode start time" disabled={busy || isStale} onClick={() => setEditingStart(true)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-accent-strong disabled:opacity-50"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+            )}
+          </div>
+          {editingStart ? (
+            <SickModeStartEditor babyId={babyId} episode={activeEpisode} now={now} disabled={isStale} busy={busy} onBusy={setBusy} onClose={() => setEditingStart(false)} onRefresh={onRefresh} />
+          ) : (
+            <>
+              <p className="mt-3 text-sm leading-relaxed text-warm-brown">The app stays in its care theme until you end this episode. Temperature, pee and medications remain on your dashboard.</p>
+              <p className="mt-3 text-xs text-muted">Usual daily intake: {activeEpisode.baselineDailyMl} ml · 50% full-day threshold: {activeEpisode.baselineDailyMl / 2} ml</p>
+            </>
+          )}
+          <button type="button" onClick={endSickMode} disabled={busy || isStale || editingStart} className="mt-4 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-warm-brown disabled:opacity-50">End mode</button>
         </div>
         <EpisodeArchive babyId={babyId} data={data} />
       </section>

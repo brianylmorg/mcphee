@@ -158,9 +158,17 @@ async function loadBaselinePreview(
   db: Executor,
   babyId: string,
   startedAt: number,
+  excludedEpisodeId?: string | null,
 ): Promise<SickBaselinePreview> {
   const onsetDayStart = sgtDayStart(startedAt);
   const firstDayStart = onsetDayStart - 7 * 24 * 60 * 60 * 1000;
+  const episodeArgs: SqlValue[] = [babyId, onsetDayStart, firstDayStart];
+  let episodeSql = `SELECT started_at, ended_at FROM sick_mode_episodes
+            WHERE baby_id = ? AND started_at < ? AND (ended_at IS NULL OR ended_at > ?)`;
+  if (excludedEpisodeId) {
+    episodeSql += " AND id <> ?";
+    episodeArgs.push(excludedEpisodeId);
+  }
   const [activities, episodeRows] = await Promise.all([
     db.execute({
       sql: `SELECT id, type, started_at, created_at, details FROM activities
@@ -169,9 +177,8 @@ async function loadBaselinePreview(
       args: [babyId, firstDayStart, onsetDayStart],
     }),
     db.execute({
-      sql: `SELECT started_at, ended_at FROM sick_mode_episodes
-            WHERE baby_id = ? AND started_at < ? AND (ended_at IS NULL OR ended_at > ?)`,
-      args: [babyId, onsetDayStart, firstDayStart],
+      sql: episodeSql,
+      args: episodeArgs,
     }),
   ]);
   const ranges: SickEpisodeRange[] = episodeRows.rows.map((row) => ({
@@ -440,7 +447,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "startedAt must be a valid non-future timestamp" }, { status: 400, headers: NO_STORE_HEADERS });
     }
 
-    const [episodeResult, suggestionResult, baselinePreview] = await Promise.all([
+    const [episodeResult, suggestionResult] = await Promise.all([
       db.execute({
         sql: `SELECT * FROM sick_mode_episodes WHERE baby_id = ?
               ORDER BY started_at DESC, created_at DESC, id DESC`,
@@ -455,9 +462,19 @@ export async function GET(request: NextRequest) {
               ORDER BY last_used_at DESC, m.name ASC`,
         args: [householdId],
       }),
-      loadBaselinePreview(db as unknown as Executor, babyId, Math.trunc(requestedStartedAt)),
     ]);
     const episodes = episodeResult.rows.map(parseEpisode);
+    // Only an owned, active episode being edited should drop out of its own baseline window.
+    const editingEpisodeId = searchParams.get("editingEpisodeId");
+    const excludedEpisodeId = editingEpisodeId
+      ? episodes.find((episode) => episode.id === editingEpisodeId && episode.endedAt == null)?.id ?? null
+      : null;
+    const baselinePreview = await loadBaselinePreview(
+      db as unknown as Executor,
+      babyId,
+      Math.trunc(requestedStartedAt),
+      excludedEpisodeId,
+    );
     const activeEpisode = episodes.find((episode) => episode.endedAt == null) ?? null;
     const archivedEpisode = archivedEpisodeId
       ? episodes.find((episode) => episode.id === archivedEpisodeId && episode.endedAt != null) ?? null
@@ -565,6 +582,88 @@ export async function POST(request: NextRequest) {
           ],
         });
         result = { ok: true, episodeId };
+      } else if (action === "updateStart") {
+        const episodeId = requiredId(body, "episodeId");
+        const episode = await requireOwnedEpisode(executor, householdId, babyId, episodeId);
+        if (episode.ended_at != null) throw new SickModeApiError(409, "Sick mode episode has already ended");
+        const startedAt = requiredTimestamp(body, "startedAt", now);
+        const expectedStartedAt = requiredTimestamp(body, "expectedStartedAt", now);
+        const storedStartedAt = Number(episode.started_at);
+        // A lost-success retry whose value already matches the stored start is a safe no-op.
+        if (startedAt === storedStartedAt) {
+          result = { ok: true, episodeId, idempotent: true };
+        } else {
+          if (expectedStartedAt !== storedStartedAt) {
+            throw new SickModeApiError(409, "Sick mode start time changed on another device", "STALE_EPISODE");
+          }
+          const laterDose = await executor.execute({
+            sql: `SELECT d.id FROM sick_mode_doses d
+                  JOIN sick_mode_medications m ON m.id = d.medication_id
+                  WHERE m.episode_id = ? AND d.deleted_at IS NULL AND d.given_at < ? LIMIT 1`,
+            args: [episodeId, startedAt],
+          });
+          if (laterDose.rows[0]) throw new SickModeApiError(400, "startedAt cannot be after a logged medication dose");
+          const overlap = await executor.execute({
+            sql: `SELECT id FROM sick_mode_episodes
+                  WHERE baby_id = ? AND id <> ? AND (ended_at IS NULL OR ended_at > ?) LIMIT 1`,
+            args: [babyId, episodeId, startedAt],
+          });
+          if (overlap.rows[0]) {
+            throw new SickModeApiError(409, "Sick mode cannot overlap another episode", "EPISODE_OVERLAP");
+          }
+          if (sgtDateKey(storedStartedAt) === sgtDateKey(startedAt)) {
+            // Same Singapore day: keep the frozen baseline snapshot untouched.
+            const update = await executor.execute({
+              sql: "UPDATE sick_mode_episodes SET started_at = ? WHERE id = ? AND ended_at IS NULL AND started_at = ?",
+              args: [startedAt, episodeId, expectedStartedAt],
+            });
+            if ((update.rowsAffected ?? 0) !== 1) {
+              throw new SickModeApiError(409, "Sick mode episode changed on another device", "STALE_EPISODE");
+            }
+          } else {
+            const preview = await loadBaselinePreview(executor, babyId, startedAt, episodeId);
+            let baselineDailyMl: number;
+            let baselineKind: "manual" | "calculated";
+            if (episode.baseline_kind === "manual") {
+              // A manual baseline keeps its amount and label; only eligible source-day metadata is refreshed.
+              baselineDailyMl = Number(episode.baseline_daily_ml);
+              baselineKind = "manual";
+            } else {
+              const rawManual = body.manualBaselineMl;
+              const hasManual = rawManual != null && rawManual !== "";
+              const manualBaselineMl = Number(rawManual);
+              if (hasManual && (!Number.isFinite(manualBaselineMl) || manualBaselineMl <= 0 || manualBaselineMl > MAX_BASELINE_ML)) {
+                throw new SickModeApiError(400, `manualBaselineMl must be between 0 and ${MAX_BASELINE_ML}`);
+              }
+              if (!hasManual && preview.requiresManualBaseline) {
+                throw new SickModeApiError(400, "A positive manual baseline is required because no eligible feed days were found", "MANUAL_BASELINE_REQUIRED");
+              }
+              if (!hasManual && preview.requiresIncompleteConfirmation && body.confirmIncomplete !== true) {
+                throw new SickModeApiError(400, "Confirm the incomplete baseline before editing the sick mode start time", "INCOMPLETE_BASELINE_CONFIRMATION_REQUIRED");
+              }
+              baselineDailyMl = hasManual ? Math.round(manualBaselineMl * 100) / 100 : preview.medianDailyMl!;
+              baselineKind = hasManual ? "manual" : "calculated";
+            }
+            const update = await executor.execute({
+              sql: `UPDATE sick_mode_episodes SET started_at = ?, baseline_daily_ml = ?, baseline_kind = ?,
+                    baseline_available_day_count = ?, baseline_source_days = ?
+                    WHERE id = ? AND ended_at IS NULL AND started_at = ?`,
+              args: [
+                startedAt,
+                baselineDailyMl,
+                baselineKind,
+                preview.availableDayCount,
+                JSON.stringify(preview.sourceDays),
+                episodeId,
+                expectedStartedAt,
+              ],
+            });
+            if ((update.rowsAffected ?? 0) !== 1) {
+              throw new SickModeApiError(409, "Sick mode episode changed on another device", "STALE_EPISODE");
+            }
+          }
+          result = { ok: true, episodeId };
+        }
       } else if (action === "end") {
         const episodeId = requiredId(body, "episodeId");
         const episode = await requireOwnedEpisode(executor, householdId, babyId, episodeId);

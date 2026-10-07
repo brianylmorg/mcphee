@@ -268,3 +268,205 @@ test("sick-mode API is fail-closed, scoped, repeat-migratable, and preserves fro
     client.close();
   }
 });
+
+test("updateStart moves an active episode's start within its guards and refreshes the baseline only across Singapore days", async () => {
+  const originalNow = Date.now;
+  Date.now = () => FIXED_NOW;
+  const dbPath = `/tmp/mcphee-sick-mode-update-${process.pid}-${Math.random().toString(36).slice(2)}.db`;
+  process.env.TURSO_DATABASE_URL = `file:${dbPath}`;
+  delete process.env.TURSO_AUTH_TOKEN;
+  const client = createClient({ url: process.env.TURSO_DATABASE_URL });
+  try {
+    await createBaseSchema(client);
+    await applySickModeSchema(client);
+
+    const feedDays: Array<[string, number]> = [
+      ["2026-09-27", 700], ["2026-09-28", 800], ["2026-09-29", 900], ["2026-09-30", 1000],
+      ["2026-10-01", 1100], ["2026-10-02", 1200], ["2026-10-03", 1300], ["2026-10-04", 1400],
+      ["2026-10-05", 1500],
+    ];
+    await client.batch(feedDays.map(([date, ml], index) => ({
+      sql: "INSERT INTO activities VALUES (?, ?, 'bottlefeed', ?, NULL, ?, ?, ?)",
+      args: [`feed-${index}`, "baby-1", ts(date), JSON.stringify({ milkType: "formula", amount: ml }), ts(date), "Parent One"],
+    })), "write");
+
+    // A prior episode on 27 Sep must keep excluding that day from other episodes' baselines.
+    await client.execute({
+      sql: `INSERT INTO sick_mode_episodes
+            (id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind,
+             baseline_available_day_count, baseline_source_days, created_at, created_by, ended_by)
+            VALUES (?, ?, ?, ?, ?, 'manual', 0, '[]', ?, ?, ?)`,
+      args: ["prior-episode", "baby-1", ts("2026-09-27", "01:00"), ts("2026-09-27", "23:00"), 500, ts("2026-09-27"), "Parent One", "Parent One"],
+    });
+
+    const started = await post({ action: "start", babyId: "baby-1", startedAt: ts("2026-10-04", "10:00"), confirmIncomplete: true });
+    assert.equal(started.status, 200);
+    const { episodeId } = await started.json() as { episodeId: string };
+
+    const initial = await GET(request("/api/sick-mode?babyId=baby-1"));
+    const initialData = await initial.json();
+    assert.equal(initialData.activeEpisode.baselineDailyMl, 1050);
+    assert.equal(initialData.activeEpisode.baselineAvailableDayCount, 6);
+    assert.equal(initialData.activeEpisode.baselineKind, "calculated");
+
+    const missingStartedAt = await post({ action: "updateStart", babyId: "baby-1", episodeId, expectedStartedAt: ts("2026-10-04", "10:00") });
+    assert.equal(missingStartedAt.status, 400);
+    const missingExpected = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-04", "09:00") });
+    assert.equal(missingExpected.status, 400);
+    const futureStart = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-07", "00:00"), expectedStartedAt: ts("2026-10-04", "10:00") });
+    assert.equal(futureStart.status, 400);
+    const wrongBaby = await post({ action: "updateStart", babyId: "baby-2", episodeId, startedAt: ts("2026-10-04", "09:00"), expectedStartedAt: ts("2026-10-04", "10:00") });
+    assert.equal(wrongBaby.status, 404, "the episode must belong to the requested baby");
+    const foreignHousehold = await postForHousehold({ action: "updateStart", babyId: "foreign-baby", episodeId, startedAt: ts("2026-10-04", "09:00"), expectedStartedAt: ts("2026-10-04", "10:00") }, "house-2", "user-2");
+    assert.equal(foreignHousehold.status, 404, "another household must not edit the episode");
+
+    const stale = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-04", "09:00"), expectedStartedAt: ts("2026-10-04", "08:00") });
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).code, "STALE_EPISODE");
+    const unchangedAfterStale = (await client.execute({ sql: "SELECT started_at FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(unchangedAfterStale.started_at), ts("2026-10-04", "10:00"), "a stale edit must not move the start");
+
+    // A retry whose requested value already matches the stored start succeeds without rebuilding the snapshot.
+    const exactRetry = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-04", "10:00"), expectedStartedAt: ts("2026-10-04", "08:00") });
+    assert.equal(exactRetry.status, 200);
+    assert.equal((await exactRetry.json()).idempotent, true);
+
+    const before = (await client.execute({
+      sql: "SELECT started_at, baseline_daily_ml, baseline_available_day_count, baseline_source_days FROM sick_mode_episodes WHERE id = ?",
+      args: [episodeId],
+    })).rows[0];
+    // Source edits must not leak into a same-day move.
+    await client.execute({
+      sql: "UPDATE activities SET details = ? WHERE baby_id = 'baby-1' AND started_at >= ? AND started_at < ?",
+      args: [JSON.stringify({ milkType: "formula", amount: 5 }), ts("2026-09-27"), ts("2026-10-04")],
+    });
+    const sameDay = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-04", "06:00"), expectedStartedAt: ts("2026-10-04", "10:00") });
+    assert.equal(sameDay.status, 200);
+    const after = (await client.execute({
+      sql: "SELECT started_at, baseline_daily_ml, baseline_available_day_count, baseline_source_days FROM sick_mode_episodes WHERE id = ?",
+      args: [episodeId],
+    })).rows[0];
+    assert.equal(Number(after.started_at), ts("2026-10-04", "06:00"));
+    assert.equal(Number(after.baseline_daily_ml), Number(before.baseline_daily_ml), "same-day moves keep the frozen baseline amount");
+    assert.equal(Number(after.baseline_available_day_count), Number(before.baseline_available_day_count));
+    assert.equal(String(after.baseline_source_days), String(before.baseline_source_days));
+    await client.batch(feedDays.map(([date, ml], index) => ({
+      sql: "UPDATE activities SET details = ? WHERE id = ?",
+      args: [JSON.stringify({ milkType: "formula", amount: ml }), `feed-${index}`],
+    })), "write");
+
+    // The editor preview must drop the episode being edited from its own proposed window.
+    const previewWithoutSelf = await (await GET(request(`/api/sick-mode?babyId=baby-1&startedAt=${ts("2026-10-05", "10:00")}`))).json();
+    assert.equal(previewWithoutSelf.baselinePreview.availableDayCount, 6, "the live episode currently covers 4 Oct");
+    const previewWithSelf = await (await GET(request(`/api/sick-mode?babyId=baby-1&startedAt=${ts("2026-10-05", "10:00")}&editingEpisodeId=${episodeId}`))).json();
+    assert.equal(previewWithSelf.baselinePreview.availableDayCount, 7);
+    assert.equal(previewWithSelf.baselinePreview.medianDailyMl, 1100);
+
+    // Moving Later across a date recomputes the baseline excluding the edited episode but keeping other sick days out.
+    const later = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-05", "10:00"), expectedStartedAt: ts("2026-10-04", "06:00") });
+    assert.equal(later.status, 200);
+    const laterRow = (await client.execute({ sql: "SELECT started_at, baseline_daily_ml, baseline_available_day_count FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(laterRow.started_at), ts("2026-10-05", "10:00"));
+    assert.equal(Number(laterRow.baseline_daily_ml), 1100);
+    assert.equal(Number(laterRow.baseline_available_day_count), 7);
+
+    // A partial calculated window is denied without confirmation and must leave the episode untouched.
+    const beforeDenied = (await client.execute({ sql: "SELECT started_at, baseline_daily_ml, baseline_kind, baseline_available_day_count, baseline_source_days FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    const incompleteDenied = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-30", "10:00"), expectedStartedAt: ts("2026-10-05", "10:00") });
+    assert.equal(incompleteDenied.status, 400);
+    assert.equal((await incompleteDenied.json()).code, "INCOMPLETE_BASELINE_CONFIRMATION_REQUIRED");
+    const deniedRow = (await client.execute({ sql: "SELECT started_at, baseline_daily_ml, baseline_kind, baseline_available_day_count, baseline_source_days FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(deniedRow.started_at), ts("2026-10-05", "10:00"), "a denied incomplete move must not move the start");
+    assert.deepEqual(deniedRow, beforeDenied, "a denied incomplete move must not partially rewrite the episode");
+
+    // Confirming the incomplete window applies the recalculated baseline.
+    const incompleteConfirmed = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-30", "10:00"), expectedStartedAt: ts("2026-10-05", "10:00"), confirmIncomplete: true });
+    assert.equal(incompleteConfirmed.status, 200);
+    const confirmedRow = (await client.execute({ sql: "SELECT started_at, baseline_daily_ml, baseline_kind, baseline_available_day_count FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(confirmedRow.started_at), ts("2026-09-30", "10:00"));
+    assert.equal(Number(confirmedRow.baseline_daily_ml), 850);
+    assert.equal(String(confirmedRow.baseline_kind), "calculated");
+    assert.equal(Number(confirmedRow.baseline_available_day_count), 2);
+
+    // Restore a complete calculated start so the following manual-baseline tests begin from a full window.
+    const restoredComplete = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-05", "10:00"), expectedStartedAt: ts("2026-09-30", "10:00") });
+    assert.equal(restoredComplete.status, 200);
+    const restoredRow = (await client.execute({ sql: "SELECT started_at, baseline_daily_ml, baseline_kind, baseline_available_day_count FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(restoredRow.started_at), ts("2026-10-05", "10:00"));
+    assert.equal(Number(restoredRow.baseline_daily_ml), 1100);
+    assert.equal(String(restoredRow.baseline_kind), "calculated");
+    assert.equal(Number(restoredRow.baseline_available_day_count), 7);
+
+    // Moving earlier into a fully excluded window requires a positive manual fallback.
+    const needsManual = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-28", "10:00"), expectedStartedAt: ts("2026-10-05", "10:00") });
+    assert.equal(needsManual.status, 400);
+    assert.equal((await needsManual.json()).code, "MANUAL_BASELINE_REQUIRED");
+    const manualMove = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-28", "10:00"), expectedStartedAt: ts("2026-10-05", "10:00"), manualBaselineMl: 900 });
+    assert.equal(manualMove.status, 200);
+    const manualRow = (await client.execute({ sql: "SELECT started_at, baseline_daily_ml, baseline_kind, baseline_available_day_count FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(manualRow.started_at), ts("2026-09-28", "10:00"));
+    assert.equal(Number(manualRow.baseline_daily_ml), 900);
+    assert.equal(String(manualRow.baseline_kind), "manual");
+
+    // An originally manual baseline keeps its amount and label while refreshing source-day metadata.
+    const retained = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-30", "10:00"), expectedStartedAt: ts("2026-09-28", "10:00") });
+    assert.equal(retained.status, 200);
+    const retainedRow = (await client.execute({ sql: "SELECT baseline_daily_ml, baseline_kind, baseline_available_day_count FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0];
+    assert.equal(Number(retainedRow.baseline_daily_ml), 900);
+    assert.equal(String(retainedRow.baseline_kind), "manual");
+    assert.equal(Number(retainedRow.baseline_available_day_count), 2);
+
+    // Other-episode overlap is rejected without moving the start.
+    await client.execute({
+      sql: `INSERT INTO sick_mode_episodes
+            (id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind,
+             baseline_available_day_count, baseline_source_days, created_at, created_by, ended_by)
+            VALUES (?, ?, ?, ?, ?, 'manual', 0, '[]', ?, ?, ?)`,
+      args: ["overlap-episode", "baby-1", ts("2026-10-01", "00:00"), ts("2026-10-01", "12:00"), 600, ts("2026-10-01"), "Parent One", "Parent One"],
+    });
+    const overlapping = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-10-01", "06:00"), expectedStartedAt: ts("2026-09-30", "10:00") });
+    assert.equal(overlapping.status, 409);
+    assert.equal((await overlapping.json()).code, "EPISODE_OVERLAP");
+    assert.equal(Number((await client.execute({ sql: "SELECT started_at FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0].started_at), ts("2026-09-30", "10:00"));
+    // Drop only the synthetic overlap fixture; a lingering real overlap would (wrongly) block the later same-day move.
+    await client.execute({ sql: "DELETE FROM sick_mode_episodes WHERE id = ?", args: ["overlap-episode"] });
+
+    const episodeCount = Number((await client.execute({ sql: "SELECT COUNT(*) AS n FROM sick_mode_episodes WHERE baby_id = ?", args: ["baby-1"] })).rows[0].n);
+    const activityCount = Number((await client.execute("SELECT COUNT(*) AS n FROM activities")).rows[0].n);
+
+    // A start later than a retained dose is rejected; earlier than the dose is allowed.
+    const medicationResponse = await post({ action: "addMedication", babyId: "baby-1", episodeId, requestId: "update-start-med-1", name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
+    assert.equal(medicationResponse.status, 200);
+    const medicationId = (await medicationResponse.json()).id;
+    const doseResponse = await post({ action: "logDose", babyId: "baby-1", episodeId, medicationId, givenAt: ts("2026-09-30", "14:00"), doseText: "3.5ml", requestId: "update-start-dose-1", expectedLatestDoseId: null });
+    assert.equal(doseResponse.status, 200);
+    const doseCount = Number((await client.execute({ sql: "SELECT COUNT(*) AS n FROM sick_mode_doses WHERE medication_id = ?", args: [medicationId] })).rows[0].n);
+    const afterDose = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-30", "16:00"), expectedStartedAt: ts("2026-09-30", "10:00") });
+    assert.equal(afterDose.status, 400, "a start later than a retained dose is rejected");
+    const beforeDose = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-30", "08:00"), expectedStartedAt: ts("2026-09-30", "10:00") });
+    assert.equal(beforeDose.status, 200);
+    assert.equal(Number((await client.execute({ sql: "SELECT started_at FROM sick_mode_episodes WHERE id = ?", args: [episodeId] })).rows[0].started_at), ts("2026-09-30", "08:00"));
+
+    // Normal milk-history sick-day flags follow the moved start without rebuilding the ledger.
+    const milkHistory = await (await getMilkHistory(request("/api/milk-history?babyId=baby-1"))).json();
+    const milkDay = (date: string) => milkHistory.days.find((entry: { date: string }) => entry.date === date);
+    assert.equal(milkDay("2026-09-30").isSickDay, true);
+    assert.equal(milkDay("2026-09-29").isSickDay, false);
+    assert.equal(milkDay("2026-10-02").isSickDay, true);
+
+    assert.equal(Number((await client.execute({ sql: "SELECT COUNT(*) AS n FROM sick_mode_episodes WHERE baby_id = ?", args: ["baby-1"] })).rows[0].n), episodeCount, "updateStart must not insert episodes");
+    assert.equal(Number((await client.execute("SELECT COUNT(*) AS n FROM activities")).rows[0].n), activityCount, "updateStart must not write activity/ledger rows");
+    assert.equal(Number((await client.execute({ sql: "SELECT COUNT(*) AS n FROM sick_mode_doses WHERE medication_id = ?", args: [medicationId] })).rows[0].n), doseCount, "updateStart must not write dose rows");
+
+    // Ended episodes reject both a stale edit and an idempotent-looking retry.
+    const ended = await post({ action: "end", babyId: "baby-1", episodeId });
+    assert.equal(ended.status, 200);
+    const endedStale = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-30", "07:00"), expectedStartedAt: ts("2026-09-30", "08:00") });
+    assert.equal(endedStale.status, 409);
+    const endedRetry = await post({ action: "updateStart", babyId: "baby-1", episodeId, startedAt: ts("2026-09-30", "08:00"), expectedStartedAt: ts("2026-09-30", "08:00") });
+    assert.equal(endedRetry.status, 409, "ended episodes must reject even a matching retry");
+  } finally {
+    Date.now = originalNow;
+    client.close();
+  }
+});
