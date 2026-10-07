@@ -10,15 +10,33 @@ import { GET, POST } from "./route";
 const FIXED_NOW = Date.parse("2026-10-06T12:00:00+08:00");
 const ts = (date: string, time = "12:00") => Date.parse(`${date}T${time}:00+08:00`);
 
-function request(path: string, init?: { method?: string; body?: string }) {
+function request(
+  path: string,
+  init?: { method?: string; body?: string },
+  householdId = "house-1",
+  userId = "user-1",
+) {
   const headers = new Headers();
-  headers.set("cookie", "mcphee_hh=house-1; mcphee_user=user-1");
+  headers.set("cookie", `mcphee_hh=${householdId}; mcphee_user=${userId}`);
   if (init?.body) headers.set("content-type", "application/json");
   return new NextRequest(`http://localhost${path}`, { ...init, headers });
 }
 
 async function post(body: Record<string, unknown>) {
   return POST(request("/api/sick-mode", { method: "POST", body: JSON.stringify(body) }));
+}
+
+async function postForHousehold(
+  body: Record<string, unknown>,
+  householdId: string,
+  userId: string,
+) {
+  return POST(request(
+    "/api/sick-mode",
+    { method: "POST", body: JSON.stringify(body) },
+    householdId,
+    userId,
+  ));
 }
 
 async function createBaseSchema(client: ReturnType<typeof createClient>) {
@@ -34,6 +52,7 @@ async function createBaseSchema(client: ReturnType<typeof createClient>) {
     { sql: "INSERT INTO households VALUES (?, ?, ?)", args: ["house-1", "ABC123", FIXED_NOW] },
     { sql: "INSERT INTO households VALUES (?, ?, ?)", args: ["house-2", "XYZ789", FIXED_NOW] },
     { sql: "INSERT INTO users VALUES (?, ?, ?, ?)", args: ["user-1", "house-1", "Parent One", FIXED_NOW] },
+    { sql: "INSERT INTO users VALUES (?, ?, ?, ?)", args: ["user-2", "house-2", "Parent Two", FIXED_NOW] },
     { sql: "INSERT INTO babies VALUES (?, ?, ?, NULL, ?)", args: ["baby-1", "house-1", "Baby One", FIXED_NOW] },
     { sql: "INSERT INTO babies VALUES (?, ?, ?, NULL, ?)", args: ["baby-2", "house-1", "Baby Two", FIXED_NOW] },
     { sql: "INSERT INTO babies VALUES (?, ?, ?, NULL, ?)", args: ["foreign-baby", "house-2", "Other Baby", FIXED_NOW] },
@@ -141,12 +160,50 @@ test("sick-mode API is fail-closed, scoped, repeat-migratable, and preserves fro
     const frozen = await GET(request("/api/sick-mode?babyId=baby-1"));
     assert.equal((await frozen.json()).activeEpisode.baselineDailyMl, 800, "baseline snapshot must not change after feed edits");
 
-    const foreign = await post({ action: "addMedication", babyId: "baby-2", episodeId, name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
+    const foreign = await post({ action: "addMedication", babyId: "baby-2", episodeId, requestId: "foreign-medication-attempt", name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
     assert.equal(foreign.status, 404);
 
-    const medicationIds: string[] = [];
-    for (const name of ["Paracetamol", "Ibuprofen", "Medicine C", "Medicine D"]) {
-      const response = await post({ action: "addMedication", babyId: "baby-1", episodeId, name, doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
+    const missingMedicationRequestId = await post({ action: "addMedication", babyId: "baby-1", episodeId, name: "No request id", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
+    assert.equal(missingMedicationRequestId.status, 400);
+
+    const firstMedicationPayload = { action: "addMedication", babyId: "baby-1", episodeId, requestId: "medication-request-1", name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 };
+    const committedMedication = await post(firstMedicationPayload);
+    assert.equal(committedMedication.status, 200);
+    const committedMedicationId = (await committedMedication.json()).id;
+    const retriedMedication = await post(firstMedicationPayload);
+    assert.equal(retriedMedication.status, 200);
+    assert.deepEqual(await retriedMedication.json(), { ok: true, id: committedMedicationId, episodeId, idempotent: true });
+    assert.equal(Number((await client.execute({ sql: "SELECT COUNT(*) AS n FROM sick_mode_medications WHERE id = ?", args: [committedMedicationId] })).rows[0].n), 1);
+
+    const changedMedicationRetry = await post({ ...firstMedicationPayload, doseText: "7ml" });
+    assert.equal(changedMedicationRetry.status, 409);
+    assert.equal((await changedMedicationRetry.json()).code, "REQUEST_ID_CONFLICT");
+    assert.equal(Number((await client.execute({ sql: "SELECT COUNT(*) AS n FROM sick_mode_medications WHERE episode_id = ?", args: [episodeId] })).rows[0].n), 1);
+
+    const foreignEpisodeStart = await postForHousehold({
+      action: "start",
+      babyId: "foreign-baby",
+      startedAt: ts("2026-10-04", "10:00"),
+      manualBaselineMl: 800,
+    }, "house-2", "user-2");
+    assert.equal(foreignEpisodeStart.status, 200);
+    const foreignEpisodeId = (await foreignEpisodeStart.json()).episodeId;
+    const foreignMedicationPayload = {
+      ...firstMedicationPayload,
+      babyId: "foreign-baby",
+      episodeId: foreignEpisodeId,
+      name: "Foreign household medication",
+    };
+    const foreignMedication = await postForHousehold(foreignMedicationPayload, "house-2", "user-2");
+    assert.equal(foreignMedication.status, 200);
+    const foreignMedicationId = (await foreignMedication.json()).id;
+    assert.notEqual(foreignMedicationId, committedMedicationId, "request identities must be scoped to their household, baby, and episode");
+    const foreignMedicationRetry = await postForHousehold(foreignMedicationPayload, "house-2", "user-2");
+    assert.deepEqual(await foreignMedicationRetry.json(), { ok: true, id: foreignMedicationId, episodeId: foreignEpisodeId, idempotent: true });
+
+    const medicationIds: string[] = [committedMedicationId];
+    for (const [index, name] of ["Ibuprofen", "Medicine C", "Medicine D"].entries()) {
+      const response = await post({ action: "addMedication", babyId: "baby-1", episodeId, requestId: `medication-request-${index + 2}`, name, doseText: "3.5ml", asNeeded: true, minIntervalHours: 4, maxIntervalHours: 6 });
       assert.equal(response.status, 200);
       medicationIds.push((await response.json()).id);
     }

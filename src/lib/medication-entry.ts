@@ -1,10 +1,22 @@
 export type MedicationPrescriptionDraftInput = {
+  requestId?: string;
   name: string;
   doseText: string;
   asNeeded: boolean;
   minIntervalHours: string;
   maxIntervalHours: string;
 };
+
+export type IdentifiedMedicationPrescriptionDraftInput = MedicationPrescriptionDraftInput & {
+  requestId: string;
+};
+
+export function identifyMedicationPrescriptionDraft(
+  draft: MedicationPrescriptionDraftInput,
+): IdentifiedMedicationPrescriptionDraftInput {
+  const requestId = draft.requestId?.trim() || globalThis.crypto.randomUUID();
+  return { ...draft, requestId };
+}
 
 export type MedicationEntry =
   | {

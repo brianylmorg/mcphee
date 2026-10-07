@@ -2,30 +2,62 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Pill, Plus, X } from "lucide-react";
-import type { MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
+import {
+  identifyMedicationPrescriptionDraft,
+  type IdentifiedMedicationPrescriptionDraftInput,
+  type MedicationPrescriptionDraftInput,
+} from "@/lib/medication-entry";
 import { mutateSickMode } from "@/lib/sick-mode-client";
 
-type MedicationDraft = MedicationPrescriptionDraftInput & { key: string };
+type MedicationDraft = IdentifiedMedicationPrescriptionDraftInput & { key: string };
+
+export function prepareMedicationPrescriptionDraft(
+  draft: MedicationPrescriptionDraftInput,
+): MedicationDraft {
+  const identified = identifyMedicationPrescriptionDraft(draft);
+  return { ...identified, key: identified.requestId };
+}
 
 function emptyMedication(): MedicationDraft {
-  return {
-    key: Math.random().toString(36).slice(2),
+  return prepareMedicationPrescriptionDraft({
     name: "",
     doseText: "",
     asNeeded: true,
     minIntervalHours: "",
     maxIntervalHours: "",
-  };
+  });
 }
 
 function withKey(draft: MedicationPrescriptionDraftInput): MedicationDraft {
-  return { ...draft, key: Math.random().toString(36).slice(2) };
+  return prepareMedicationPrescriptionDraft(draft);
 }
 
 function numericOrUndefined(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+export function buildMedicationPrescriptionAddPayload({
+  babyId,
+  episodeId,
+  draft,
+}: {
+  babyId: string;
+  episodeId: string;
+  draft: IdentifiedMedicationPrescriptionDraftInput;
+}): Record<string, unknown> {
+  return {
+    action: "addMedication",
+    babyId,
+    episodeId,
+    requestId: draft.requestId,
+    name: draft.name.trim(),
+    doseText: draft.doseText.trim(),
+    asNeeded: draft.asNeeded,
+    minIntervalHours: numericOrUndefined(draft.minIntervalHours),
+    maxIntervalHours: numericOrUndefined(draft.maxIntervalHours),
+  };
 }
 
 export function hasUnsavedMedicationPrescription(drafts: MedicationPrescriptionDraftInput[]): boolean {
@@ -157,16 +189,7 @@ export default function MedicationPrescriptionModal({
     const pending = [...drafts];
     try {
       for (const draft of drafts) {
-        await mutateSickMode({
-          action: "addMedication",
-          babyId,
-          episodeId,
-          name: draft.name.trim(),
-          doseText: draft.doseText.trim(),
-          asNeeded: draft.asNeeded,
-          minIntervalHours: numericOrUndefined(draft.minIntervalHours),
-          maxIntervalHours: numericOrUndefined(draft.maxIntervalHours),
-        });
+        await mutateSickMode(buildMedicationPrescriptionAddPayload({ babyId, episodeId, draft }));
         pending.shift();
       }
       onClose();

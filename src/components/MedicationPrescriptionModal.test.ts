@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import MedicationPrescriptionModal, { hasUnsavedMedicationPrescription } from "./MedicationPrescriptionModal";
+import MedicationPrescriptionModal, {
+  buildMedicationPrescriptionAddPayload,
+  hasUnsavedMedicationPrescription,
+  prepareMedicationPrescriptionDraft,
+} from "./MedicationPrescriptionModal";
 
 const props = {
   babyId: "baby-1",
@@ -38,4 +42,34 @@ test("dirty prescription detection protects every editable field", () => {
   assert.equal(hasUnsavedMedicationPrescription([empty]), false);
   assert.equal(hasUnsavedMedicationPrescription([{ ...empty, doseText: " 3.5 ml " }]), true);
   assert.equal(hasUnsavedMedicationPrescription([{ ...empty, asNeeded: false }]), true);
+});
+
+test("prescription retries retain a cryptographic request identity across handoff", () => {
+  const initial = prepareMedicationPrescriptionDraft({
+    name: "Paracetamol",
+    doseText: "3.5 ml",
+    asNeeded: true,
+    minIntervalHours: "4",
+    maxIntervalHours: "6",
+  });
+  assert.match(initial.requestId, /^[0-9a-f-]{36}$/i);
+
+  const handedOff = prepareMedicationPrescriptionDraft(initial);
+  assert.equal(handedOff.requestId, initial.requestId);
+  assert.equal(handedOff.key, initial.requestId);
+  assert.deepEqual(buildMedicationPrescriptionAddPayload({
+    babyId: "baby-1",
+    episodeId: "episode-1",
+    draft: handedOff,
+  }), {
+    action: "addMedication",
+    babyId: "baby-1",
+    episodeId: "episode-1",
+    requestId: initial.requestId,
+    name: "Paracetamol",
+    doseText: "3.5 ml",
+    asNeeded: true,
+    minIntervalHours: 4,
+    maxIntervalHours: 6,
+  });
 });

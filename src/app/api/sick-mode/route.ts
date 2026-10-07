@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 
 import { createDB } from "@/db";
 import { isSickModeSchemaReady } from "@/db/sick-mode-schema";
@@ -93,6 +94,35 @@ function optionalIntervalHours(body: Record<string, unknown>, key: string): numb
 function asBoolean(body: Record<string, unknown>, key: string): boolean {
   if (typeof body[key] !== "boolean") throw new SickModeApiError(400, `${key} must be true or false`);
   return body[key] as boolean;
+}
+
+function medicationIdForRequest(
+  householdId: string,
+  babyId: string,
+  episodeId: string,
+  requestId: string,
+): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify([householdId, babyId, episodeId, requestId]))
+    .digest("hex");
+  return `med_${digest}`;
+}
+
+function isSameMedicationRequest(
+  row: Record<string, unknown>,
+  episodeId: string,
+  name: string,
+  doseText: string,
+  asNeeded: boolean,
+  minMinutes: number | null,
+  maxMinutes: number | null,
+): boolean {
+  return String(row.episode_id) === episodeId
+    && String(row.name) === name
+    && String(row.dose_text) === doseText
+    && Number(row.as_needed) === (asNeeded ? 1 : 0)
+    && (row.min_interval_minutes == null ? null : Number(row.min_interval_minutes)) === minMinutes
+    && (row.max_interval_minutes == null ? null : Number(row.max_interval_minutes)) === maxMinutes;
 }
 
 function parseEpisode(row: Record<string, unknown>): SickEpisode {
@@ -569,15 +599,33 @@ export async function POST(request: NextRequest) {
         const minMinutes = minIntervalHours == null ? null : Math.round(minIntervalHours * 60);
         const maxMinutes = maxIntervalHours == null ? null : Math.round(maxIntervalHours * 60);
         if (action === "addMedication") {
-          const medicationId = generateId();
-          await executor.execute({
-            sql: `INSERT INTO sick_mode_medications
-                  (id, episode_id, name, dose_text, as_needed, min_interval_minutes,
-                   max_interval_minutes, created_at, created_by, updated_at, revision)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-            args: [medicationId, episodeId, name, doseText, asNeeded ? 1 : 0, minMinutes, maxMinutes, now, createdBy, now],
+          const requestId = boundedText(body, "requestId");
+          const medicationId = medicationIdForRequest(householdId, babyId, episodeId, requestId);
+          const existing = await executor.execute({
+            sql: "SELECT * FROM sick_mode_medications WHERE id = ? LIMIT 1",
+            args: [medicationId],
           });
-          result = { ok: true, id: medicationId, episodeId };
+          if (existing.rows[0]) {
+            if (!isSameMedicationRequest(
+              existing.rows[0], episodeId, name, doseText, asNeeded, minMinutes, maxMinutes,
+            )) {
+              throw new SickModeApiError(
+                409,
+                "requestId was already used for a different medication",
+                "REQUEST_ID_CONFLICT",
+              );
+            }
+            result = { ok: true, id: medicationId, episodeId, idempotent: true };
+          } else {
+            await executor.execute({
+              sql: `INSERT INTO sick_mode_medications
+                    (id, episode_id, name, dose_text, as_needed, min_interval_minutes,
+                     max_interval_minutes, created_at, created_by, updated_at, revision)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+              args: [medicationId, episodeId, name, doseText, asNeeded ? 1 : 0, minMinutes, maxMinutes, now, createdBy, now],
+            });
+            result = { ok: true, id: medicationId, episodeId };
+          }
         } else {
           const medicationId = requiredId(body, "medicationId");
           await requireOwnedMedication(executor, householdId, babyId, episodeId, medicationId);

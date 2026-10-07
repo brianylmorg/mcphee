@@ -10,6 +10,7 @@ test("medication entry is a single discriminated owner when flows switch", () =>
   assert.deepEqual(entry, { kind: "log", episodeId: "episode-1", medicationId: "med-1" });
 
   entry = medicationAddEntry("episode-1", [{
+    requestId: "stable-onboarding-attempt",
     name: "Paracetamol",
     doseText: "3.5 ml",
     asNeeded: true,
@@ -18,6 +19,7 @@ test("medication entry is a single discriminated owner when flows switch", () =>
   }]);
   assert.equal(entry.kind, "add");
   assert.equal(entry.initialDrafts?.length, 1);
+  assert.equal(entry.initialDrafts?.[0].requestId, "stable-onboarding-attempt");
 });
 
 test("medication entry survives refreshes for its episode and closes on episode change", () => {

@@ -4,17 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Droplets, Pencil, Plus, Thermometer, Trash2, X } from "lucide-react";
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
-import type { MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
+import {
+  identifyMedicationPrescriptionDraft,
+  type MedicationPrescriptionDraftInput,
+} from "@/lib/medication-entry";
 import type { SickDose, SickMedication, SickModeResponse } from "@/lib/sick-mode";
 import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
 
-type MedicationDraft = {
+type MedicationDraft = MedicationPrescriptionDraftInput & {
   key: string;
-  name: string;
-  doseText: string;
-  asNeeded: boolean;
-  minIntervalHours: string;
-  maxIntervalHours: string;
 };
 
 type Props = {
@@ -28,19 +26,45 @@ type Props = {
   onAddMedication?: (drafts?: MedicationPrescriptionDraftInput[], episodeId?: string) => void;
 };
 
-const EMPTY_MEDICATION = (): MedicationDraft => ({
-  key: Math.random().toString(36).slice(2),
-  name: "",
-  doseText: "",
-  asNeeded: true,
-  minIntervalHours: "",
-  maxIntervalHours: "",
-});
+const EMPTY_MEDICATION = (): MedicationDraft => {
+  const draft = identifyMedicationPrescriptionDraft({
+    name: "",
+    doseText: "",
+    asNeeded: true,
+    minIntervalHours: "",
+    maxIntervalHours: "",
+  });
+  return { ...draft, key: draft.requestId };
+};
 
 function numericOrUndefined(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+export function buildOnboardingMedicationAddPayload({
+  babyId,
+  episodeId,
+  medication,
+}: {
+  babyId: string;
+  episodeId: string;
+  medication: MedicationPrescriptionDraftInput;
+}): Record<string, unknown> {
+  const requestId = medication.requestId?.trim();
+  if (!requestId) throw new Error("Medication add request identity is missing");
+  return {
+    action: "addMedication",
+    babyId,
+    episodeId,
+    requestId,
+    name: medication.name.trim(),
+    doseText: medication.doseText.trim(),
+    asNeeded: medication.asNeeded,
+    minIntervalHours: numericOrUndefined(medication.minIntervalHours),
+    maxIntervalHours: numericOrUndefined(medication.maxIntervalHours),
+  };
 }
 
 export function isSickModeConflict(error: unknown, code: string): boolean {
@@ -496,7 +520,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
       const pending = [...validMedications];
       try {
         for (const medication of validMedications) {
-          await mutateSickMode({ action: "addMedication", babyId, episodeId, name: medication.name.trim(), doseText: medication.doseText.trim(), asNeeded: medication.asNeeded, minIntervalHours: numericOrUndefined(medication.minIntervalHours), maxIntervalHours: numericOrUndefined(medication.maxIntervalHours) });
+          await mutateSickMode(buildOnboardingMedicationAddPayload({ babyId, episodeId, medication }));
           pending.shift();
         }
       } catch (error) {

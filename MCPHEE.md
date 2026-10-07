@@ -12,7 +12,7 @@
 - Branch naming: `claude/<slug>`
 - Conventional commits: `feat:`, `fix:`, `chore:`
 - Lint via `pnpm build`
-- After schema change → idempotent migration in `src/db/migrate.ts` → deploy → hit `/api/admin/migrate?key=$MIGRATION_KEY`
+- Schema changes require an explicitly selected database, a verified recovery snapshot, and an idempotent migration. For sick mode, apply only `applySickModeSchema` from `src/db/sick-mode-schema.ts`. Do not use the legacy `/api/admin/migrate` endpoint for this release: it also rewrites activity creators and deletes duplicate users.
 - **No user accounts** — household is the auth boundary
 - Metric units only (ml, g, cm/mm)
 - Prediction uses median of last 8 entries (robust to outlier cycles)
@@ -48,7 +48,7 @@
 - Stop & log atomically creates activity entry with full side history
 
 ### Sleep state + breastmilk bank
-- Sleep uses an `Awake | Sleeping` state control. Transitions are immediate; the 10-second undo token is accepted only while that exact transition remains the newest server-side sleep change.
+- Sleep uses an `Awake | Sleeping` state control. Transitions are immediate; Undo is visible for 5 seconds. The server retains its 10-second safety limit and accepts a token only while that exact transition remains the newest server-side sleep change.
 - `Naps today` uses Singapore time: counting begins at the first recorded wake from 05:00, includes ongoing daytime naps, and stops at the first sleep beginning from 18:00. Overnight sleep is excluded; a late nap beginning from 18:00 is treated as bedtime. The counter resets at Singapore midnight and waits for the next qualifying recorded wake.
 - Breastmilk is replayed as an auditable FIFO ledger with separate **Available** and **Frozen** balances. Existing pump/feed/`bankadjust` history retains the prior non-negative balance behavior; no data migration is required. New writes remain strict.
 - Available refrigerated milk has no in-app expiry; physical expiry is managed offline. Pump and thaw batches remain in Available until consumed, frozen, or reconciled.
@@ -64,6 +64,7 @@
 - Medications are caregiver-entered free text with prescribed dose text, optional entered interval, and as-needed status. Every concurrent medication remains visible as a compact row; dose/window details expand. McPhee never calculates a dose or presents an entered interval as a safe-to-dose recommendation. Dose logging is idempotent, caregiver-attributed, editable, and protected against stale concurrent changes.
 - Each active medication has a direct pencil edit action; prescription name, dose text, entered intervals, and as-needed status can be changed mid-episode without rewriting recorded doses. Episode lifecycle/archive controls are in the baby-name care menu.
 - Add-prescription and new-dose entry use one mutually exclusive dashboard-owned flow. Expanded dose history has no duplicate new-dose form; prescription and historical-dose edits remain available. Drafts survive stale refreshes with saving paused. Ordinary dismissal confirms before discarding dirty entries, and a partial multi-prescription save retries only the unconfirmed remainder. Start-mode partial failures hand off the remaining prescriptions after closing baby settings, without stacking dialogs.
+- Prescription adds require a stable `requestId`, retained across ordinary retries and onboarding recovery. Exact replays return the same household/baby/episode-scoped medication without creating a second row; changed payloads using that identity are rejected. Existing prescriptions and dose history need no backfill.
 - During sick mode, the sleeping card is a deeper blue than the page canvas; selecting Awake switches it to richer yellow. Temperature, pee/latest-diaper labels open the existing new-activity forms; medication labels open a dose modal (individual names preselect that medication). The + menu includes Medication only while sick mode is active. Choose a configured medication, explicitly enter the actual amount/unit and Singapore time, and save through the existing idempotent dose API. Prescriptions are never silently used as actual doses; concurrent-history conflicts require review before resubmitting.
 - Sick mode keeps the first-screen reading order Sleep → Health check-in → Milk consumption/Latest feeds, followed by the separate breastmilk-bank card. Its compact header, inline sleep timer, paired health readings, three diaper rows and every medication row reduce vertical space without hiding readings or changing calculations. Care-overview secondary controls are 24–32px; the animated sleep toggle is 32px (40px outside sick mode). Awake uses richer yellow and sleeping deeper blue in sick mode. Long names, safety warnings, large text and opened editors grow naturally instead of clipping content.
 - Care overview spacing uses wider gaps between sections than between records, a full-width latest-diaper heading, quieter log links, and explicit timestamp/elapsed separators. It prioritizes readable phone layouts rather than compressing every possible prescription or warning onto a tiny screen; all entries remain available by scrolling when needed.

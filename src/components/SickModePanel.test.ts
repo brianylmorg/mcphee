@@ -3,7 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import SickModePanel, { buildMedicationUpdatePayload, isSickModeConflict } from "./SickModePanel";
+import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, isSickModeConflict } from "./SickModePanel";
 import type { SickMedication, SickModeResponse } from "@/lib/sick-mode";
 
 const NOW = Date.now();
@@ -207,6 +207,31 @@ test("medication edits carry the captured optimistic-concurrency revision", () =
     episodeId: "episode-1",
     medicationId: "med-1",
     expectedRevision: 7,
+    name: "Paracetamol",
+    doseText: "3.5ml",
+    asNeeded: true,
+    minIntervalHours: 4,
+    maxIntervalHours: 6,
+  });
+});
+
+test("onboarding medication retries preserve the handed-off request identity", () => {
+  assert.deepEqual(buildOnboardingMedicationAddPayload({
+    babyId: "baby-1",
+    episodeId: "episode-1",
+    medication: {
+      requestId: "stable-onboarding-attempt",
+      name: " Paracetamol ",
+      doseText: " 3.5ml ",
+      asNeeded: true,
+      minIntervalHours: "4",
+      maxIntervalHours: "6",
+    },
+  }), {
+    action: "addMedication",
+    babyId: "baby-1",
+    episodeId: "episode-1",
+    requestId: "stable-onboarding-attempt",
     name: "Paracetamol",
     doseText: "3.5ml",
     asNeeded: true,
