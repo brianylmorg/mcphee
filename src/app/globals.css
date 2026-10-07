@@ -44,6 +44,12 @@ html[data-care-mode="sick"] {
   --rgb-info: 53 107 118;
 }
 
+/* A deeper blue anchor distinguishes sleep status from the pale care canvas. */
+html[data-care-mode="sick"] .sleep-status-card {
+  background-color: rgb(204 225 232);
+  border-color: rgb(150 191 203);
+}
+
 body,
 body main,
 body header,

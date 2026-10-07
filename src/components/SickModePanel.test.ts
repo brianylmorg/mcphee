@@ -200,3 +200,14 @@ test("isSickModeConflict only matches a 409 error carrying the expected code", (
   assert.equal(isSickModeConflict(undefined, "STALE_DOSE"), false);
   assert.equal(isSickModeConflict("STALE_DOSE", "STALE_DOSE"), false);
 });
+
+test("health-check labels and medication names expose distinct logging shortcuts", () => {
+  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined }));
+  for (const label of ["Log temperature", "Log diaper", "Log a new diaper", "Log medication", "Log Medication 2", "Edit medication Medication 2", "Dose history for Medication 2", "Add medication prescription"]) assert.ok(html.includes(`aria-label="${label}"`));
+  assert.match(html, /aria-expanded="false" aria-controls="medication-history-med-2"/);
+});
+
+test("health-check logging shortcuts pause while sick-mode data is stale", () => {
+  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), isStale: true, onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined }));
+  for (const label of ["Log temperature", "Log diaper", "Log medication", "Log Medication 2"]) assert.ok(html.includes(`aria-label="${label}" disabled=""`));
+});

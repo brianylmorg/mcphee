@@ -5,6 +5,7 @@ import { ChevronDown, Droplets, Pencil, Plus, Thermometer, Trash2, X } from "luc
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
 import type { SickDose, SickMedication, SickModeResponse } from "@/lib/sick-mode";
+import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
 
 type MedicationDraft = {
   key: string;
@@ -21,6 +22,8 @@ type Props = {
   isStale?: boolean;
   display?: "dashboard" | "controls";
   onRefresh: () => Promise<void> | void;
+  onLogActivity?: (type: "temperature" | "diaper") => void;
+  onLogMedication?: (medicationId?: string) => void;
 };
 
 const EMPTY_MEDICATION = (): MedicationDraft => ({
@@ -32,45 +35,10 @@ const EMPTY_MEDICATION = (): MedicationDraft => ({
   maxIntervalHours: "",
 });
 
-function sgtDateTimeInput(timestamp = Date.now()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Singapore",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(timestamp));
-  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
-  return `${value("year")}-${value("month")}-${value("day")}T${value("hour")}:${value("minute")}`;
-}
-
-function parseSgtDateTime(value: string): number | null {
-  const timestamp = Date.parse(`${value}:00+08:00`);
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
 function numericOrUndefined(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
-}
-
-async function mutateSickMode(payload: Record<string, unknown>): Promise<{ ok: boolean; data: Record<string, unknown> }> {
-  const response = await fetch("/api/sick-mode", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    cache: "no-store",
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    const error = new Error(typeof data.error === "string" ? data.error : "Could not update sick mode.");
-    Object.assign(error, { status: response.status, code: data.code });
-    throw error;
-  }
-  return { ok: true, data };
 }
 
 export function isSickModeConflict(error: unknown, code: string): boolean {
@@ -406,28 +374,24 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
   );
 }
 
-function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onChanged }: { babyId: string; episodeId: string; medication: SickMedication; now: number; busy: boolean; onBusy: (busy: boolean) => void; onChanged: () => Promise<void> | void }) {
+function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onChanged, onLog }: { babyId: string; episodeId: string; medication: SickMedication; now: number; busy: boolean; onBusy: (busy: boolean) => void; onChanged: () => Promise<void> | void; onLog?: (medicationId?: string) => void }) {
   const latest = medication.latestDose;
-  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [expanded, setExpanded] = useState(false);
   const [editRequest, setEditRequest] = useState(0);
   return (
-    <div className="relative border-b border-border/70 last:border-b-0">
-    <details ref={detailsRef} className="group">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 py-2 pr-11 [&::-webkit-details-marker]:hidden">
-        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-            <span className="min-w-0 break-words text-xs font-medium leading-snug text-warm-brown">{medication.name}</span>
-            {medication.asNeeded && <span className="whitespace-nowrap rounded-full bg-terracotta/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent-strong">As needed</span>}
-          </div>
-          <p aria-label={latest ? `Last given ${formatTime(latest.givenAt)}, ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"} className="justify-self-end whitespace-nowrap text-[11px] text-muted">
-            {latest ? <span className="font-semibold tabular-nums text-warm-brown">{formatTime(latest.givenAt).replace(/ hrs$/, "")} · {formatElapsedSince(latest.givenAt, now)}</span> : "No doses logged"}
-          </p>
+    <div data-medication-row={medication.id} className="border-b border-border/70 last:border-b-0">
+      <div className="flex min-h-12 items-center gap-1">
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
+          <button type="button" aria-label={`Log ${medication.name}`} disabled={busy || !onLog} onClick={() => onLog?.(medication.id)} className="min-h-11 min-w-0 max-w-full break-words text-left text-xs font-semibold leading-snug text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">{medication.name}</button>
+          {medication.asNeeded && <span className="whitespace-nowrap rounded-full bg-terracotta/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent-strong">As needed</span>}
         </div>
-        <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
-      </summary>
-      <DoseHistory babyId={babyId} episodeId={episodeId} medication={medication} busy={busy} onBusy={onBusy} onChanged={onChanged} editRequest={editRequest} />
-    </details>
-    <button type="button" aria-label={`Edit medication ${medication.name}`} title="Edit medication" disabled={busy} onClick={() => { if (detailsRef.current) detailsRef.current.open = true; setEditRequest(value => value + 1); }} className="absolute right-0 top-0 flex h-12 w-11 items-center justify-center rounded-lg text-accent-strong hover:bg-surface-muted disabled:opacity-50"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+        <button type="button" aria-label={`Dose history for ${medication.name}`} aria-expanded={expanded} aria-controls={`medication-history-${medication.id}`} onClick={() => setExpanded(value => !value)} className="flex min-h-11 min-w-11 shrink-0 items-center gap-1 rounded-lg px-1 text-right text-[11px] text-muted hover:bg-surface-muted">
+          <span aria-label={latest ? `Last given ${formatTime(latest.givenAt)}, ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"} className="font-semibold tabular-nums">{latest ? `${formatTime(latest.givenAt).replace(/ hrs$/, "")} · ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"}</span>
+          <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </button>
+        <button type="button" aria-label={`Edit medication ${medication.name}`} title="Edit medication" disabled={busy} onClick={() => { setExpanded(true); setEditRequest(value => value + 1); }} className="flex h-12 w-11 shrink-0 items-center justify-center rounded-lg text-accent-strong hover:bg-surface-muted disabled:opacity-50"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+      </div>
+      <div id={`medication-history-${medication.id}`} hidden={!expanded}><DoseHistory babyId={babyId} episodeId={episodeId} medication={medication} busy={busy} onBusy={onBusy} onChanged={onChanged} editRequest={editRequest} /></div>
     </div>
   );
 }
@@ -505,7 +469,7 @@ function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeRespon
   );
 }
 
-export default function SickModePanel({ babyId, data, isStale = false, display = "dashboard", onRefresh }: Props) {
+export default function SickModePanel({ babyId, data, isStale = false, display = "dashboard", onRefresh, onLogActivity, onLogMedication }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const [showStart, setShowStart] = useState(false);
   const [showAddMedication, setShowAddMedication] = useState(false);
@@ -712,24 +676,24 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <div className="rounded-lg bg-cream/70 p-3">
-          <div className="flex items-center gap-2"><Thermometer aria-hidden="true" className="h-4 w-4 text-accent-strong" /><p className="text-sm font-semibold text-warm-brown">Temperature</p></div>
+          <button type="button" aria-label="Log temperature" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("temperature")} className="flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50"><Thermometer aria-hidden="true" className="h-4 w-4" />Temperature</button>
           {temperature ? <><p className="mt-2 text-lg font-semibold tabular-nums text-warm-brown">{temperature.celsius} °C</p><p className={`mt-0.5 text-xs tabular-nums ${temperatureOverdue ? "font-semibold text-danger" : "text-muted"}`}>Last measured {temperatureElapsed}{temperatureOverdue ? " · Overdue" : ""}</p>{temperature.method && <p className="mt-0.5 text-xs capitalize text-muted">{temperature.method}</p>}</> : <p className="mt-2 text-xs font-medium text-danger">No temperature recorded</p>}
         </div>
         <div className="rounded-lg bg-cream/70 p-3">
-          <div className="flex items-center gap-2"><Droplets aria-hidden="true" className="h-4 w-4 text-info" /><p className="text-sm font-semibold text-warm-brown">Pee logged today</p></div>
+          <button type="button" aria-label="Log diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50"><Droplets aria-hidden="true" className="h-4 w-4" />Pee logged today</button>
           <p className="mt-2 text-sm tabular-nums text-warm-brown">{summary?.peeUnitsToday ?? 0} units · {summary?.wetDiaperCountToday ?? 0} wet diapers</p>
           <p className="mt-0.5 text-xs text-muted">{summary?.lastWetAt ? `Last wet diaper logged ${formatElapsedSince(summary.lastWetAt, now)}` : "No wet diaper logged today"}</p>
         </div>
       </div>
 
       <div className="mt-4 border-t border-border/70 pt-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Latest diapers</p>
+        <button type="button" aria-label="Log a new diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="min-h-11 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">Latest diapers</button>
         {latestDiapers.length > 0 ? <div className="mt-1.5 divide-y divide-border/60">{latestDiapers.map((diaper) => <div key={diaper.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5 text-xs"><span className="font-semibold tabular-nums text-warm-brown">{formatTime(diaper.startedAt)} · {formatElapsedSince(diaper.startedAt, now)}</span><span className="text-muted">{diaper.peeUnits == null ? "Pee not recorded" : diaper.peeUnits > 0 ? `${diaper.peeUnits} pee ${diaper.peeUnits === 1 ? "unit" : "units"}` : "No pee"}{diaper.poop && diaper.poop !== "no" ? ` · Poo ${diaper.poop}` : ""}</span></div>)}</div> : <p className="mt-1 text-xs text-muted">No diapers logged yet.</p>}
       </div>
 
       <div className="mt-4 border-t border-border/70 pt-3">
-        <div className="flex items-center justify-between gap-3"><p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Medications</p><button type="button" disabled={isStale} onClick={() => setShowAddMedication((value) => !value)} className="inline-flex min-h-11 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add</button></div>
-        {data.medications.length > 0 ? <div>{data.medications.map((medication) => <MedicationRow key={medication.id} babyId={babyId} episodeId={activeEpisode.id} medication={medication} now={now} busy={busy || isStale} onBusy={setBusy} onChanged={onRefresh} />)}</div> : <p className="mt-1 text-xs text-muted">No medications added.</p>}
+        <div className="flex items-center justify-between gap-3"><button type="button" aria-label="Log medication" disabled={busy || isStale || !onLogMedication} onClick={() => onLogMedication?.()} className="min-h-11 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">Medications</button><button type="button" aria-label="Add medication prescription" disabled={busy || isStale} onClick={() => setShowAddMedication((value) => !value)} className="inline-flex min-h-11 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add</button></div>
+        {data.medications.length > 0 ? <div>{data.medications.map((medication) => <MedicationRow key={medication.id} babyId={babyId} episodeId={activeEpisode.id} medication={medication} now={now} busy={busy || isStale} onBusy={setBusy} onChanged={onRefresh} onLog={onLogMedication} />)}</div> : <p className="mt-1 text-xs text-muted">No medications added.</p>}
         {showAddMedication && <div className="mt-3 space-y-3">{medicationDrafts.map((draft, index) => <MedicationFields key={draft.key} draft={draft} onChange={(next) => setMedicationDrafts((items) => items.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => setMedicationDrafts((items) => items.filter((_, itemIndex) => itemIndex !== index))} removable={medicationDrafts.length > 1} suggestions={suggestions} />)}<button type="button" onClick={() => setMedicationDrafts((items) => [...items, EMPTY_MEDICATION()])} className="inline-flex min-h-11 items-center gap-1 px-2 text-xs font-semibold text-accent-strong"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button><div className="flex flex-wrap gap-2"><button type="button" onClick={addMedication} disabled={busy || medicationDrafts.some((draft) => !draft.name.trim() || !draft.doseText.trim())} className="min-h-11 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication{medicationDrafts.length === 1 ? "" : "s"}</button><button type="button" onClick={() => setShowAddMedication(false)} className="min-h-11 rounded-lg border border-border px-4 text-sm font-semibold text-warm-brown">Cancel</button></div></div>}
       </div>
 

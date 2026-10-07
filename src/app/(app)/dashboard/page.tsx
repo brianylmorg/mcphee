@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Plus, Scale, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -16,6 +16,7 @@ import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
 import ActivityRecency from "@/components/ActivityRecency";
 import SickModePanel from "@/components/SickModePanel";
+import MedicationLogModal from "@/components/MedicationLogModal";
 import BabyCareMenu from "@/components/BabyCareMenu";
 import { publishCareMode } from "@/lib/care-mode";
 import type { SleepUndoToken } from "@/lib/sleep-transition";
@@ -174,6 +175,10 @@ export default function DashboardPage() {
   const [isMilkHistoryLoading, setIsMilkHistoryLoading] = useState(false);
   const [sickMode, setSickMode] = useState<SickModeResponse | null>(null);
   const [sickModeIsStale, setSickModeIsStale] = useState(false);
+  const [medicationLog, setMedicationLog] = useState<{ episodeId: string; medicationId?: string } | null>(null);
+  const sickModeActive = Boolean(sickMode?.schemaReady && sickMode.activeEpisode);
+  const activeSickEpisodeId = sickModeActive ? sickMode?.activeEpisode?.id : undefined;
+  useEffect(() => { setMedicationLog(current => current?.episodeId === activeSickEpisodeId ? current : null); }, [activeSickEpisodeId]);
   const [activityDateFilter, setActivityDateFilter] = useState("");
   const [activityTypeFilters, setActivityTypeFilters] = useState<string[]>([]);
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
@@ -197,7 +202,7 @@ export default function DashboardPage() {
     setSelectedMilkDate((current) => current || todayDateKey);
   }, [todayDateKey]);
   const isActivityFiltered = Boolean(activityDateFilter || activityTypeFilters.length > 0);
-  const activityActionTypes = ["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "note", "temperature"];
+  const activityActionTypes = ["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "note", "temperature", ...(sickModeActive ? ["medication"] : [])];
   const activityIcons: Record<string, LucideIcon> = {
     bottlefeed: Milk,
     breastfeed: Heart,
@@ -207,6 +212,7 @@ export default function DashboardPage() {
     bankadjust: Scale,
     note: NotebookPen,
     temperature: Thermometer,
+    medication: Pill,
     sleep: Moon,
   };
 
@@ -689,6 +695,12 @@ export default function DashboardPage() {
   };
 
   const handleActivityAction = async (type: string) => {
+    if (type === "medication") {
+      if (!activeSickEpisodeId || sickModeIsStale) return;
+      setShowActivityMenu(false);
+      setMedicationLog({ episodeId: activeSickEpisodeId });
+      return;
+    }
     if (type === "breastfeed" && !activeTimer) {
       if (!breastfeedPromptShown) {
         setBreastfeedPromptShown(true);
@@ -713,6 +725,7 @@ export default function DashboardPage() {
       return;
     }
 
+    setEditingActivity(null);
     setLogType(type);
     setShowLogModal(true);
     setShowActivityMenu(false);
@@ -1089,7 +1102,7 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-4 sm:px-5 sm:py-5 space-y-3">
-        <section className={"rounded-xl border p-4 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45")} aria-label="Sleep status">
+        <section className={"sleep-status-card rounded-xl border p-4 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45")} aria-label="Sleep status">
           <SleepStateControl
             state={sleepState.state}
             since={sleepState.since}
@@ -1129,6 +1142,8 @@ export default function DashboardPage() {
             babyId={baby.id}
             data={sickMode}
             isStale={sickModeIsStale}
+            onLogActivity={type => { void handleActivityAction(type); }}
+            onLogMedication={medicationId => { if (!sickModeIsStale && activeSickEpisodeId) { setShowActivityMenu(false); setMedicationLog({ episodeId: activeSickEpisodeId, medicationId }); } }}
             onRefresh={async () => {
               await fetchSickMode(baby.id);
               await fetchData();
@@ -1610,7 +1625,7 @@ export default function DashboardPage() {
       {/* Floating Add Activity Menu */}
       <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
         {showActivityMenu && (
-          <div className="w-[min(320px,calc(100vw-2.5rem))] rounded-lg border border-border bg-surface p-2 shadow-xl">
+          <div className="max-h-[calc(100dvh-7rem)] w-[min(320px,calc(100vw-2.5rem))] overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
             {activityActionTypes.map((type) => {
               const last = getLastActivity(type);
               const overdue = isOverdue(type);
@@ -1626,13 +1641,13 @@ export default function DashboardPage() {
                 ? "Tap again to start"
                 : last
                 ? null
-                : "No entries yet";
+                : type === "medication" ? "Record amount given" : "No entries yet";
 
               return (
                 <button
                   key={type}
                   onClick={() => handleActivityAction(type)}
-                  disabled={isBreastfeed && isStartingTimer}
+                  disabled={(isBreastfeed && isStartingTimer) || (type === "medication" && sickModeIsStale)}
                   className={"flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition-colors " + (overdue ? "bg-terracotta-dark text-white" : "hover:bg-cream text-warm-brown") + " disabled:opacity-60"}
                 >
                   <span className="flex min-w-0 items-center gap-3">
@@ -1766,6 +1781,20 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {medicationLog && baby?.id && sickModeActive && sickMode?.activeEpisode && medicationLog.episodeId === sickMode.activeEpisode.id && (
+        <MedicationLogModal
+          key={`${baby.id}:${sickMode.activeEpisode.id}`}
+          babyId={baby.id}
+          episodeId={sickMode.activeEpisode.id}
+          episodeStartedAt={sickMode.activeEpisode.startedAt}
+          medications={sickMode.medications}
+          initialMedicationId={medicationLog.medicationId}
+          isStale={sickModeIsStale}
+          onClose={() => setMedicationLog(null)}
+          onRefresh={async () => { await fetchSickMode(baby.id); }}
+        />
+      )}
+
       {/* Log Modal */}
       {showLogModal && (
         <LogModal
@@ -1785,6 +1814,7 @@ export default function DashboardPage() {
             setShowLogModal(false);
             setEditingActivity(null);
             fetchData();
+            if (baby?.id) void fetchSickMode(baby.id);
             setActivityFilterRefresh((value) => value + 1);
           }}
         />
