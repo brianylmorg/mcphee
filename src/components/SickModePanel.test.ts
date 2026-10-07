@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import SickModePanel, { buildMedicationUpdatePayload, buildOnboardingMedicationAddPayload, buildResumePayload, buildUpdateStartPayload, evaluateResumeEligibility, isSickModeConflict, selectResumeCapture } from "./SickModePanel";
 import type { SickEpisode, SickMedication, SickModeResponse } from "@/lib/sick-mode";
+import { formatDate, formatTime } from "@/lib/utils";
 
 const NOW = Date.now();
 
@@ -105,6 +106,44 @@ test("active sick mode renders every medication as a compact row", () => {
   assert.match(html, /Last given/);
   assert.match(html, /No doses logged/);
   assert.equal((html.match(/class="medication-row-control /g) ?? []).length, 8);
+  // Medication hierarchy is exposed through semantic hooks, not CSS chains.
+  assert.equal((html.match(/class="medication-name /g) ?? []).length, 4);
+  assert.equal((html.match(/medication-prescription/g) ?? []).length, 4);
+});
+
+test("recorded dose history keeps its detail in lean semantic rows", () => {
+  const givenAt = NOW - 90 * 60 * 1000;
+  const dose = {
+    id: "dose-1",
+    medicationId: "med-1",
+    givenAt,
+    doseText: "3.5ml",
+    givenBy: "Caregiver",
+    createdAt: NOW,
+    updatedAt: NOW,
+    revision: 1,
+  };
+  const data = activeResponse();
+  data.medications = [medication(1, { name: "Paracetamol", latestDose: dose, doses: [dose] })];
+  const html = renderToStaticMarkup(createElement(SickModePanel, {
+    babyId: "baby-1",
+    data,
+    onRefresh: () => undefined,
+  }));
+
+  assert.match(html, /class="medication-name /);
+  assert.match(html, /class="medication-prescription /);
+  assert.match(html, /class="medication-dose-history /);
+  assert.match(html, /class="medication-history-row /);
+  assert.match(html, /class="medication-history-meta /);
+  // The recorded detail survives verbatim: date/time, amount, caregiver and the
+  // entered-next-window disclaimer.
+  assert.ok(html.includes(formatDate(givenAt)));
+  assert.ok(html.includes(formatTime(givenAt)));
+  assert.match(html, /3\.5ml/);
+  assert.match(html, /Given by Caregiver/);
+  assert.match(html, /Entered next window:/);
+  assert.match(html, /This is not a safe-to-dose recommendation\./);
 });
 
 test("temperature absence and overdue states are explicit", () => {
@@ -142,11 +181,77 @@ test("compact health overview retains readings, all three diapers, all medicatio
   assert.equal((html.match(/data-diaper-row=/g) ?? []).length, 3);
   assert.equal((html.match(/data-medication-row=/g) ?? []).length, 4);
   assert.match(html, /Poo small/);
-  assert.equal((html.match(/aria-hidden="true">· <\/span>/g) ?? []).length, 3);
-  assert.match(html, /health-log-action[^"<>]*"[^>]*>Latest diapers<\/button>/);
+  // Newest diaper summary + three history rows carry an elapsed separator each.
+  assert.equal((html.match(/aria-hidden="true">· <\/span>/g) ?? []).length, 4);
+  // Latest diapers now render as a closed native disclosure, not a log button.
+  assert.match(html, /<details[^>]*data-latest-entries="true"/);
+  assert.doesNotMatch(html, /<details[^>]*\bopen/);
+  assert.match(html, /<summary[^>]*>[\s\S]*Latest diapers[\s\S]*<\/summary>/);
+  assert.match(html, /data-latest-entries-content="true"[\s\S]*data-diaper-row="diaper-1"/);
+  assert.match(html, />Log a new diaper<\/button>/);
   assert.match(html, /medication-dose-elapsed/);
   assert.match(html, /below the episode’s 400 ml 50% full-day intake threshold/);
   assert.doesNotMatch(html, /Sick mode active/);
+});
+
+test("latest diapers keep the newest summary closed and bound history at three", () => {
+  const build = (count: number) => {
+    const data = activeResponse();
+    if (!data.summary) throw new Error("fixture summary missing");
+    data.summary.latestDiapers = Array.from({ length: count }, (_, index) => ({
+      id: `diaper-${index}`,
+      startedAt: NOW - index * 60 * 60 * 1000,
+      peeUnits: index,
+      isWet: index > 0,
+      poop: index === 0 ? "small" : "no",
+    }));
+    return renderToStaticMarkup(createElement(SickModePanel, {
+      babyId: "baby-1",
+      data,
+      onRefresh: () => undefined,
+      onLogActivity: () => undefined,
+    }));
+  };
+
+  // Empty state is explicit and never claims zero pee.
+  const empty = build(0);
+  assert.match(empty, /No diapers logged yet/);
+  assert.doesNotMatch(empty, /data-diaper-row=/);
+  assert.doesNotMatch(empty, /data-latest-entries="true"/);
+
+  for (const count of [1, 2, 3, 4]) {
+    const html = build(count);
+    assert.match(html, /<details[^>]*data-latest-entries="true"/);
+    assert.doesNotMatch(html, /<details[^>]*\bopen/);
+    assert.equal(
+      (html.match(/data-diaper-row=/g) ?? []).length,
+      Math.min(count, 3),
+      `diaper history rows for ${count} diapers`,
+    );
+    assert.match(html, />Log a new diaper<\/button>/);
+    assert.match(html, /latest-entries-contents/);
+  }
+});
+
+test("diapers from a previous day show their date and missing pee reads as not recorded", () => {
+  const pastDay = NOW - 2 * 24 * 60 * 60 * 1000;
+  const data = activeResponse();
+  if (!data.summary) throw new Error("fixture summary missing");
+  data.summary.latestDiapers = [{
+    id: "diaper-past",
+    startedAt: pastDay,
+    peeUnits: null,
+    isWet: null,
+    poop: "no",
+  }];
+  const html = renderToStaticMarkup(createElement(SickModePanel, {
+    babyId: "baby-1",
+    data,
+    onRefresh: () => undefined,
+  }));
+  assert.ok(html.includes(formatDate(pastDay)));
+  assert.match(html, /Pee not recorded/);
+  assert.doesNotMatch(html, /No diapers logged yet/);
 });
 
 test("schema-not-ready response keeps sick mode compact and disabled", () => {
@@ -251,7 +356,11 @@ test("isSickModeConflict only matches a 409 error carrying the expected code", (
 });
 
 test("health-check labels and medication names expose distinct logging shortcuts", () => {
-  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data: activeResponse(), onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined, onAddMedication: () => undefined }));
+  const data = activeResponse();
+  if (!data.summary) throw new Error("fixture summary missing");
+  // "Log a new diaper" lives in the expanded disclosure, so a diaper must exist.
+  data.summary.latestDiapers = [{ id: "diaper-1", startedAt: NOW - 60 * 60 * 1000, peeUnits: 1, isWet: true, poop: "no" }];
+  const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined, onAddMedication: () => undefined }));
   for (const label of ["Log temperature", "Log diaper", "Log a new diaper", "Log medication", "Log Medication 2", "Edit medication Medication 2", "Dose history for Medication 2", "Add medication prescription"]) assert.ok(html.includes(`aria-label="${label}"`));
   assert.match(html, /aria-expanded="false" aria-controls="medication-history-med-2"/);
   assert.doesNotMatch(html, /Time Medication 2 was given|Dose of Medication 2 given|>Actual dose</);

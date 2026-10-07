@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Thermometer, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
 import ActivityRecency from "@/components/ActivityRecency";
+import ActivityTimelineCard from "@/components/ActivityTimelineCard";
 import SickModePanel from "@/components/SickModePanel";
 import MedicationLogModal from "@/components/MedicationLogModal";
 import MedicationPrescriptionModal from "@/components/MedicationPrescriptionModal";
@@ -246,6 +247,18 @@ export default function DashboardPage() {
       return activityTypeOptions.map((option) => option.value).filter((type) => selected.has(type));
     });
   };
+  // After any type checkbox change, close this dropdown and return focus to its
+  // summary so multi-selection requires an explicit reopen. Multi-select state
+  // and date/history semantics are unchanged.
+  const handleActivityTypeFilterChange = (target: HTMLInputElement, value: string | null) => {
+    if (value === null) setActivityTypeFilters([]);
+    else toggleActivityTypeFilter(value);
+    const details = target.closest("details");
+    if (details) {
+      details.open = false;
+      details.querySelector("summary")?.focus();
+    }
+  };
 
   useEffect(() => {
     if ("serviceWorker" in navigator && "PushManager" in window) {
@@ -466,7 +479,11 @@ export default function DashboardPage() {
     if (!householdId || !baby?.id) return;
 
     const controller = new AbortController();
-    const params = new URLSearchParams({ limit: "500", babyId: baby.id });
+    // A chosen (or implicit "today") day should render every record for that
+    // day, so request the full set. The unfiltered "All days" view keeps the
+    // bounded 500 record window.
+    const scopedToSelectedDay = Boolean(activityDateFilter) || !showHistory;
+    const params = new URLSearchParams({ limit: scopedToSelectedDay ? "all" : "500", babyId: baby.id });
     if (activityDateFilter) {
       params.set("date", activityDateFilter);
     } else if (!showHistory) {
@@ -1415,7 +1432,7 @@ export default function DashboardPage() {
                   <input
                     type="checkbox"
                     checked={activityTypeFilters.length === 0}
-                    onChange={() => setActivityTypeFilters([])}
+                    onChange={(event) => handleActivityTypeFilterChange(event.currentTarget, null)}
                     className="h-4 w-4 accent-terracotta-dark"
                   />
                   All activity types
@@ -1425,7 +1442,7 @@ export default function DashboardPage() {
                     <input
                       type="checkbox"
                       checked={activityTypeFilters.includes(option.value)}
-                      onChange={() => toggleActivityTypeFilter(option.value)}
+                      onChange={(event) => handleActivityTypeFilterChange(event.currentTarget, option.value)}
                       className="h-4 w-4 accent-terracotta-dark"
                     />
                     {option.label}
@@ -1487,56 +1504,23 @@ export default function DashboardPage() {
                         {hourKey}
                       </p>
                     )}
-                    <div className="flex items-start gap-2 rounded-lg border border-border bg-surface p-1 transition-colors hover:border-terracotta/30">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingActivity(activity.sourceActivity ?? activity);
-                          setLogType(activity.type);
-                          setShowLogModal(true);
-                        }}
-                        className="min-w-0 flex-1 rounded-lg px-2.5 py-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold tabular-nums text-muted">
-                            {formatTime(activity.started_at)} · {timeSince(activity.started_at)}
-                          </p>
-                          <div className={`mt-1 flex min-w-0 gap-2 ${activity.type === "note" ? "items-start" : "items-center"}`}>
-                            <ActivityIcon aria-hidden="true" className={`h-5 w-5 shrink-0 text-accent-strong ${activity.type === "note" ? "mt-0.5" : ""}`} />
-                            <p className={activity.type === "note" ? "min-w-0 whitespace-pre-wrap break-words text-base font-semibold leading-snug text-warm-brown" : "truncate text-base font-semibold text-warm-brown"}>{display.title}</p>
-                          </div>
-                          {(display.subcategory || display.quantity) && (
-                            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                              {display.subcategory && (
-                                <p className="text-sm text-warm-brown-light">{display.subcategory}</p>
-                              )}
-                              {display.quantity && (
-                                <p className="ml-auto text-sm font-medium tabular-nums text-warm-brown">
-                                  {display.quantity}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                          {comment && (
-                            <p className="mt-1.5 border-l-2 border-terracotta/20 pl-2 text-xs leading-relaxed text-warm-brown-light">
-                              {comment}
-                            </p>
-                          )}
-                          {activity.created_by && (
-                            <p className="mt-1.5 text-xs text-muted">Entered by {activity.created_by}</p>
-                          )}
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete ${display.title.toLowerCase()} activity`}
-                        onClick={() => setDeleteActivity(activity.sourceActivity ?? activity)}
-                        className="flex min-h-8 w-8 shrink-0 items-center justify-center rounded-full text-xl text-muted transition-colors hover:bg-red-50 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-                        title="Delete"
-                      >
-                        <Trash2 aria-hidden="true" className="h-5 w-5" />
-                      </button>
-                    </div>
+                    <ActivityTimelineCard
+                      icon={ActivityIcon}
+                      title={display.title}
+                      when={formatTime(activity.started_at)}
+                      elapsed={timeSince(activity.started_at)}
+                      subcategory={display.subcategory || undefined}
+                      quantity={display.quantity || undefined}
+                      comment={comment || undefined}
+                      createdBy={activity.created_by || undefined}
+                      multiline={activity.type === "note"}
+                      onEdit={() => {
+                        setEditingActivity(activity.sourceActivity ?? activity);
+                        setLogType(activity.type);
+                        setShowLogModal(true);
+                      }}
+                      onDelete={() => setDeleteActivity(activity.sourceActivity ?? activity)}
+                    />
                   </div>
                 );
               });

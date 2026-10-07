@@ -29,6 +29,20 @@
   --color-focus: rgb(var(--rgb-accent-strong));
   --color-info: rgb(var(--rgb-info));
   --color-warning: rgb(var(--rgb-warning));
+
+  /* Shared semantic type scale for card/list roles (existing fonts unchanged). */
+  --type-card-title-size: 16px;
+  --type-card-title-line: 20px;
+  --type-primary-size: 24px;
+  --type-primary-line: 28px;
+  --type-label-size: 14px;
+  --type-label-line: 20px;
+  --type-reading-size: 16px;
+  --type-reading-line: 22px;
+  --type-secondary-size: 13px;
+  --type-secondary-line: 18px;
+  --type-metadata-size: 12px;
+  --type-metadata-line: 16px;
 }
 
 /* Care mode is an episode state, not a fever severity or a safety assessment. */
@@ -169,7 +183,7 @@ body header,
   column-gap: 4px;
 }
 .health-reading > button {
-  font-size: 12px;
+  font-size: var(--type-label-size);
   gap: 4px;
 }
 .health-readings {
@@ -194,12 +208,18 @@ body header,
 .temperature-value {
   grid-column: 2;
   grid-row: 1;
-  font-size: 12px;
+  font-size: var(--type-reading-size);
+  line-height: var(--type-reading-line);
 }
 .temperature-value > span {
   display: block;
   margin-left: 0;
-  line-height: 12px;
+  line-height: var(--type-metadata-line);
+}
+.temperature-recency,
+.pee-recency {
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
 }
 .temperature-recency {
   grid-column: 1 / -1;
@@ -210,11 +230,9 @@ body header,
 [data-care-overview="true"] .milk-consumption-card {
   padding: 8px 12px;
 }
-[data-care-overview="true"] .milk-consumption-card h2 {
-  font-size: 14px;
-  line-height: 18px;
-}
-[data-care-overview="true"] .milk-consumption-card button {
+/* Only the header controls (history/prev/next) are fixed 28px squares. The
+   latest-feeds disclosure and other card buttons keep their natural size. */
+[data-care-overview="true"] .milk-consumption-card > div:first-child button {
   width: 28px;
   height: 28px;
 }
@@ -246,8 +264,8 @@ body header,
 }
 [data-care-overview="true"] .milk-breakdown {
   margin-top: 0;
-  font-size: 11px;
-  line-height: 14px;
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
 }
 [data-care-overview="true"] .milk-progress {
   margin-top: 5px;
@@ -257,12 +275,12 @@ body header,
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 5px;
   gap: 4px;
-  font-size: 11px;
-  line-height: 14px;
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
 }
 [data-care-overview="true"] .milk-threshold-legend > span:last-child {
-  font-size: 11px;
-  line-height: 14px;
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
 }
 [data-care-overview="true"] .milk-comparison {
   margin-top: 4px;
@@ -270,8 +288,8 @@ body header,
 }
 [data-care-overview="true"] .milk-comparison p,
 [data-care-overview="true"] .milk-median p {
-  font-size: 11px;
-  line-height: 16px;
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
 }
 [data-care-overview="true"] .milk-comparison button {
   height: 24px;
@@ -280,7 +298,7 @@ body header,
 [data-care-overview="true"] :is(.milk-comparison, .milk-median) span[title] {
   padding-top: 0;
   padding-bottom: 0;
-  line-height: 14px;
+  line-height: var(--type-metadata-line);
 }
 [data-care-overview="true"] .milk-median {
   margin-top: 0;
@@ -289,32 +307,12 @@ body header,
   margin-top: 6px;
   padding-top: 6px;
 }
-[data-care-overview="true"] .latest-feeds > div {
-  margin-top: 3px;
-}
-[data-care-overview="true"] .latest-feeds > div > div {
-  padding-top: 1px;
-  padding-bottom: 1px;
-  min-height: 20px;
-}
 [data-care-overview="true"] .latest-feeds :is(p, span) {
-  line-height: 18px;
+  line-height: var(--type-secondary-line);
 }
 .health-diapers {
   margin-top: 5px;
   padding-top: 3px;
-}
-.health-diapers > button {
-  display: block;
-  text-align: left;
-  font-size: 12px;
-  text-transform: none;
-  letter-spacing: normal;
-}
-.health-diapers [data-diaper-row] {
-  min-height: 20px;
-  padding-top: 1px;
-  padding-bottom: 1px;
 }
 .health-medications {
   margin-top: 5px;
@@ -325,18 +323,83 @@ body header,
   text-transform: none;
   letter-spacing: normal;
 }
+
+/* Progressive disclosure for the latest-diapers / latest-feeds summaries:
+   full width, natural height, a 32px tap floor, and a non-wrapping label so
+   the newest value stays flush to the right edge (chevron before content). */
+.latest-entries {
+  width: 100%;
+}
+.latest-entries > summary.latest-entries-toggle {
+  min-height: 32px;
+}
+.latest-entries-title,
+.latest-entries-newest,
+.latest-feed-row,
+.health-diaper-row,
+[data-diaper-row] {
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
+}
+.latest-entries-title {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.latest-entries-newest {
+  min-width: 0;
+}
+.latest-entries-amount {
+  margin-left: auto;
+}
+.health-diaper-row,
+[data-diaper-row] {
+  min-height: 22px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* Medication hierarchy: the name is the largest text; prescription, dose
+   history and metadata stay subordinate but legible. */
+.medication-name {
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: 600;
+}
+.medication-prescription {
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
+  font-weight: 400;
+}
+.medication-dose-history {
+  font-size: var(--type-metadata-size);
+  line-height: var(--type-metadata-line);
+}
+.medication-history-row {
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-secondary-line);
+}
+.medication-history-meta {
+  font-size: var(--type-metadata-size);
+  line-height: var(--type-metadata-line);
+}
 @media (max-width: 360px) {
-  .temperature-recency,
-  .pee-recency {
-    font-size: 10px;
-    line-height: 14px;
+  .health-reading:first-child:has(.temperature-value) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .temperature-value {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .temperature-value > span {
+    display: inline;
+    margin-left: 4px;
   }
   .medication-dose-separator {
     display: none;
   }
   .medication-last-dose > span:not(.medication-dose-separator) {
     display: block;
-    line-height: 12px;
+    line-height: var(--type-metadata-line);
   }
 }
 
@@ -354,9 +417,9 @@ body {
 /* Shared hierarchy for compact, at-a-glance cards. */
 .glance-card-title {
   font-family: "Manrope", sans-serif;
-  font-size: 14px;
+  font-size: var(--type-card-title-size);
   font-weight: 600;
-  line-height: 18px;
+  line-height: var(--type-card-title-line);
   letter-spacing: -0.01em;
 }
 
@@ -369,13 +432,8 @@ body {
 }
 
 .glance-primary-value {
-  font-size: 24px;
-  line-height: 28px;
-}
-
-[data-care-overview="true"] .glance-primary-value {
-  font-size: 22px;
-  line-height: 24px;
+  font-size: var(--type-primary-size);
+  line-height: var(--type-primary-line);
 }
 
 .glance-secondary-value {
@@ -389,7 +447,7 @@ body {
   line-height: 16px;
 }
 
-:is(button, a, input, textarea, select):focus-visible {
+:is(button, a, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 3px;
 }

@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
       pumpedLedger.rows as unknown as RecentMilkFeedActivity[],
       selectedBabyId,
       now.getTime(),
+      3,
     );
     const dailyMilkTotals = dailyMilk.rows.reduce((total, row) => {
       const typedRow = row as unknown as { type: string; details: string | null; started_at?: number };

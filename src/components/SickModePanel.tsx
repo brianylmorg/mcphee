@@ -5,14 +5,27 @@ import { ChevronDown, Droplets, Pencil, Plus, RotateCcw, Thermometer, Trash2, X 
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
 import { sgtDateKey } from "@/lib/milk-volumes";
+import LatestEntriesDisclosure from "@/components/LatestEntriesDisclosure";
 import {
   identifyMedicationPrescriptionDraft,
   type MedicationPrescriptionDraftInput,
 } from "@/lib/medication-entry";
-import type { SickBaselinePreview, SickDose, SickEpisode, SickMedication, SickModeResponse } from "@/lib/sick-mode";
+import type { SickBaselinePreview, SickDiaperSummary, SickDose, SickEpisode, SickMedication, SickModeResponse } from "@/lib/sick-mode";
 import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
 
 const MAX_MANUAL_BASELINE_ML = 10_000;
+const DIAPER_HISTORY_COUNT = 3;
+
+/** Pee/poo text shared by the collapsed diaper summary and its history rows. */
+function diaperContentsLabel(diaper: SickDiaperSummary): string {
+  const pee = diaper.peeUnits == null
+    ? "Pee not recorded"
+    : diaper.peeUnits > 0
+      ? `${diaper.peeUnits} pee ${diaper.peeUnits === 1 ? "unit" : "units"}`
+      : "No pee";
+  const poop = diaper.poop && diaper.poop !== "no" ? `Poo ${diaper.poop}` : "";
+  return [pee, poop].filter(Boolean).join(" · ");
+}
 
 type MedicationDraft = MedicationPrescriptionDraftInput & {
   key: string;
@@ -389,9 +402,9 @@ function DoseHistory({
   }, [editRequest]);
 
   return (
-    <div className="mt-3 border-t border-border/70 pt-3">
+    <div className="mt-1.5 border-t border-border/70 pt-1.5">
       <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 text-xs leading-relaxed text-muted">
+        <p className="medication-prescription min-w-0 text-muted">
           Prescribed dose: {medication.doseText}
           {medication.minIntervalHours != null && medication.maxIntervalHours != null
             ? ` · Entered interval ${medication.minIntervalHours}–${medication.maxIntervalHours}h`
@@ -412,8 +425,8 @@ function DoseHistory({
         </p>
       )}
       {doses.length > 0 && (
-        <div className="mt-3 space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Dose history</p>
+        <div className="mt-1.5 space-y-1">
+          <p className="medication-dose-history text-[12px] font-semibold uppercase tracking-[0.12em] text-muted">Dose history</p>
           {doses.map((dose) => (
             <DoseHistoryRow key={dose.id} dose={dose} editing={editingId === dose.id} disabled={busy} onEdit={() => setEditingId(dose.id)} onCancel={() => setEditingId(null)} onSave={(time, text, expectedRevision) => saveDose(dose, time, text, expectedRevision)} onDelete={() => deleteDose(dose)} />
           ))}
@@ -452,10 +465,10 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-cream/70 px-3 py-1.5">
-      <p className="min-w-0 flex-1 text-xs text-warm-brown"><span className="font-semibold tabular-nums">{formatDate(dose.givenAt)} · {formatTime(dose.givenAt)}</span> · {dose.doseText}{dose.givenBy && <span className="block break-words text-muted">Given by {dose.givenBy}</span>}</p>
-      <button type="button" disabled={disabled} onClick={beginEdit} className="min-h-9 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
-      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+    <div className="medication-history-row flex items-center gap-2 border-b border-border/60 py-1 last:border-b-0">
+      <p className="min-w-0 flex-1 text-warm-brown"><span className="medication-history-meta font-semibold tabular-nums">{formatDate(dose.givenAt)} · {formatTime(dose.givenAt)}</span> · {dose.doseText}{dose.givenBy && <span className="medication-history-meta block break-words text-muted">Given by {dose.givenBy}</span>}</p>
+      <button type="button" disabled={disabled} onClick={beginEdit} className="min-h-8 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
+      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
     </div>
   );
 }
@@ -468,10 +481,10 @@ function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onCha
     <div data-medication-row={medication.id} className="border-b border-border/70 last:border-b-0">
       <div className="flex min-h-6 items-center gap-1">
         <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
-          <button type="button" aria-label={`Log ${medication.name}`} disabled={busy || !onLog} onClick={() => onLog?.(medication.id)} className="health-log-action min-h-6 min-w-0 max-w-full break-words text-left text-xs font-semibold leading-snug text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">{medication.name}</button>
-          {medication.asNeeded && <span className="whitespace-nowrap rounded-full bg-terracotta/10 px-1.5 py-0.5 text-[10px] font-normal text-accent-strong">As needed</span>}
+          <button type="button" aria-label={`Log ${medication.name}`} disabled={busy || !onLog} onClick={() => onLog?.(medication.id)} className="medication-name health-log-action min-h-6 min-w-0 max-w-full break-words text-left font-semibold leading-snug text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">{medication.name}</button>
+          {medication.asNeeded && <span className="whitespace-nowrap rounded-full bg-terracotta/10 px-1.5 py-0.5 text-[11px] font-normal text-accent-strong">As needed</span>}
         </div>
-        <button type="button" aria-label={`Dose history for ${medication.name}`} aria-expanded={expanded} aria-controls={`medication-history-${medication.id}`} onClick={() => setExpanded(value => !value)} className="medication-row-control flex min-h-6 min-w-8 shrink-0 items-center gap-1 rounded-lg px-1 text-right text-[11px] text-muted">
+        <button type="button" aria-label={`Dose history for ${medication.name}`} aria-expanded={expanded} aria-controls={`medication-history-${medication.id}`} onClick={() => setExpanded(value => !value)} className="medication-row-control flex min-h-6 min-w-8 shrink-0 items-center gap-1 rounded-lg px-1 text-right text-xs text-muted">
           <span aria-label={latest ? `Last given ${formatTime(latest.givenAt)}, ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"} className="medication-last-dose font-semibold tabular-nums">{latest ? <><span>{formatTime(latest.givenAt).replace(/ hrs$/, "")}</span><span aria-hidden="true" className="medication-dose-separator"> · </span><span className="medication-dose-elapsed">{formatElapsedSince(latest.givenAt, now)}</span></> : "No doses logged"}</span>
           <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
@@ -1075,28 +1088,69 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
   const temperatureElapsed = temperature ? formatElapsedSince(temperature.measuredAt, now) : null;
   const temperatureOverdue = temperature ? now - temperature.measuredAt > 60 * 60 * 1000 : false;
   const latestDiapers = summary?.latestDiapers ?? [];
+  const newestDiaper = latestDiapers[0];
+  const diaperHistory = latestDiapers.slice(0, DIAPER_HISTORY_COUNT);
+  const diaperTodayKey = sgtDateKey(now);
+  const diaperWhen = (diaper: SickDiaperSummary) => {
+    const time = formatTime(diaper.startedAt).replace(/ hrs$/, "");
+    return sgtDateKey(diaper.startedAt) === diaperTodayKey ? time : `${formatDate(diaper.startedAt)} · ${time}`;
+  };
 
   return (
     <section className="health-check-in rounded-lg border border-terracotta/30 bg-surface p-2 shadow-sm" aria-labelledby="sick-mode-heading">
       {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-amber-50 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
       <div className="flex items-start justify-between gap-3">
-        <h2 id="sick-mode-heading" className="text-sm font-semibold leading-tight text-warm-brown">Health check-in</h2>
+        <h2 id="sick-mode-heading" className="glance-card-title text-warm-brown">Health check-in</h2>
       </div>
 
       <div className="health-readings mt-1 grid grid-cols-2 gap-2">
         <div className="health-reading rounded-md bg-cream/70 px-2 py-1">
-          <button type="button" aria-label="Log temperature" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("temperature")} className="health-log-action flex min-h-6 w-full items-center gap-2 text-xs font-semibold text-accent-strong underline-offset-4 hover:underline disabled:opacity-50"><Thermometer aria-hidden="true" className="h-4 w-4" />Temperature</button>
-          {temperature ? <><p className="temperature-value text-sm font-semibold leading-4 tabular-nums text-warm-brown">{temperature.celsius} °C{temperature.method && <span className="ml-1 text-[10px] font-normal capitalize text-muted">{temperature.method}</span>}</p><p className={`temperature-recency text-[11px] leading-4 tabular-nums ${temperatureOverdue ? "font-semibold text-danger" : "text-muted"}`}>Last measured {temperatureElapsed}{temperatureOverdue && <span className="sr-only"> · Overdue</span>}</p></> : <p className="mt-2 text-xs font-medium text-danger">No temperature recorded</p>}
+          <button type="button" aria-label="Log temperature" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("temperature")} className="health-log-action flex min-h-6 w-full items-center gap-2 text-sm font-semibold text-accent-strong underline-offset-4 hover:underline disabled:opacity-50"><Thermometer aria-hidden="true" className="h-4 w-4" />Temperature</button>
+          {temperature ? <><p className="temperature-value font-semibold tabular-nums text-warm-brown">{temperature.celsius} °C{temperature.method && <span className="ml-1 text-xs font-normal capitalize text-muted">{temperature.method}</span>}</p><p className={`temperature-recency tabular-nums ${temperatureOverdue ? "font-semibold text-danger" : "text-muted"}`}>Last measured {temperatureElapsed}{temperatureOverdue && <span className="sr-only"> · Overdue</span>}</p></> : <p className="mt-2 text-xs font-medium text-danger">No temperature recorded</p>}
         </div>
         <div className="health-reading rounded-md bg-cream/70 px-2 py-1">
-          <button type="button" aria-label="Log diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="health-log-action flex min-h-6 items-center gap-2 text-xs font-semibold text-accent-strong underline-offset-4 hover:underline disabled:opacity-50"><Droplets aria-hidden="true" className="h-4 w-4" />Pee today<span className="ml-auto whitespace-nowrap font-semibold tabular-nums text-warm-brown">{summary?.peeUnitsToday ?? 0} units</span></button>
-          <p className="pee-recency text-[11px] leading-4 text-muted">{summary?.wetDiaperCountToday ?? 0} wet diapers · {summary?.lastWetAt ? `last ${formatElapsedSince(summary.lastWetAt, now)}` : "no wet diaper logged today"}</p>
+          <button type="button" aria-label="Log diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="health-log-action flex min-h-6 flex-wrap items-center gap-2 text-sm font-semibold text-accent-strong underline-offset-4 hover:underline disabled:opacity-50"><Droplets aria-hidden="true" className="h-4 w-4" />Pee today<span className="ml-auto whitespace-nowrap text-base leading-5 font-semibold tabular-nums text-warm-brown">{summary?.peeUnitsToday ?? 0} units</span></button>
+          <p className="pee-recency text-muted">{summary?.wetDiaperCountToday ?? 0} wet diapers · {summary?.lastWetAt ? `last ${formatElapsedSince(summary.lastWetAt, now)}` : "no wet diaper logged today"}</p>
         </div>
       </div>
 
       <div className="health-diapers mt-1 border-t border-border/70 pt-0">
-        <button type="button" aria-label="Log a new diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="health-log-action min-h-6 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">Latest diapers</button>
-        {latestDiapers.length > 0 ? <div>{latestDiapers.map((diaper) => <div key={diaper.id} data-diaper-row={diaper.id} className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0 py-0 text-[11px] leading-4"><span className="flex flex-wrap items-baseline gap-x-1.5 tabular-nums"><span className="font-semibold text-warm-brown">{formatTime(diaper.startedAt).replace(/ hrs$/, "")}</span><span className="whitespace-nowrap text-muted"><span aria-hidden="true">· </span>{formatElapsedSince(diaper.startedAt, now)}</span></span><span className="text-muted">{diaper.peeUnits == null ? "Pee not recorded" : diaper.peeUnits > 0 ? `${diaper.peeUnits} pee ${diaper.peeUnits === 1 ? "unit" : "units"}` : "No pee"}{diaper.poop && diaper.poop !== "no" ? ` · Poo ${diaper.poop}` : ""}</span></div>)}</div> : <p className="mt-1 text-xs text-muted">No diapers logged yet.</p>}
+        {newestDiaper ? (
+          <LatestEntriesDisclosure
+            className="health-diapers-disclosure"
+            title="Latest diapers"
+            titleClassName="latest-diapers-title text-muted"
+            summaryWrapperClassName="flex flex-wrap items-baseline gap-x-1.5 gap-y-0"
+            summary={
+              <>
+                <span className="latest-entries-when font-semibold tabular-nums text-warm-brown">{diaperWhen(newestDiaper)}</span>
+                <span className="latest-entries-elapsed whitespace-nowrap font-semibold tabular-nums text-muted"><span aria-hidden="true">· </span>{formatElapsedSince(newestDiaper.startedAt, now)}</span>
+                <span className="latest-entries-contents text-muted">{diaperContentsLabel(newestDiaper)}</span>
+              </>
+            }
+            entries={
+              <div className="health-diaper-list mt-1">
+                {diaperHistory.map((diaper) => (
+                  <div key={diaper.id} data-diaper-row={diaper.id} className="health-diaper-row flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0 py-0 text-[11px] leading-4">
+                    <span className="flex flex-wrap items-baseline gap-x-1.5 tabular-nums">
+                      <span className="latest-entries-when font-semibold text-warm-brown">{diaperWhen(diaper)}</span>
+                      <span className="latest-entries-elapsed whitespace-nowrap text-muted"><span aria-hidden="true">· </span>{formatElapsedSince(diaper.startedAt, now)}</span>
+                    </span>
+                    <span className="latest-entries-contents text-muted">{diaperContentsLabel(diaper)}</span>
+                  </div>
+                ))}
+              </div>
+            }
+            footer={
+              <button type="button" aria-label="Log a new diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="health-log-action mt-2 inline-flex min-h-6 items-center gap-1 text-xs font-semibold text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">Log a new diaper</button>
+            }
+          />
+        ) : (
+          <div className="health-diapers-empty">
+            <p className="latest-entries-title latest-diapers-title text-muted">Latest diapers</p>
+            <p className="mt-1 text-xs text-muted">No diapers logged yet.</p>
+          </div>
+        )}
       </div>
 
       <div className="health-medications mt-1 border-t border-border/70 pt-0">
