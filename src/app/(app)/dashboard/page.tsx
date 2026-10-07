@@ -1148,10 +1148,10 @@ export default function DashboardPage() {
         <section className="milk-consumption-card rounded-lg border border-border bg-surface p-2.5 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 aria-label={isSelectedMilkToday ? "Today’s milk consumption" : "Milk consumption"} className="font-display text-base leading-tight text-accent-strong">
+              <h2 aria-label={isSelectedMilkToday ? "Today’s milk consumption" : "Milk consumption"} className="glance-card-title text-accent-strong">
                 {isSelectedMilkToday ? activeSickSummary ? "Today’s milk" : "Today’s milk consumption" : "Milk consumption"}
               </h2>
-              {activeSickSummary && isSelectedMilkToday && <p className="care-milk-total font-display text-[22px] font-semibold leading-6 tabular-nums text-warm-brown">{selectedMilkSummary.totalMl} <span className="text-sm font-normal text-muted">ml</span></p>}
+              {activeSickSummary && isSelectedMilkToday && <p className="care-milk-total glance-primary-value text-warm-brown">{selectedMilkSummary.totalMl} <span className="glance-value-unit text-muted">ml</span></p>}
               {!isSelectedMilkToday && <p className="mt-0.5 text-[11px] text-muted">{selectedMilkDateLabel}</p>}
             </div>
             <div className="-mt-2 flex shrink-0 gap-1">
@@ -1192,10 +1192,10 @@ export default function DashboardPage() {
 
           {!(activeSickSummary && isSelectedMilkToday) && <div className="milk-amounts mt-2 flex items-end justify-between gap-4">
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-2xl font-semibold tabular-nums text-warm-brown">
+              <span className="glance-primary-value text-warm-brown">
                 {selectedMilkSummary.totalMl}
               </span>
-              <span className="text-base text-warm-brown-light">ml</span>
+              <span className="glance-value-unit text-warm-brown-light">ml</span>
             </div>
             <div className="border-l border-border pl-4 text-right">
               <p className="text-xs text-muted">{activeSickSummary && isSelectedMilkToday ? "Usual daily" : "Expected"}</p>
@@ -1321,8 +1321,8 @@ export default function DashboardPage() {
 
         {/* Recent activity */}
         <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-medium text-warm-brown-light">Recent activity</h2>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="glance-card-title text-warm-brown-light">Recent activity</h2>
             <div className="flex items-center gap-2">
               {baby?.id && (
                 <a
@@ -1349,7 +1349,7 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
-          <div className="mb-3 space-y-3 rounded-lg border border-border bg-surface p-3">
+          <div className="mb-2 space-y-2 rounded-lg border border-border bg-surface p-2.5">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1397,7 +1397,7 @@ export default function DashboardPage() {
                   setSelectedMilkDate(todayDateKey);
                 }
               }}
-              className="mx-auto block min-h-8 px-3 text-[11px] text-muted underline decoration-border underline-offset-4 transition-colors hover:text-accent-strong"
+              className="mx-auto block min-h-7 px-3 text-[11px] text-muted underline decoration-border underline-offset-4 transition-colors hover:text-accent-strong"
             >
               {showHistory && !activityDateFilter ? "Back to today" : "All days"}
             </button>
@@ -1434,7 +1434,7 @@ export default function DashboardPage() {
               </fieldset>
             </details>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {(() => {
               const dateFilter = activityDateFilter || (!showHistory ? todayDateKey : "");
               const visible: TimelineActivity[] = filteredActivities.flatMap((activity) => {
@@ -1478,12 +1478,12 @@ export default function DashboardPage() {
                 return (
                   <div key={activity.id}>
                     {showDateHeader && (
-                      <p className="text-xs font-medium text-muted pt-3 pb-1 first:pt-0">
+                      <p className="pb-0.5 pt-2 text-xs font-medium text-muted first:pt-0">
                         {dateLabel}
                       </p>
                     )}
                     {showHourHeader && (
-                      <p className="pt-2 pb-1 font-display text-base text-accent-strong tabular-nums">
+                      <p className="pb-0.5 pt-1 font-display text-sm font-semibold tabular-nums text-accent-strong">
                         {hourKey}
                       </p>
                     )}
@@ -1495,29 +1495,35 @@ export default function DashboardPage() {
                           setLogType(activity.type);
                           setShowLogModal(true);
                         }}
-                        className="min-w-0 flex-1 rounded-lg p-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                        className="min-w-0 flex-1 rounded-lg px-2.5 py-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                       >
                         <div className="min-w-0">
-                          <p className="text-xs font-medium text-muted tabular-nums">
+                          <p className="text-xs font-semibold tabular-nums text-muted">
                             {formatTime(activity.started_at)} · {timeSince(activity.started_at)}
                           </p>
                           <div className={`mt-1 flex min-w-0 gap-2 ${activity.type === "note" ? "items-start" : "items-center"}`}>
                             <ActivityIcon aria-hidden="true" className={`h-5 w-5 shrink-0 text-accent-strong ${activity.type === "note" ? "mt-0.5" : ""}`} />
-                            <p className={activity.type === "note" ? "min-w-0 whitespace-pre-wrap break-words text-base font-semibold leading-relaxed text-warm-brown" : "truncate text-lg font-semibold text-warm-brown"}>{display.title}</p>
+                            <p className={activity.type === "note" ? "min-w-0 whitespace-pre-wrap break-words text-base font-semibold leading-snug text-warm-brown" : "truncate text-base font-semibold text-warm-brown"}>{display.title}</p>
                           </div>
-                          {display.subcategory && (
-                            <p className="mt-1 text-sm text-warm-brown-light">{display.subcategory}</p>
-                          )}
-                          {display.quantity && (
-                            <p className="mt-0.5 text-sm font-medium text-warm-brown tabular-nums">{display.quantity}</p>
+                          {(display.subcategory || display.quantity) && (
+                            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                              {display.subcategory && (
+                                <p className="text-sm text-warm-brown-light">{display.subcategory}</p>
+                              )}
+                              {display.quantity && (
+                                <p className="ml-auto text-sm font-medium tabular-nums text-warm-brown">
+                                  {display.quantity}
+                                </p>
+                              )}
+                            </div>
                           )}
                           {comment && (
-                            <p className="mt-2 border-l-2 border-terracotta/20 pl-2 text-xs leading-relaxed text-warm-brown-light">
+                            <p className="mt-1.5 border-l-2 border-terracotta/20 pl-2 text-xs leading-relaxed text-warm-brown-light">
                               {comment}
                             </p>
                           )}
                           {activity.created_by && (
-                            <p className="mt-2 text-xs text-muted">Entered by {activity.created_by}</p>
+                            <p className="mt-1.5 text-xs text-muted">Entered by {activity.created_by}</p>
                           )}
                         </div>
                       </button>
@@ -1538,7 +1544,7 @@ export default function DashboardPage() {
             {!isActivityFiltered && activities.length > 0 && !showHistory && (
               <button
                 onClick={() => setShowHistory(true)}
-                className="w-full py-3 text-sm text-accent-strong hover:text-warm-brown transition-colors"
+                className="w-full py-2 text-sm text-accent-strong transition-colors hover:text-warm-brown"
               >
                 View all activities
               </button>

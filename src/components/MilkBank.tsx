@@ -218,11 +218,11 @@ export function MilkBank({
     <section className={standalone ? "rounded-lg border border-border bg-surface p-3 shadow-sm" : "mt-4 border-t border-border pt-4"} aria-labelledby="milk-bank-title">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 id="milk-bank-title" className="text-sm font-semibold text-muted">Breastmilk bank</h3>
-          <p className="mt-1 flex items-baseline gap-1.5 text-warm-brown">
-            <span className="font-display text-3xl font-semibold tabular-nums">{roundMl(availableMl)}</span>
-            <span className="text-sm font-semibold">ml</span>
-            <span className="ml-1 rounded-full bg-terracotta/10 px-2 py-1 text-xs font-semibold text-accent-strong">Available</span>
+          <h3 id="milk-bank-title" className="glance-card-title text-muted">Breastmilk bank</h3>
+          <p className="mt-0.5 flex items-baseline gap-1.5 text-warm-brown">
+            <span className="glance-primary-value">{roundMl(availableMl)}</span>
+            <span className="glance-value-unit">ml</span>
+            <span className="ml-1 rounded-full bg-terracotta/10 px-2 py-0.5 text-xs font-semibold text-accent-strong">Available</span>
           </p>
         </div>
         <button
@@ -242,13 +242,13 @@ export function MilkBank({
         </div>
       )}
 
-      <div className="mt-4 overflow-hidden rounded-2xl border border-sky-200/80 bg-sky-50/60">
-        <div className="flex min-h-16 items-center justify-between gap-3 p-3">
-          <div className="flex items-center gap-2.5">
+      <div className="mt-3 overflow-hidden rounded-xl border border-sky-200/80 bg-sky-50/60">
+        <div className="flex min-h-14 items-center justify-between gap-3 px-3 py-2">
+          <div className="flex items-center gap-2">
             <Snowflake aria-hidden="true" className="h-5 w-5 text-sky-700" />
             <div>
               <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-sky-800">Frozen</span>
-              <p className="mt-0.5 font-display text-xl font-semibold tabular-nums leading-none text-sky-950">{roundMl(frozenMl)} ml</p>
+              <p className="glance-secondary-value text-sky-950">{roundMl(frozenMl)} <span className="glance-value-unit">ml</span></p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -260,7 +260,7 @@ export function MilkBank({
         </div>
 
         {showFreeze && (
-          <div className="mx-3 mb-3 rounded-xl bg-white/80 p-3">
+          <div className="mx-3 mb-2.5 rounded-lg bg-white/80 p-2.5">
             <label className="text-xs font-semibold text-sky-950">Amount from Available (ml)</label>
             <div className="mt-1.5 flex gap-2">
               <input type="number" min="0.01" step="any" inputMode="decimal" value={freezeAmount} onChange={(event) => setFreezeAmount(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-sky-200 bg-white px-3" />
@@ -269,16 +269,16 @@ export function MilkBank({
           </div>
         )}
 
-        <div id="frozen-bank-details" hidden={!showFrozenDetails} className="border-t border-sky-200/70 px-3 pb-3">
-          <details className="mt-3 rounded-xl bg-white/70 px-3 py-2" open={frozenPackets.length > 0}>
+        <div id="frozen-bank-details" hidden={!showFrozenDetails} className="border-t border-sky-200/70 px-2.5 pb-2.5">
+          <details className="mt-2 rounded-lg bg-white/70 px-2.5 py-1.5" open={frozenPackets.length > 0}>
             <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
               Packets · oldest first
               <ChevronDown aria-hidden="true" className="h-4 w-4" />
             </summary>
-            <div className="space-y-2 pb-1">
+            <div className="space-y-1.5 pb-1">
               {frozenPackets.length === 0 && <p className="py-2 text-xs text-muted">No frozen packets.</p>}
               {frozenPackets.map((packet) => (
-                <div key={packet.id} className="rounded-xl border border-sky-100 bg-white p-3">
+                <div key={packet.id} className="rounded-lg border border-sky-100 bg-white p-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold tabular-nums text-sky-950">{roundMl(packet.amountMl)} ml</p>
@@ -286,21 +286,21 @@ export function MilkBank({
                     </div>
                     {packet.isExpired && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">Expired</span>}
                   </div>
-                  <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
+                  <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
                     {packet.isExpired ? (
                       <button type="button" onClick={() => packetAction("discard", packet)} disabled={busy} className="min-h-9 rounded-xl bg-amber-700 px-3 text-sm font-semibold text-white disabled:opacity-50">Discard</button>
                     ) : (
                       <button type="button" aria-label={`Thaw ${packet.amountMl} ml packet`} onClick={() => packetAction("thaw", packet)} disabled={busy} className="min-h-9 rounded-xl bg-sky-800 px-3 text-sm font-semibold text-white disabled:opacity-50">Thaw whole</button>
                     )}
                     <button type="button" onClick={() => correctPacket(packet)} aria-label={`Edit ${packet.amountMl} ml packet`} title="Edit packet" className="flex min-h-9 min-w-8 items-center justify-center rounded-xl border border-sky-200 text-sky-900"><Pencil aria-hidden="true" className="h-4 w-4" /></button>
-                    <button type="button" onClick={() => removePacket(packet)} className="flex min-h-9 items-center justify-center rounded-xl border border-sky-200 text-sky-900" aria-label={`Delete ${packet.amountMl} ml packet`} title="Delete packet"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => removePacket(packet)} className="flex min-h-9 min-w-8 items-center justify-center rounded-xl border border-sky-200 text-sky-900" aria-label={`Delete ${packet.amountMl} ml packet`} title="Delete packet"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
                   </div>
                 </div>
               ))}
             </div>
           </details>
 
-          <details className="mt-2 rounded-xl bg-white/70 px-3 py-2">
+          <details className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-1.5">
             <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
               <span className="flex items-center gap-2"><PackagePlus aria-hidden="true" className="h-4 w-4" /> Reconcile frozen packets</span>
               <ChevronDown aria-hidden="true" className="h-4 w-4" />
@@ -319,11 +319,11 @@ export function MilkBank({
       </div>
 
       {availableBatches.length > 0 && (
-        <details className="mt-3 rounded-xl border border-border bg-cream px-3 py-2">
-          <summary className="min-h-9 cursor-pointer py-3 text-sm font-semibold text-warm-brown">Available batches</summary>
-          <div className="space-y-2 pb-2">
+        <details className="mt-2 rounded-lg border border-border bg-cream px-2.5 py-1">
+          <summary className="flex min-h-9 cursor-pointer items-center text-sm font-semibold text-warm-brown">Available batches</summary>
+          <div className="space-y-1.5 pb-1.5">
             {availableBatches.map((batch) => (
-              <div key={batch.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-sm">
+              <div key={batch.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-2.5 py-1.5 text-sm">
                 <div><p className="font-medium tabular-nums">{roundMl(batch.remainingMl)} ml</p><p className="text-xs text-muted">{batch.source === "thaw" ? "Thawed" : batch.source === "adjustment" ? "Adjustment" : "Pumped"} {singaporeDateTime(batch.addedAt ?? batch.pumpedAt ?? 0)}</p></div>
               </div>
             ))}
@@ -331,14 +331,14 @@ export function MilkBank({
         </details>
       )}
 
-      <details className="mt-3 rounded-xl border border-border px-3 py-2">
+      <details className="mt-2 rounded-lg border border-border px-2.5 py-1">
         <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-warm-brown">
           <span className="flex items-center gap-2"><History aria-hidden="true" className="h-4 w-4" /> Bank history</span>
           <ChevronDown aria-hidden="true" className="h-4 w-4" />
         </summary>
         <div className="divide-y divide-border">
           {[...history].sort((a, b) => b.at - a.at).map((item) => (
-            <div key={item.id} className="flex min-h-14 items-center gap-2 py-2 text-sm">
+            <div key={item.id} className="flex min-h-12 items-center gap-2 py-1.5 text-sm">
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-semibold tabular-nums">{roundMl(item.amountMl)} ml</span>
@@ -352,7 +352,7 @@ export function MilkBank({
               </div>
             </div>
           ))}
-          {history.length === 0 && <p className="py-3 text-xs text-muted">No bank transfers yet.</p>}
+          {history.length === 0 && <p className="py-2 text-xs text-muted">No bank transfers yet.</p>}
         </div>
       </details>
 

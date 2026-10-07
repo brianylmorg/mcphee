@@ -244,10 +244,6 @@ body header,
   gap: 4px;
   padding-left: 8px;
 }
-[data-care-overview="true"] .milk-amounts > div:first-child > span:first-child {
-  font-size: 22px;
-  line-height: 28px;
-}
 [data-care-overview="true"] .milk-breakdown {
   margin-top: 0;
   font-size: 11px;
@@ -353,6 +349,44 @@ body {
   background-color: var(--color-canvas);
   color: var(--color-warm-brown);
   font-family: "Instrument Sans", sans-serif;
+}
+
+/* Shared hierarchy for compact, at-a-glance cards. */
+.glance-card-title {
+  font-family: "Manrope", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: -0.01em;
+}
+
+.glance-primary-value,
+.glance-secondary-value {
+  font-family: "Manrope", sans-serif;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.025em;
+}
+
+.glance-primary-value {
+  font-size: 24px;
+  line-height: 28px;
+}
+
+[data-care-overview="true"] .glance-primary-value {
+  font-size: 22px;
+  line-height: 24px;
+}
+
+.glance-secondary-value {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+.glance-value-unit {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
 :is(button, a, input, textarea, select):focus-visible {
