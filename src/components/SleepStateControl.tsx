@@ -37,7 +37,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
     <div>
       <div
         data-state={state}
-        className={"relative overflow-hidden rounded-2xl border p-1.5 shadow-inner transition-[background-color,border-color,box-shadow] duration-700 motion-reduce:transition-none " + (state === "awake"
+        className={"relative overflow-hidden rounded-xl border p-1 shadow-inner transition-[background-color,border-color,box-shadow] duration-700 motion-reduce:transition-none " + (state === "awake"
           ? "border-amber-200/90 bg-gradient-to-br from-amber-50 via-orange-50/80 to-rose-50/70 shadow-amber-100/70"
           : "border-sky-300/70 bg-gradient-to-br from-slate-100 via-sky-50 to-indigo-100/70 shadow-sky-200/60")}
         aria-label="Sleep state"
@@ -63,13 +63,13 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                 onClick={() => {
                   if (!active) onSelect(optionState);
                 }}
-                className={"relative z-10 flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 py-2.5 font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none " + (active
+                className={"relative z-10 flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none " + (active
                   ? awake ? "text-amber-950" : "text-sky-50"
                   : state === "awake" ? "text-amber-950/55 hover:text-amber-950" : "text-slate-600 hover:text-slate-900") + " disabled:opacity-50"}
               >
                 <Icon
                   aria-hidden="true"
-                  className={"h-5 w-5 transition-[color,transform,filter] duration-500 ease-out motion-reduce:transition-none " + (active
+                  className={"h-4 w-4 transition-[color,transform,filter] duration-500 ease-out motion-reduce:transition-none " + (active
                     ? awake ? "rotate-12 scale-110 text-amber-500 drop-shadow-sm" : "-rotate-12 scale-110 text-sky-200 drop-shadow-sm"
                     : "scale-90 opacity-60")}
                 />
@@ -79,11 +79,11 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
           })}
         </div>
       </div>
-      <div className="mt-3 flex items-baseline justify-between gap-4" aria-live="polite">
-        <p className={"font-display text-2xl font-semibold transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
+      <div className="mt-2 flex items-baseline justify-between gap-4" aria-live="polite">
+        <p className={"font-display text-xl font-semibold transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
           {state === "awake" ? "Awake" : "Sleeping"}
         </p>
-        <p className={"font-display text-2xl font-semibold tabular-nums transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
+        <p className={"font-display text-xl font-semibold tabular-nums transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
           {displayedElapsed}
         </p>
       </div>

@@ -16,3 +16,10 @@ test("nap summary exposes its waiting state and accessible calculation details",
   assert.match(html, /aria-controls="[^"]+"/);
   assert.match(html, /hidden=""[^>]*>Singapore time:/);
 });
+
+test("nap summary can host an accessible inline sleep-start edit action", () => {
+  const html = renderToStaticMarkup(createElement(DailyNapSummary, { sessions: [], trailingAction: createElement("button", { type: "button", "aria-label": "Edit sleep start" }, "Edit") }));
+  assert.match(html, /aria-label="Edit sleep start"/);
+  assert.match(html, /How naps today is calculated/);
+  assert.match(html, />Naps today</);
+});

@@ -97,11 +97,11 @@ function MedicationFields({
             onChange={(event) => onChange({ ...draft, name: event.target.value })}
             list={`sick-medication-suggestions-${draft.key}`}
             placeholder="e.g. Paracetamol"
-            className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown outline-none focus:border-accent-strong"
+            className="mt-1 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown outline-none focus:border-accent-strong"
           />
         </label>
         {removable && onRemove && (
-          <button type="button" onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger">
+          <button type="button" onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger">
             <X aria-hidden="true" className="h-4 w-4" />
           </button>
         )}
@@ -112,7 +112,7 @@ function MedicationFields({
           value={draft.doseText}
           onChange={(event) => onChange({ ...draft, doseText: event.target.value })}
           placeholder="e.g. 3.5ml"
-          className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown outline-none focus:border-accent-strong"
+          className="mt-1 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base text-warm-brown outline-none focus:border-accent-strong"
         />
       </label>
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -125,7 +125,7 @@ function MedicationFields({
           <input type="number" min="0" step="0.5" inputMode="decimal" value={draft.maxIntervalHours} onChange={(event) => onChange({ ...draft, maxIntervalHours: event.target.value })} placeholder="6" className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base tabular-nums text-warm-brown outline-none focus:border-accent-strong" />
         </label>
       </div>
-      <label className="mt-3 flex min-h-11 items-center gap-2 text-sm text-warm-brown">
+      <label className="mt-3 flex min-h-9 items-center gap-2 text-sm text-warm-brown">
         <input type="checkbox" checked={draft.asNeeded} onChange={(event) => onChange({ ...draft, asNeeded: event.target.checked })} className="h-5 w-5 rounded border-border text-terracotta-dark" />
         As needed
       </label>
@@ -306,12 +306,12 @@ function DoseHistory({
             ? ` · Entered interval ${medication.minIntervalHours}–${medication.maxIntervalHours}h`
             : medication.minIntervalHours != null ? ` · Entered interval ${medication.minIntervalHours}h` : ""}
         </p>
-        <button type="button" disabled={busy} onClick={() => editingMedication ? setEditingMedication(false) : beginMedicationEdit()} className="min-h-11 shrink-0 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">{editingMedication ? "Cancel edit" : "Edit medication"}</button>
+        <button type="button" disabled={busy} onClick={() => editingMedication ? setEditingMedication(false) : beginMedicationEdit()} className="min-h-9 shrink-0 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">{editingMedication ? "Cancel edit" : "Edit medication"}</button>
       </div>
       {editingMedication && (
         <div className="mt-2 rounded-lg bg-cream/60 p-2">
           <MedicationFields draft={medicationDraft} onChange={setMedicationDraft} suggestions={[]} />
-          <button type="button" onClick={updateMedication} disabled={busy || !medicationDraft.name.trim() || !medicationDraft.doseText.trim()} className="mt-2 min-h-11 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication</button>
+          <button type="button" onClick={updateMedication} disabled={busy || !medicationDraft.name.trim() || !medicationDraft.doseText.trim()} className="mt-2 min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication</button>
         </div>
       )}
       {medication.latestDose && medication.minIntervalHours != null && (
@@ -323,7 +323,7 @@ function DoseHistory({
       <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
         <label className="text-xs font-medium text-warm-brown-light">Time given<input aria-label={`Time ${medication.name} was given`} type="datetime-local" value={givenAt} onChange={(event) => setGivenAt(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-warm-brown" /></label>
         <label className="text-xs font-medium text-warm-brown-light">Actual dose<input aria-label={`Dose of ${medication.name} given`} value={doseText} onChange={(event) => setDoseText(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-warm-brown" /></label>
-        <button type="button" disabled={busy || !doseText.trim()} onClick={submitDose} className="min-h-11 self-end rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Log</button>
+        <button type="button" disabled={busy || !doseText.trim()} onClick={submitDose} className="min-h-9 self-end rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Log</button>
       </div>
       {doses.length > 0 && (
         <div className="mt-3 space-y-2">
@@ -360,7 +360,7 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
     return (
       <div className="rounded-lg bg-cream/70 p-2">
         <div className="grid gap-2 sm:grid-cols-2"><input aria-label="Edit dose time" type="datetime-local" value={time} onChange={(event) => setTime(event.target.value)} className="min-h-11 rounded-lg border border-border bg-surface px-2 py-2 text-sm" /><input aria-label="Edit dose amount" value={text} onChange={(event) => setText(event.target.value)} className="min-h-11 rounded-lg border border-border bg-surface px-3 py-2 text-sm" /></div>
-        <div className="mt-2 flex gap-2"><button type="button" disabled={disabled} onClick={() => onSave(time, text, editRevision)} className="min-h-11 rounded-lg bg-terracotta-dark px-3 text-sm font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="min-h-11 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Cancel</button></div>
+        <div className="mt-2 flex gap-2"><button type="button" disabled={disabled} onClick={() => onSave(time, text, editRevision)} className="min-h-9 rounded-lg bg-terracotta-dark px-3 text-sm font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="min-h-9 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Cancel</button></div>
       </div>
     );
   }
@@ -368,8 +368,8 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
   return (
     <div className="flex items-center gap-2 rounded-lg bg-cream/70 px-3 py-1.5">
       <p className="min-w-0 flex-1 text-xs text-warm-brown"><span className="font-semibold tabular-nums">{formatDate(dose.givenAt)} · {formatTime(dose.givenAt)}</span> · {dose.doseText}{dose.givenBy && <span className="block break-words text-muted">Given by {dose.givenBy}</span>}</p>
-      <button type="button" disabled={disabled} onClick={beginEdit} className="min-h-11 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
-      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+      <button type="button" disabled={disabled} onClick={beginEdit} className="min-h-9 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
+      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
     </div>
   );
 }
@@ -380,16 +380,16 @@ function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onCha
   const [editRequest, setEditRequest] = useState(0);
   return (
     <div data-medication-row={medication.id} className="border-b border-border/70 last:border-b-0">
-      <div className="flex min-h-12 items-center gap-1">
+      <div className="flex min-h-9 items-center gap-1">
         <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
-          <button type="button" aria-label={`Log ${medication.name}`} disabled={busy || !onLog} onClick={() => onLog?.(medication.id)} className="min-h-11 min-w-0 max-w-full break-words text-left text-xs font-semibold leading-snug text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">{medication.name}</button>
+          <button type="button" aria-label={`Log ${medication.name}`} disabled={busy || !onLog} onClick={() => onLog?.(medication.id)} className="min-h-9 min-w-0 max-w-full break-words text-left text-xs font-semibold leading-snug text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">{medication.name}</button>
           {medication.asNeeded && <span className="whitespace-nowrap rounded-full bg-terracotta/10 px-1.5 py-0.5 text-[9px] font-semibold text-accent-strong">As needed</span>}
         </div>
-        <button type="button" aria-label={`Dose history for ${medication.name}`} aria-expanded={expanded} aria-controls={`medication-history-${medication.id}`} onClick={() => setExpanded(value => !value)} className="flex min-h-11 min-w-11 shrink-0 items-center gap-1 rounded-lg px-1 text-right text-[11px] text-muted hover:bg-surface-muted">
+        <button type="button" aria-label={`Dose history for ${medication.name}`} aria-expanded={expanded} aria-controls={`medication-history-${medication.id}`} onClick={() => setExpanded(value => !value)} className="flex min-h-9 min-w-8 shrink-0 items-center gap-1 rounded-lg px-1 text-right text-[11px] text-muted hover:bg-surface-muted">
           <span aria-label={latest ? `Last given ${formatTime(latest.givenAt)}, ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"} className="font-semibold tabular-nums">{latest ? `${formatTime(latest.givenAt).replace(/ hrs$/, "")} · ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"}</span>
           <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
-        <button type="button" aria-label={`Edit medication ${medication.name}`} title="Edit medication" disabled={busy} onClick={() => { setExpanded(true); setEditRequest(value => value + 1); }} className="flex h-12 w-11 shrink-0 items-center justify-center rounded-lg text-accent-strong hover:bg-surface-muted disabled:opacity-50"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+        <button type="button" aria-label={`Edit medication ${medication.name}`} title="Edit medication" disabled={busy} onClick={() => { setExpanded(true); setEditRequest(value => value + 1); }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-accent-strong hover:bg-surface-muted disabled:opacity-50"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
       </div>
       <div id={`medication-history-${medication.id}`} hidden={!expanded}><DoseHistory babyId={babyId} episodeId={episodeId} medication={medication} busy={busy} onBusy={onBusy} onChanged={onChanged} editRequest={editRequest} /></div>
     </div>
@@ -429,14 +429,14 @@ function EpisodeArchive({ babyId, data }: { babyId: string; data: SickModeRespon
 
   return (
     <details className="mt-4 border-t border-border/70 pt-2">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-warm-brown [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-warm-brown [&::-webkit-details-marker]:hidden">
         Past sick-mode episodes
         <ChevronDown aria-hidden="true" className="h-4 w-4 text-muted" />
       </summary>
       <div className="divide-y divide-border/60">
         {archived.map((episode) => (
           <div key={episode.id} className="py-1 text-xs leading-relaxed text-muted">
-            <button type="button" aria-expanded={selectedId === episode.id} onClick={() => void toggleEpisode(episode.id)} className="flex min-h-11 w-full items-center justify-between gap-3 py-2 text-left">
+            <button type="button" aria-expanded={selectedId === episode.id} onClick={() => void toggleEpisode(episode.id)} className="flex min-h-9 w-full items-center justify-between gap-3 py-2 text-left">
               <span><span className="font-semibold tabular-nums text-warm-brown">{formatDate(episode.startedAt)} · {formatTime(episode.startedAt)}</span><span className="block">Ended {episode.endedAt == null ? "—" : `${formatDate(episode.endedAt)} · ${formatTime(episode.endedAt)}`}</span></span>
               <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 transition-transform ${selectedId === episode.id ? "rotate-180" : ""}`} />
             </button>
@@ -599,7 +599,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
     if (!isStale) return <p role="status" className="text-sm text-muted">Loading sick-mode settings…</p>;
     return (
       <section className="rounded-lg border border-warning/30 bg-surface p-4 shadow-sm" aria-label="Sick mode could not load">
-        <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-warning">Couldn’t load sick-mode details. The rest of the dashboard is still available.</p></div><button type="button" onClick={() => void onRefresh()} className="min-h-11 shrink-0 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Retry</button></div>
+        <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-warning">Couldn’t load sick-mode details. The rest of the dashboard is still available.</p></div><button type="button" onClick={() => void onRefresh()} className="min-h-9 shrink-0 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Retry</button></div>
       </section>
     );
   }
@@ -607,7 +607,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
   if (!data.schemaReady) {
     return (
       <section className="rounded-lg border border-border bg-surface p-4 shadow-sm" aria-label="Sick mode unavailable">
-        <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-muted">Database setup is required before sick mode can be started.</p></div><button type="button" disabled className="min-h-11 shrink-0 rounded-lg border border-border px-3 text-sm font-semibold text-muted opacity-60">Start</button></div>
+        <div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-muted">Database setup is required before sick mode can be started.</p></div><button type="button" disabled className="min-h-9 shrink-0 rounded-lg border border-border px-3 text-sm font-semibold text-muted opacity-60">Start</button></div>
       </section>
     );
   }
@@ -618,7 +618,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
         {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-amber-50 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
         <div className="flex items-center justify-between gap-3">
           <div><h2 id="sick-mode-heading" className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-muted">Track fever, medication, feeds and pee in one place.</p></div>
-          <button type="button" disabled={isStale} onClick={() => { if (!showStart) { setStartedAtInput(sgtDateTimeInput()); setPreview(data.baselinePreview); setConfirmIncomplete(false); setManualBaseline(""); } setShowStart(value => !value); }} aria-expanded={showStart} className="min-h-11 shrink-0 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-sm font-semibold text-accent-strong disabled:opacity-50">{showStart ? "Cancel" : "Start"}</button>
+          <button type="button" disabled={isStale} onClick={() => { if (!showStart) { setStartedAtInput(sgtDateTimeInput()); setPreview(data.baselinePreview); setConfirmIncomplete(false); setManualBaseline(""); } setShowStart(value => !value); }} aria-expanded={showStart} className="min-h-9 shrink-0 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-sm font-semibold text-accent-strong disabled:opacity-50">{showStart ? "Cancel" : "Start"}</button>
         </div>
         {showStart && (
           <div className="mt-4 border-t border-border pt-4">
@@ -634,10 +634,10 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
               )}
             </div>
             <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between"><p className="text-sm font-semibold text-warm-brown">Medications</p><button type="button" onClick={() => setMedicationDrafts((items) => [...items, EMPTY_MEDICATION()])} className="inline-flex min-h-11 items-center gap-1 px-2 text-xs font-semibold text-accent-strong"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button></div>
+              <div className="flex items-center justify-between"><p className="text-sm font-semibold text-warm-brown">Medications</p><button type="button" onClick={() => setMedicationDrafts((items) => [...items, EMPTY_MEDICATION()])} className="inline-flex min-h-9 items-center gap-1 px-2 text-xs font-semibold text-accent-strong"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button></div>
               {medicationDrafts.map((draft, index) => <MedicationFields key={draft.key} draft={draft} suggestions={suggestions} removable={medicationDrafts.length > 1} onChange={(next) => setMedicationDrafts((items) => items.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => setMedicationDrafts((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}
             </div>
-            <button type="button" onClick={startSickMode} disabled={busy} className="mt-4 min-h-12 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Starting…" : "Start sick mode"}</button>
+            <button type="button" onClick={startSickMode} disabled={busy} className="mt-4 min-h-9 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Starting…" : "Start sick mode"}</button>
           </div>
         )}
         <EpisodeArchive babyId={babyId} data={data} />
@@ -654,7 +654,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
           <p className="mt-1 text-xs text-muted">Since {formatDate(activeEpisode.startedAt)} · {formatTime(activeEpisode.startedAt)}</p>
           <p className="mt-3 text-sm leading-relaxed text-warm-brown">The app stays in its care theme until you end this episode. Temperature, pee and medications remain on your dashboard.</p>
           <p className="mt-3 text-xs text-muted">Usual daily intake: {activeEpisode.baselineDailyMl} ml · 50% full-day threshold: {activeEpisode.baselineDailyMl / 2} ml</p>
-          <button type="button" onClick={endSickMode} disabled={busy || isStale} className="mt-4 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-warm-brown disabled:opacity-50">End mode</button>
+          <button type="button" onClick={endSickMode} disabled={busy || isStale} className="mt-4 min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-warm-brown disabled:opacity-50">End mode</button>
         </div>
         <EpisodeArchive babyId={babyId} data={data} />
       </section>
@@ -676,25 +676,25 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <div className="rounded-lg bg-cream/70 p-3">
-          <button type="button" aria-label="Log temperature" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("temperature")} className="flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50"><Thermometer aria-hidden="true" className="h-4 w-4" />Temperature</button>
+          <button type="button" aria-label="Log temperature" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("temperature")} className="flex min-h-9 items-center gap-2 text-sm font-semibold text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50"><Thermometer aria-hidden="true" className="h-4 w-4" />Temperature</button>
           {temperature ? <><p className="mt-2 text-lg font-semibold tabular-nums text-warm-brown">{temperature.celsius} °C</p><p className={`mt-0.5 text-xs tabular-nums ${temperatureOverdue ? "font-semibold text-danger" : "text-muted"}`}>Last measured {temperatureElapsed}{temperatureOverdue ? " · Overdue" : ""}</p>{temperature.method && <p className="mt-0.5 text-xs capitalize text-muted">{temperature.method}</p>}</> : <p className="mt-2 text-xs font-medium text-danger">No temperature recorded</p>}
         </div>
         <div className="rounded-lg bg-cream/70 p-3">
-          <button type="button" aria-label="Log diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50"><Droplets aria-hidden="true" className="h-4 w-4" />Pee logged today</button>
+          <button type="button" aria-label="Log diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="flex min-h-9 items-center gap-2 text-sm font-semibold text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50"><Droplets aria-hidden="true" className="h-4 w-4" />Pee logged today</button>
           <p className="mt-2 text-sm tabular-nums text-warm-brown">{summary?.peeUnitsToday ?? 0} units · {summary?.wetDiaperCountToday ?? 0} wet diapers</p>
           <p className="mt-0.5 text-xs text-muted">{summary?.lastWetAt ? `Last wet diaper logged ${formatElapsedSince(summary.lastWetAt, now)}` : "No wet diaper logged today"}</p>
         </div>
       </div>
 
       <div className="mt-4 border-t border-border/70 pt-3">
-        <button type="button" aria-label="Log a new diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="min-h-11 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">Latest diapers</button>
+        <button type="button" aria-label="Log a new diaper" disabled={busy || isStale || !onLogActivity} onClick={() => onLogActivity?.("diaper")} className="min-h-9 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">Latest diapers</button>
         {latestDiapers.length > 0 ? <div className="mt-1.5 divide-y divide-border/60">{latestDiapers.map((diaper) => <div key={diaper.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5 text-xs"><span className="font-semibold tabular-nums text-warm-brown">{formatTime(diaper.startedAt)} · {formatElapsedSince(diaper.startedAt, now)}</span><span className="text-muted">{diaper.peeUnits == null ? "Pee not recorded" : diaper.peeUnits > 0 ? `${diaper.peeUnits} pee ${diaper.peeUnits === 1 ? "unit" : "units"}` : "No pee"}{diaper.poop && diaper.poop !== "no" ? ` · Poo ${diaper.poop}` : ""}</span></div>)}</div> : <p className="mt-1 text-xs text-muted">No diapers logged yet.</p>}
       </div>
 
       <div className="mt-4 border-t border-border/70 pt-3">
-        <div className="flex items-center justify-between gap-3"><button type="button" aria-label="Log medication" disabled={busy || isStale || !onLogMedication} onClick={() => onLogMedication?.()} className="min-h-11 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">Medications</button><button type="button" aria-label="Add medication prescription" disabled={busy || isStale} onClick={() => setShowAddMedication((value) => !value)} className="inline-flex min-h-11 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add</button></div>
+        <div className="flex items-center justify-between gap-3"><button type="button" aria-label="Log medication" disabled={busy || isStale || !onLogMedication} onClick={() => onLogMedication?.()} className="min-h-9 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline decoration-accent-strong/30 underline-offset-4 hover:decoration-accent-strong disabled:opacity-50">Medications</button><button type="button" aria-label="Add medication prescription" disabled={busy || isStale} onClick={() => setShowAddMedication((value) => !value)} className="inline-flex min-h-9 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add</button></div>
         {data.medications.length > 0 ? <div>{data.medications.map((medication) => <MedicationRow key={medication.id} babyId={babyId} episodeId={activeEpisode.id} medication={medication} now={now} busy={busy || isStale} onBusy={setBusy} onChanged={onRefresh} onLog={onLogMedication} />)}</div> : <p className="mt-1 text-xs text-muted">No medications added.</p>}
-        {showAddMedication && <div className="mt-3 space-y-3">{medicationDrafts.map((draft, index) => <MedicationFields key={draft.key} draft={draft} onChange={(next) => setMedicationDrafts((items) => items.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => setMedicationDrafts((items) => items.filter((_, itemIndex) => itemIndex !== index))} removable={medicationDrafts.length > 1} suggestions={suggestions} />)}<button type="button" onClick={() => setMedicationDrafts((items) => [...items, EMPTY_MEDICATION()])} className="inline-flex min-h-11 items-center gap-1 px-2 text-xs font-semibold text-accent-strong"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button><div className="flex flex-wrap gap-2"><button type="button" onClick={addMedication} disabled={busy || medicationDrafts.some((draft) => !draft.name.trim() || !draft.doseText.trim())} className="min-h-11 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication{medicationDrafts.length === 1 ? "" : "s"}</button><button type="button" onClick={() => setShowAddMedication(false)} className="min-h-11 rounded-lg border border-border px-4 text-sm font-semibold text-warm-brown">Cancel</button></div></div>}
+        {showAddMedication && <div className="mt-3 space-y-3">{medicationDrafts.map((draft, index) => <MedicationFields key={draft.key} draft={draft} onChange={(next) => setMedicationDrafts((items) => items.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => setMedicationDrafts((items) => items.filter((_, itemIndex) => itemIndex !== index))} removable={medicationDrafts.length > 1} suggestions={suggestions} />)}<button type="button" onClick={() => setMedicationDrafts((items) => [...items, EMPTY_MEDICATION()])} className="inline-flex min-h-9 items-center gap-1 px-2 text-xs font-semibold text-accent-strong"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button><div className="flex flex-wrap gap-2"><button type="button" onClick={addMedication} disabled={busy || medicationDrafts.some((draft) => !draft.name.trim() || !draft.doseText.trim())} className="min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication{medicationDrafts.length === 1 ? "" : "s"}</button><button type="button" onClick={() => setShowAddMedication(false)} className="min-h-9 rounded-lg border border-border px-4 text-sm font-semibold text-warm-brown">Cancel</button></div></div>}
       </div>
 
       {summary?.lastCompletedDayConcern && <p className="mt-4 rounded-lg border border-danger/20 bg-red-50 px-3 py-2 text-xs leading-relaxed text-danger">On {summary.lastCompletedDayConcern.date}, {summary.lastCompletedDayConcern.totalMl} ml was logged—below the episode’s {summary.lastCompletedDayConcern.thresholdMl} ml 50% full-day intake threshold.</p>}

@@ -82,7 +82,7 @@ export default function CareModeTheme({ initialHouseholdId, initialBabyId, initi
 
   if (!active) return null;
   return (
-    <div role="status" className="care-mode-strip flex min-h-8 items-center justify-center gap-2 border-b border-border bg-surface-muted px-4 py-1 text-[11px] font-semibold tracking-wide text-accent-strong">
+    <div role="status" className="care-mode-strip flex min-h-6 items-center justify-center gap-2 border-b border-border bg-surface-muted px-4 py-0.5 text-[10px] font-semibold tracking-wide text-accent-strong">
       <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
       <span>Sick mode active</span>
       <span aria-hidden="true" className="font-normal opacity-70">·</span>

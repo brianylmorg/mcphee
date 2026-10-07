@@ -44,8 +44,18 @@ html[data-care-mode="sick"] {
   --rgb-info: 53 107 118;
 }
 
-/* A deeper blue anchor distinguishes sleep status from the pale care canvas. */
-html[data-care-mode="sick"] .sleep-status-card {
+.sleep-status-card[data-sleep-state="awake"] {
+  background-color: rgb(253 241 204);
+  border-color: rgb(237 211 146);
+}
+
+html[data-care-mode="sick"] .sleep-status-card[data-sleep-state="awake"] {
+  background-color: rgb(250 232 178);
+  border-color: rgb(227 197 120);
+}
+
+/* Sleep/awake colors indicate state, never clinical severity. */
+html[data-care-mode="sick"] .sleep-status-card[data-sleep-state="sleeping"] {
   background-color: rgb(204 225 232);
   border-color: rgb(150 191 203);
 }

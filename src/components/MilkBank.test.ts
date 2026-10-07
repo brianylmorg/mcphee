@@ -35,3 +35,11 @@ test("milk bank separates Available and Frozen and blocks thaw for expired packe
   assert.match(html, /Bank history/);
   assert.match(html, /aria-label="Delete Freeze transfer"/);
 });
+
+test("standalone milk bank keeps its balances and actions in a separate dashboard card", () => {
+  const html = renderToStaticMarkup(createElement(MilkBank, { standalone: true, babyId: "baby-1", availableMl: 120, availableBatches: [], frozenMl: 0, frozenPackets: [], history: [], onChanged: async () => undefined }));
+  assert.match(html, /<section class="rounded-lg border border-border bg-surface p-3 shadow-sm" aria-labelledby="milk-bank-title"/);
+  assert.match(html, />120<\/span>/);
+  assert.match(html, /Reconcile Available milk/);
+  assert.match(html, /Show frozen milk details/);
+});

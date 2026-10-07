@@ -40,10 +40,10 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
   const todayDateKey = sgtDateKey(now);
 
   return (
-    <div className="mt-3 border-t border-border/70 pt-3" aria-label="Recent bottle feeds">
+    <div className="mt-2 border-t border-border/70 pt-2" aria-label="Recent bottle feeds">
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Latest feeds</p>
       {feeds.length > 0 ? (
-        <div className="mt-1.5 divide-y divide-border/60">
+        <div className="mt-1 divide-y divide-border/60 pr-12 sm:pr-0">
           {feeds.map((feed) => {
             const when = sgtDateKey(feed.startedAt) === todayDateKey
               ? formatTime(feed.startedAt)
@@ -51,12 +51,12 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
             const elapsed = formatElapsedSince(feed.startedAt, now);
 
             return (
-              <div key={feed.id} className="flex items-baseline justify-between gap-3 py-1.5 first:pt-0 last:pb-0">
+              <div key={feed.id} className="flex items-baseline justify-between gap-3 py-1 first:pt-0 last:pb-0">
                 <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs">
                   <span className="font-semibold tabular-nums text-warm-brown">{when}</span>
                   <span className="font-semibold tabular-nums text-muted">{elapsed}</span>
                 </span>
-                <span className="shrink-0 whitespace-nowrap text-sm tabular-nums text-warm-brown">{feed.amountMl} ml consumed</span>
+                <span aria-label={`${feed.amountMl} ml consumed`} className="shrink-0 whitespace-nowrap text-xs tabular-nums text-warm-brown">{feed.amountMl} ml</span>
               </div>
             );
           })}

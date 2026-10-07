@@ -6,6 +6,7 @@ import { ChevronDown, History, PackagePlus, Pencil, Scale, Snowflake, Trash2 } f
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
 
 type MilkBankProps = {
+  standalone?: boolean;
   babyId: string;
   availableMl: number;
   availableBatches: Array<AvailableMilkBatch & { pumpedAt?: number; isAdjustment?: boolean }>;
@@ -40,6 +41,7 @@ function fromSingaporeInput(value: string): number {
 }
 
 export function MilkBank({
+  standalone = false,
   babyId,
   availableMl,
   availableBatches,
@@ -213,7 +215,7 @@ export function MilkBank({
   };
 
   return (
-    <section className="mt-4 border-t border-border pt-4" aria-labelledby="milk-bank-title">
+    <section className={standalone ? "rounded-lg border border-border bg-surface p-3 shadow-sm" : "mt-4 border-t border-border pt-4"} aria-labelledby="milk-bank-title">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id="milk-bank-title" className="text-sm font-semibold text-muted">Breastmilk bank</h3>
@@ -227,7 +229,7 @@ export function MilkBank({
           type="button"
           onClick={() => { setReconcileAvailable(String(availableMl)); setShowAvailableReconcile((shown) => !shown); }}
           aria-label="Reconcile Available milk"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted"
         >
           <Scale aria-hidden="true" className="h-4 w-4" />
         </button>
@@ -236,7 +238,7 @@ export function MilkBank({
       {showAvailableReconcile && (
         <div className="mt-3 flex gap-2">
           <input aria-label="Actual Available milk in ml" type="number" min="0" step="any" value={reconcileAvailable} onChange={(event) => setReconcileAvailable(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3" />
-          <button type="button" onClick={setAvailable} disabled={busy} className="min-h-11 rounded-xl bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Set</button>
+          <button type="button" onClick={setAvailable} disabled={busy} className="min-h-9 rounded-xl bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Set</button>
         </div>
       )}
 
@@ -250,8 +252,8 @@ export function MilkBank({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <button type="button" onClick={() => setShowFreeze((shown) => !shown)} className="min-h-11 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white hover:bg-sky-900">Freeze</button>
-            <button type="button" onClick={() => setShowFrozenDetails((shown) => !shown)} aria-expanded={showFrozenDetails} aria-controls="frozen-bank-details" aria-label={showFrozenDetails ? "Hide frozen milk details" : "Show frozen milk details"} className="flex h-11 w-11 items-center justify-center rounded-xl text-sky-800 hover:bg-sky-100">
+            <button type="button" onClick={() => setShowFreeze((shown) => !shown)} className="min-h-9 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white hover:bg-sky-900">Freeze</button>
+            <button type="button" onClick={() => setShowFrozenDetails((shown) => !shown)} aria-expanded={showFrozenDetails} aria-controls="frozen-bank-details" aria-label={showFrozenDetails ? "Hide frozen milk details" : "Show frozen milk details"} className="flex h-8 w-8 items-center justify-center rounded-xl text-sky-800 hover:bg-sky-100">
               <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform ${showFrozenDetails ? "rotate-180" : ""}`} />
             </button>
           </div>
@@ -262,14 +264,14 @@ export function MilkBank({
             <label className="text-xs font-semibold text-sky-950">Amount from Available (ml)</label>
             <div className="mt-1.5 flex gap-2">
               <input type="number" min="0.01" step="any" inputMode="decimal" value={freezeAmount} onChange={(event) => setFreezeAmount(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-sky-200 bg-white px-3" />
-              <button type="button" onClick={freeze} disabled={busy} className="min-h-11 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white disabled:opacity-50">Freeze</button>
+              <button type="button" onClick={freeze} disabled={busy} className="min-h-9 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white disabled:opacity-50">Freeze</button>
             </div>
           </div>
         )}
 
         <div id="frozen-bank-details" hidden={!showFrozenDetails} className="border-t border-sky-200/70 px-3 pb-3">
           <details className="mt-3 rounded-xl bg-white/70 px-3 py-2" open={frozenPackets.length > 0}>
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
+            <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
               Packets · oldest first
               <ChevronDown aria-hidden="true" className="h-4 w-4" />
             </summary>
@@ -286,12 +288,12 @@ export function MilkBank({
                   </div>
                   <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2">
                     {packet.isExpired ? (
-                      <button type="button" onClick={() => packetAction("discard", packet)} disabled={busy} className="min-h-11 rounded-xl bg-amber-700 px-3 text-sm font-semibold text-white disabled:opacity-50">Discard</button>
+                      <button type="button" onClick={() => packetAction("discard", packet)} disabled={busy} className="min-h-9 rounded-xl bg-amber-700 px-3 text-sm font-semibold text-white disabled:opacity-50">Discard</button>
                     ) : (
-                      <button type="button" aria-label={`Thaw ${packet.amountMl} ml packet`} onClick={() => packetAction("thaw", packet)} disabled={busy} className="min-h-11 rounded-xl bg-sky-800 px-3 text-sm font-semibold text-white disabled:opacity-50">Thaw whole</button>
+                      <button type="button" aria-label={`Thaw ${packet.amountMl} ml packet`} onClick={() => packetAction("thaw", packet)} disabled={busy} className="min-h-9 rounded-xl bg-sky-800 px-3 text-sm font-semibold text-white disabled:opacity-50">Thaw whole</button>
                     )}
-                    <button type="button" onClick={() => correctPacket(packet)} aria-label={`Edit ${packet.amountMl} ml packet`} title="Edit packet" className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-sky-200 text-sky-900"><Pencil aria-hidden="true" className="h-4 w-4" /></button>
-                    <button type="button" onClick={() => removePacket(packet)} className="flex min-h-11 items-center justify-center rounded-xl border border-sky-200 text-sky-900" aria-label={`Delete ${packet.amountMl} ml packet`} title="Delete packet"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => correctPacket(packet)} aria-label={`Edit ${packet.amountMl} ml packet`} title="Edit packet" className="flex min-h-9 min-w-8 items-center justify-center rounded-xl border border-sky-200 text-sky-900"><Pencil aria-hidden="true" className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => removePacket(packet)} className="flex min-h-9 items-center justify-center rounded-xl border border-sky-200 text-sky-900" aria-label={`Delete ${packet.amountMl} ml packet`} title="Delete packet"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
                   </div>
                 </div>
               ))}
@@ -299,17 +301,17 @@ export function MilkBank({
           </details>
 
           <details className="mt-2 rounded-xl bg-white/70 px-3 py-2">
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
+            <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
               <span className="flex items-center gap-2"><PackagePlus aria-hidden="true" className="h-4 w-4" /> Reconcile frozen packets</span>
               <ChevronDown aria-hidden="true" className="h-4 w-4" />
             </summary>
             <p className="text-xs text-muted">Add a missing physical packet. Correct or remove existing packets above; no opaque Frozen total adjustment is created.</p>
-            <button type="button" onClick={() => setShowPacketAdd((shown) => !shown)} className="mt-2 min-h-11 w-full rounded-xl border border-sky-200 text-sm font-semibold text-sky-900">Add packet</button>
+            <button type="button" onClick={() => setShowPacketAdd((shown) => !shown)} className="mt-2 min-h-9 w-full rounded-xl border border-sky-200 text-sm font-semibold text-sky-900">Add packet</button>
             {showPacketAdd && (
               <div className="mt-2 grid gap-2">
                 <input aria-label="Frozen packet amount in ml" type="number" min="0.01" step="any" value={packetAmount} onChange={(event) => setPacketAmount(event.target.value)} className="min-h-11 rounded-xl border border-sky-200 bg-white px-3" placeholder="Amount (ml)" />
                 <input aria-label="Frozen packet recorded time" type="datetime-local" value={packetDate} onChange={(event) => setPacketDate(event.target.value)} className="min-h-11 rounded-xl border border-sky-200 bg-white px-3" />
-                <button type="button" onClick={addPacket} disabled={busy} className="min-h-11 rounded-xl bg-sky-800 text-sm font-semibold text-white disabled:opacity-50">Add frozen packet</button>
+                <button type="button" onClick={addPacket} disabled={busy} className="min-h-9 rounded-xl bg-sky-800 text-sm font-semibold text-white disabled:opacity-50">Add frozen packet</button>
               </div>
             )}
           </details>
@@ -318,7 +320,7 @@ export function MilkBank({
 
       {availableBatches.length > 0 && (
         <details className="mt-3 rounded-xl border border-border bg-cream px-3 py-2">
-          <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-warm-brown">Available batches</summary>
+          <summary className="min-h-9 cursor-pointer py-3 text-sm font-semibold text-warm-brown">Available batches</summary>
           <div className="space-y-2 pb-2">
             {availableBatches.map((batch) => (
               <div key={batch.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface px-3 py-2 text-sm">
@@ -330,7 +332,7 @@ export function MilkBank({
       )}
 
       <details className="mt-3 rounded-xl border border-border px-3 py-2">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-semibold text-warm-brown">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-warm-brown">
           <span className="flex items-center gap-2"><History aria-hidden="true" className="h-4 w-4" /> Bank history</span>
           <ChevronDown aria-hidden="true" className="h-4 w-4" />
         </summary>
@@ -345,8 +347,8 @@ export function MilkBank({
                 <time className="mt-0.5 block text-xs text-muted">{singaporeDateTime(item.at)}</time>
               </div>
               <div className="flex shrink-0 items-center">
-                <button type="button" onClick={() => setEditTransfer({ ...item, localTime: toSingaporeInput(item.at)})} className="flex h-11 w-11 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted" aria-label={"Edit " + item.eventType + " transfer"}><Pencil aria-hidden="true" className="h-4 w-4" /></button>
-                <button type="button" onClick={() => deleteTransfer(item)} disabled={busy} className="flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50" aria-label={"Delete " + item.eventType + " transfer"}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                <button type="button" onClick={() => setEditTransfer({ ...item, localTime: toSingaporeInput(item.at)})} className="flex h-8 w-8 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted" aria-label={"Edit " + item.eventType + " transfer"}><Pencil aria-hidden="true" className="h-4 w-4" /></button>
+                <button type="button" onClick={() => deleteTransfer(item)} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50" aria-label={"Delete " + item.eventType + " transfer"}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
               </div>
             </div>
           ))}
@@ -362,8 +364,8 @@ export function MilkBank({
             <input aria-label="Transfer date and time" type="datetime-local" value={editTransfer.localTime} onChange={(event) => setEditTransfer({ ...editTransfer, localTime: event.target.value })} className="min-h-11 rounded-xl border border-border bg-surface px-3" />
           </div>
           <div className="mt-2 flex gap-2">
-            <button type="button" onClick={() => setEditTransfer(null)} className="min-h-11 flex-1 rounded-xl border border-border text-sm font-semibold">Cancel</button>
-            <button type="button" onClick={saveTransfer} disabled={busy} className="min-h-11 flex-1 rounded-xl bg-terracotta-dark text-sm font-semibold text-white disabled:opacity-50">Save</button>
+            <button type="button" onClick={() => setEditTransfer(null)} className="min-h-9 flex-1 rounded-xl border border-border text-sm font-semibold">Cancel</button>
+            <button type="button" onClick={saveTransfer} disabled={busy} className="min-h-9 flex-1 rounded-xl bg-terracotta-dark text-sm font-semibold text-white disabled:opacity-50">Save</button>
           </div>
           <p className="mt-2 text-xs text-muted">Freeze expiry is recalculated from the corrected Singapore date. Impossible later balances or packet states are rejected.</p>
         </div>

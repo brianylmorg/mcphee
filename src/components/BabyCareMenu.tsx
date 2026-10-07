@@ -9,9 +9,9 @@ export default function BabyCareMenu({ name, active, children }: { name: string;
   const triggerRef = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <h1 className="min-w-0 font-display text-2xl text-accent-strong">
-        <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-label={`Baby settings for ${name}`} onClick={() => dialogRef.current?.showModal()} className="inline-flex min-h-11 max-w-full items-center justify-center gap-2 rounded-lg px-2 transition-colors hover:bg-surface-muted">
-          <Image src="/icon.svg" alt="" width={36} height={40} priority className="h-9 w-8 shrink-0 object-contain" />
+      <h1 className="min-w-0 font-display text-xl text-accent-strong">
+        <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-label={`Baby settings for ${name}`} onClick={() => dialogRef.current?.showModal()} className="inline-flex min-h-9 max-w-full items-center justify-center gap-2 rounded-lg px-2 transition-colors hover:bg-surface-muted">
+          <Image src="/icon.svg" alt="" width={36} height={40} priority className="h-8 w-7 shrink-0 object-contain" />
           <span className="min-w-0 truncate">{name}</span>
           <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted" />
         </button>

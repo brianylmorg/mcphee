@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Info } from "lucide-react";
 import { calculateDailyNaps, type DailyNapSession } from "@/lib/daily-naps";
 import { formatElapsedDuration } from "@/lib/elapsed-time";
 
 const TICK_MS = 30 * 1000;
 
-export function DailyNapSummary({ sessions }: { sessions: readonly DailyNapSession[] }) {
+export function DailyNapSummary({ sessions, trailingAction }: { sessions: readonly DailyNapSession[]; trailingAction?: ReactNode }) {
   const [now, setNow] = useState(() => Date.now());
   const [showInfo, setShowInfo] = useState(false);
   const infoId = useId();
@@ -31,11 +31,11 @@ export function DailyNapSummary({ sessions }: { sessions: readonly DailyNapSessi
   const summary = calculateDailyNaps(sessions, now);
 
   return (
-    <div className="mt-3 border-t border-current/10 pt-2">
-      <div className="flex min-h-11 items-center justify-between gap-3" aria-live="polite">
+    <div className="mt-1 border-t border-current/10 pt-1">
+      <div className="flex min-h-8 items-center justify-between gap-3" aria-live="polite">
         <div className="flex min-w-0 items-center">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-warm-brown">Naps today</p>
+            <p className="text-xs font-semibold text-warm-brown">Naps today</p>
             {summary.waitingForMorningWake && (
               <p className="truncate text-[11px] text-muted">Waiting for morning wake</p>
             )}
@@ -46,14 +46,15 @@ export function DailyNapSummary({ sessions }: { sessions: readonly DailyNapSessi
             aria-expanded={showInfo}
             aria-controls={infoId}
             onClick={() => setShowInfo((current) => !current)}
-            className="ml-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/60 hover:text-warm-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong/60"
+            className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/60 hover:text-warm-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong/60"
           >
             <Info aria-hidden="true" className="h-3.5 w-3.5" />
           </button>
         </div>
-        <p className="shrink-0 text-sm font-semibold tabular-nums text-warm-brown">
-          {formatElapsedDuration(summary.totalMs) ?? "0h 0m"}
-        </p>
+        <div className="flex shrink-0 items-center gap-1">
+          <p className="text-xs font-semibold tabular-nums text-warm-brown">{formatElapsedDuration(summary.totalMs) ?? "0h 0m"}</p>
+          {trailingAction}
+        </div>
       </div>
       <p
         id={infoId}
