@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
-import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { parseActivityDetails } from "@/lib/milk-volumes";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { MilkLedgerError, replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
+import { readActivityTimeline, TIMELINE_TYPES } from "@/lib/activity-timeline";
 
 export const runtime = "nodejs";
 
@@ -100,55 +100,23 @@ export async function GET(request: NextRequest) {
       ? Math.max(1, Math.min(500, Math.floor(requestedLimit)))
       : 50;
 
-    if (types.some((type) => !VALID_TYPES.has(type))) {
+    if (types.some((type) => !TIMELINE_TYPES.has(type))) {
       return NextResponse.json({ error: "Invalid activity type" }, { status: 400 });
     }
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
     }
 
-    let sql = `
-      SELECT a.*, b.name as baby_name
-      FROM activities a
-      JOIN babies b ON a.baby_id = b.id
-      WHERE b.household_id = ?
-        AND a.type NOT IN ('bankfreeze', 'bankthaw', 'bankdiscard')
-    `;
-    const args: Array<string | number> = [householdId];
-
-    if (babyId) {
-      sql += " AND a.baby_id = ?";
-      args.push(babyId);
-    }
-    if (types.length > 0) {
-      sql += ` AND a.type IN (${types.map(() => "?").join(", ")})`;
-      args.push(...types);
-    }
     if (date) {
       const dayStart = Date.parse(date + "T00:00:00+08:00");
       if (!Number.isFinite(dayStart)) {
         return NextResponse.json({ error: "Invalid date" }, { status: 400 });
       }
-      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-      sql += " AND ((a.started_at >= ? AND a.started_at < ?) OR (a.type = 'sleep' AND a.ended_at >= ? AND a.ended_at < ?))";
-      args.push(dayStart, dayEnd, dayStart, dayEnd);
     }
-
-    sql += " ORDER BY a.started_at DESC";
-    if (!unlimited) {
-      sql += " LIMIT ?";
-      args.push(limit);
-    }
-
-    const [result, users] = await db.batch([
-      { sql, args },
-      { sql: "SELECT name FROM users WHERE household_id = ?", args: [householdId] },
-    ], "read");
-    const normalizedActivities = normalizeActivityCreators(
-      result.rows as unknown as Array<Record<string, unknown> & { created_by?: unknown }>,
-      users.rows as unknown as Array<{ name?: unknown }>,
-    );
-    return NextResponse.json({ activities: normalizedActivities });
+    const activities = await readActivityTimeline(db, householdId, {
+      babyId, types, date, limit: unlimited ? null : limit,
+    });
+    return NextResponse.json({ activities }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
   } catch (error) {
     console.error("Activities API error:", error);
     return NextResponse.json(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, History, PackagePlus, Pencil, Scale, Snowflake, Trash2 } from "lucide-react";
 
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
@@ -14,6 +14,13 @@ type MilkBankProps = {
   frozenPackets: FrozenMilkPacket[];
   history: MilkBankHistoryItem[];
   onChanged: () => Promise<void>;
+  /**
+   * One-shot request from the activity diary to open the existing transfer
+   * editor for a bank record. The nonce distinguishes repeat requests for the
+   * same id so each tap is handled once; a background history refresh never
+   * overwrites an in-progress edit draft.
+   */
+  historyEditRequest?: { id: string; nonce: number } | null;
 };
 
 type EditTransfer = MilkBankHistoryItem & { localTime: string };
@@ -49,6 +56,7 @@ export function MilkBank({
   frozenPackets,
   history,
   onChanged,
+  historyEditRequest = null,
 }: MilkBankProps) {
   const [freezeAmount, setFreezeAmount] = useState("");
   const [showFreeze, setShowFreeze] = useState(false);
@@ -61,6 +69,26 @@ export function MilkBank({
   const [editTransfer, setEditTransfer] = useState<EditTransfer | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const historyDetailsRef = useRef<HTMLDetailsElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const handledHistoryRequestRef = useRef<number | null>(null);
+  const scrollToEditorRef = useRef(false);
+
+  useEffect(() => {
+    if (!historyEditRequest || historyEditRequest.nonce === handledHistoryRequestRef.current) return;
+    const item = history.find((entry) => entry.id === historyEditRequest.id);
+    if (!item) return;
+    handledHistoryRequestRef.current = historyEditRequest.nonce;
+    setEditTransfer({ ...item, localTime: toSingaporeInput(item.at) });
+    scrollToEditorRef.current = true;
+    if (historyDetailsRef.current) historyDetailsRef.current.open = true;
+  }, [historyEditRequest, history]);
+
+  useEffect(() => {
+    if (!scrollToEditorRef.current || !editTransfer) return;
+    scrollToEditorRef.current = false;
+    editorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [editTransfer]);
 
   const sendBankCommand = async (payload: Record<string, unknown>) => {
     const response = await fetch("/api/milk-bank", {
@@ -331,7 +359,7 @@ export function MilkBank({
         </details>
       )}
 
-      <details className="mt-2 rounded-lg border border-border px-2.5 py-1">
+      <details ref={historyDetailsRef} className="mt-2 rounded-lg border border-border px-2.5 py-1">
         <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-warm-brown">
           <span className="flex items-center gap-2"><History aria-hidden="true" className="h-4 w-4" /> Bank history</span>
           <ChevronDown aria-hidden="true" className="h-4 w-4" />
@@ -357,7 +385,7 @@ export function MilkBank({
       </details>
 
       {editTransfer && (
-        <div className="mt-3 rounded-2xl border border-terracotta/30 bg-surface-muted p-3" role="group" aria-label={`Edit ${editTransfer.eventType} transfer`}>
+        <div ref={editorRef} className="mt-3 rounded-2xl border border-terracotta/30 bg-surface-muted p-3" role="group" aria-label={`Edit ${editTransfer.eventType} transfer`}>
           <p className="text-sm font-semibold text-warm-brown">Edit {editTransfer.eventType}</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <input aria-label="Transfer amount in ml" type="number" min="0.01" step="any" value={editTransfer.amountMl} onChange={(event) => setEditTransfer({ ...editTransfer, amountMl: Number(event.target.value) })} className="min-h-11 rounded-xl border border-border bg-surface px-3" />

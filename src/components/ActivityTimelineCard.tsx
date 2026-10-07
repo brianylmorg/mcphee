@@ -57,7 +57,7 @@ export default function ActivityTimelineCard({
             {title}
           </span>
           {quantity && (
-            <span className="shrink-0 text-sm font-medium tabular-nums text-warm-brown">{quantity}</span>
+            <span className="max-w-[50%] shrink-0 break-words text-right text-sm font-medium tabular-nums text-warm-brown">{quantity}</span>
           )}
         </span>
         <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pl-6 text-xs text-muted">

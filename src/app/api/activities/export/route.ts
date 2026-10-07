@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
-import { normalizeActivityCreators } from "@/lib/activity-creators";
+import { readActivityTimeline } from "@/lib/activity-timeline";
 
 export const runtime = "nodejs";
 
@@ -190,6 +190,14 @@ function displayFields(type: unknown, details: Record<string, unknown>) {
     };
   }
 
+  if (type === "medication") {
+    return { activity: "Medication", subcategory: String(details.medicationName ?? ""), quantity: String(details.doseText ?? "") };
+  }
+  if (typeof type === "string" && ["bankfreeze", "bankthaw", "bankdiscard"].includes(type)) {
+    const names: Record<string, string> = { bankfreeze: "Milk frozen", bankthaw: "Milk thawed", bankdiscard: "Frozen milk discarded" };
+    return { activity: names[type], subcategory: "Breastmilk bank", quantity: `${Number(details.amount) || 0} ml` };
+  }
+
   return { activity: activityLabel(type), subcategory: "", quantity: "" };
 }
 
@@ -215,17 +223,7 @@ export async function GET(request: NextRequest) {
     const babyError = await requireBabyInHousehold(db, babyId, householdId);
     if (babyError) return babyError;
 
-    const [result, users] = await db.batch([
-      {
-        sql: "SELECT a.*, b.name as baby_name FROM activities a JOIN babies b ON a.baby_id = b.id WHERE b.household_id = ? AND a.baby_id = ? ORDER BY a.started_at ASC, a.created_at ASC",
-        args: [householdId, babyId],
-      },
-      { sql: "SELECT name FROM users WHERE household_id = ?", args: [householdId] },
-    ], "read");
-    const activityRows = normalizeActivityCreators(
-      result.rows as unknown as Array<ActivityRow & { created_by?: unknown }>,
-      users.rows as unknown as Array<{ name?: unknown }>,
-    );
+    const activityRows = (await readActivityTimeline(db, householdId, { babyId })).reverse();
 
     const headers = [
       "baby_name",

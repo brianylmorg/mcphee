@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test src/**/*.test.ts src/app/api/sick-mode/*.test.ts",
+    "test": "tsx --test src/**/*.test.ts src/app/api/sick-mode/*.test.ts src/app/api/activities/*.test.ts",
     "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {

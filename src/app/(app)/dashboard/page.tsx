@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Thermometer, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -18,6 +18,7 @@ import ActivityRecency from "@/components/ActivityRecency";
 import ActivityTimelineCard from "@/components/ActivityTimelineCard";
 import SickModePanel from "@/components/SickModePanel";
 import MedicationLogModal from "@/components/MedicationLogModal";
+import MedicationDoseEditModal from "@/components/MedicationDoseEditModal";
 import MedicationPrescriptionModal from "@/components/MedicationPrescriptionModal";
 import SickMilkProgress from "@/components/SickMilkProgress";
 import BabyCareMenu from "@/components/BabyCareMenu";
@@ -26,8 +27,10 @@ import type { SleepUndoToken } from "@/lib/sleep-transition";
 import type { DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
 import type { SickModeResponse } from "@/lib/sick-mode";
+import type { MedicationDoseReference } from "@/lib/activity-timeline";
 import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type MedicationEntry, type MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
 import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
+import { mutateSickMode } from "@/lib/sick-mode-client";
 
 interface Baby {
   id: string;
@@ -42,6 +45,7 @@ interface Activity {
   ended_at?: number | null;
   details: string | Record<string, unknown>; // JSON string from API, parsed client-side
   created_by?: string;
+  medicationDose?: MedicationDoseReference;
 }
 
 interface SleepState {
@@ -85,6 +89,10 @@ const sgtHourFormatter = new Intl.DateTimeFormat("en-SG", {
 // The milk charts show a recent window, not the full history (which now spans
 // months); the day-by-day navigation still uses the complete milkHistory.
 const MILK_CHART_WINDOW_DAYS = 30;
+
+// Bank transfers are edited and deleted through the milk-bank ledger, never
+// through the generic activity API, so the diary routes them separately.
+const BANK_TRANSFER_TYPES = new Set(["bankfreeze", "bankthaw", "bankdiscard"]);
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -133,7 +141,9 @@ export default function DashboardPage() {
   const [showActivityMenu, setShowActivityMenu] = useState(false);
   const [logType, setLogType] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [editingDose, setEditingDose] = useState<Activity | null>(null);
   const [deleteActivity, setDeleteActivity] = useState<Activity | null>(null);
+  const [historyEditRequest, setHistoryEditRequest] = useState<{ id: string; nonce: number } | null>(null);
   const [isDeletingActivity, setIsDeletingActivity] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
@@ -214,6 +224,9 @@ export default function DashboardPage() {
     diaper: BabyIcon,
     vomit: TriangleAlert,
     bankadjust: Scale,
+    bankfreeze: Snowflake,
+    bankthaw: Milk,
+    bankdiscard: Milk,
     note: NotebookPen,
     temperature: Thermometer,
     medication: Pill,
@@ -229,6 +242,11 @@ export default function DashboardPage() {
     { value: "note", label: "Note" },
     { value: "temperature", label: "Temperature" },
     { value: "sleep", label: "Sleep" },
+    { value: "medication", label: "Medication" },
+    { value: "bankadjust", label: "Bank adjustment" },
+    { value: "bankfreeze", label: "Milk frozen" },
+    { value: "bankthaw", label: "Milk thawed" },
+    { value: "bankdiscard", label: "Frozen milk discarded" },
   ];
 
   const selectedActivityTypeLabels = activityTypeOptions
@@ -478,39 +496,63 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!householdId || !baby?.id) return;
 
-    const controller = new AbortController();
-    // A chosen (or implicit "today") day should render every record for that
-    // day, so request the full set. The unfiltered "All days" view keeps the
-    // bounded 500 record window.
-    const scopedToSelectedDay = Boolean(activityDateFilter) || !showHistory;
-    const params = new URLSearchParams({ limit: scopedToSelectedDay ? "all" : "500", babyId: baby.id });
-    if (activityDateFilter) {
-      params.set("date", activityDateFilter);
-    } else if (!showHistory) {
-      params.set("date", todayDateKey);
-    }
-    activityTypeFilters.forEach((type) => params.append("type", type));
+    let controller: AbortController | null = null;
+    // Abort-safe loader shared by the initial load, the 30s poll, and the
+    // focus/visibility refresh. A background load never toggles the loading
+    // state, so polling can't replace the rendered diary or reset its
+    // disclosure, date, or filter selections.
+    const load = (showLoading: boolean) => {
+      controller?.abort();
+      const next = new AbortController();
+      controller = next;
+      // A chosen (or implicit "today") day should render every record for that
+      // day, so request the full set. The unfiltered "All days" view keeps the
+      // bounded 500 record window.
+      const scopedToSelectedDay = Boolean(activityDateFilter) || !showHistory;
+      const params = new URLSearchParams({ limit: scopedToSelectedDay ? "all" : "500", babyId: baby.id });
+      if (activityDateFilter) {
+        params.set("date", activityDateFilter);
+      } else if (!showHistory) {
+        params.set("date", todayDateKey);
+      }
+      activityTypeFilters.forEach((type) => params.append("type", type));
 
-    setIsActivityFilterLoading(true);
-    fetch("/api/activities?" + params.toString(), {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to load activities");
-        return res.json();
+      if (showLoading) setIsActivityFilterLoading(true);
+      fetch("/api/activities?" + params.toString(), {
+        cache: "no-store",
+        signal: next.signal,
       })
-      .then((data) => setFilteredActivities(data.activities || []))
-      .catch((error) => {
-        if ((error as Error).name !== "AbortError") {
-          console.error("Activity list error:", error);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsActivityFilterLoading(false);
-      });
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to load activities");
+          return res.json();
+        })
+        .then((data) => {
+          if (!next.signal.aborted) setFilteredActivities(data.activities || []);
+        })
+        .catch((error) => {
+          if ((error as Error).name !== "AbortError") {
+            console.error("Activity list error:", error);
+          }
+        })
+        .finally(() => {
+          if (!next.signal.aborted) setIsActivityFilterLoading(false);
+        });
+    };
 
-    return () => controller.abort();
+    load(true);
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") load(false);
+    };
+    const interval = window.setInterval(refreshIfVisible, 30_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      controller?.abort();
+    };
   }, [householdId, baby?.id, activityDateFilter, activityTypeFilters, showHistory, todayDateKey, activityFilterRefresh]);
 
   const handleLeave = async () => {
@@ -533,10 +575,48 @@ export default function DashboardPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteActivity) return;
+    if (!deleteActivity || !baby?.id) return;
+    const record = deleteActivity;
+    const dose = record.medicationDose;
+    if (record.type === "medication" && !dose) {
+      alert("This dose is missing its source details and can’t be deleted here. Refresh and try again.");
+      return;
+    }
     setIsDeletingActivity(true);
     try {
-      const res = await fetch(`/api/activities?id=${encodeURIComponent(deleteActivity.id)}`, { method: "DELETE" });
+      if (record.type === "medication" && dose) {
+        try {
+          await mutateSickMode({
+            action: "deleteDose",
+            babyId: baby.id,
+            episodeId: dose.episodeId,
+            medicationId: dose.medicationId,
+            doseId: dose.doseId,
+            expectedRevision: dose.revision,
+          });
+        } catch (caught) {
+          if ((caught as { status?: number }).status === 409) {
+            // Never override the stored revision: close the prompt, reload
+            // both views, and ask the caregiver to review the latest record.
+            setDeleteActivity(null);
+            await fetchSickMode(baby.id);
+            setActivityFilterRefresh((value) => value + 1);
+            alert("This dose changed on another device. The latest details have been loaded for review.");
+            return;
+          }
+          throw caught;
+        }
+        setDeleteActivity(null);
+        await fetchSickMode(baby.id);
+        await fetchData();
+        setActivityFilterRefresh((value) => value + 1);
+        return;
+      }
+
+      const endpoint = BANK_TRANSFER_TYPES.has(record.type)
+        ? `/api/milk-bank?id=${encodeURIComponent(record.id)}`
+        : `/api/activities?id=${encodeURIComponent(record.id)}`;
+      const res = await fetch(endpoint, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to delete activity");
       setDeleteActivity(null);
@@ -714,6 +794,7 @@ export default function DashboardPage() {
   };
 
   const handleActivityAction = async (type: string) => {
+    setEditingDose(null);
     if (type === "medication") {
       if (!activeSickEpisodeId || sickModeIsStale) return;
       setShowActivityMenu(false);
@@ -915,6 +996,28 @@ export default function DashboardPage() {
           quantity: Number.isFinite(amount) && amount !== 0 ? `${amount > 0 ? "+" : ""}${amount} ml` : "",
         };
       }
+      case "medication": {
+        const name = activity.medicationDose?.medicationName
+          ?? (typeof d.medicationName === "string" ? d.medicationName : "");
+        const givenText = activity.medicationDose?.doseText
+          ?? (typeof d.doseText === "string" ? d.doseText : "");
+        return { title: name || "Medication", subcategory: "Medication", quantity: givenText };
+      }
+      case "bankfreeze":
+      case "bankthaw":
+      case "bankdiscard": {
+        const amount = Number(d.amount);
+        const titles: Record<string, string> = {
+          bankfreeze: "Milk frozen",
+          bankthaw: "Milk thawed",
+          bankdiscard: "Frozen milk discarded",
+        };
+        return {
+          title: titles[activity.type],
+          subcategory: d.source === "reconcile" ? "Breastmilk bank · reconciled" : "Breastmilk bank",
+          quantity: Number.isFinite(amount) && amount > 0 ? `${amount} ml` : "",
+        };
+      }
       case "temperature": {
         const celsius = Number(d.celsius);
         const methods: Record<string, string> = {
@@ -1087,7 +1190,7 @@ export default function DashboardPage() {
         <div className="dashboard-header-inner mx-auto max-w-lg">
           <div className="dashboard-baby-identity text-center">
             <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
-              {(closeCareMenu) => baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); }} />}
+              {(closeCareMenu) => baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}
             </BabyCareMenu>
             {(baby?.birth_date || latestWeight || userName) && (
               <p className="mt-0.5 text-center text-xs text-warm-brown-light">
@@ -1152,8 +1255,8 @@ export default function DashboardPage() {
             data={sickMode}
             isStale={sickModeIsStale}
             onLogActivity={type => { void handleActivityAction(type); }}
-            onLogMedication={medicationId => { if (!sickModeIsStale && activeSickEpisodeId) { setShowActivityMenu(false); setMedicationEntry(medicationLogEntry(activeSickEpisodeId, medicationId)); } }}
-            onAddMedication={(drafts?: MedicationPrescriptionDraftInput[], episodeId?: string) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { setShowActivityMenu(false); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }}
+            onLogMedication={medicationId => { if (!sickModeIsStale && activeSickEpisodeId) { setShowActivityMenu(false); setEditingDose(null); setMedicationEntry(medicationLogEntry(activeSickEpisodeId, medicationId)); } }}
+            onAddMedication={(drafts?: MedicationPrescriptionDraftInput[], episodeId?: string) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { setShowActivityMenu(false); setEditingDose(null); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }}
             onRefresh={async () => {
               await fetchSickMode(baby.id);
               await fetchData();
@@ -1301,6 +1404,7 @@ export default function DashboardPage() {
               frozenMl={frozenMilkMl}
               frozenPackets={frozenPackets}
               history={bankHistory}
+              historyEditRequest={historyEditRequest}
               onChanged={async () => {
                 await fetchData();
                 setActivityFilterRefresh((value) => value + 1);
@@ -1515,8 +1619,33 @@ export default function DashboardPage() {
                       createdBy={activity.created_by || undefined}
                       multiline={activity.type === "note"}
                       onEdit={() => {
-                        setEditingActivity(activity.sourceActivity ?? activity);
-                        setLogType(activity.type);
+                        const record = activity.sourceActivity ?? activity;
+                        if (record.type === "medication") {
+                          setShowLogModal(false);
+                          setEditingActivity(null);
+                          setMedicationEntry(null);
+                          // A dose without its source reference cannot be
+                          // safely edited; surface that instead of routing it
+                          // through the generic activity editor.
+                          if (!record.medicationDose) {
+                            alert("This medication dose is missing its source details and can’t be edited here. Refresh and try again.");
+                            return;
+                          }
+                          setEditingDose(record);
+                          return;
+                        }
+                        if (BANK_TRANSFER_TYPES.has(record.type)) {
+                          setShowLogModal(false);
+                          setEditingActivity(null);
+                          setMedicationEntry(null);
+                          setEditingDose(null);
+                          setHistoryEditRequest((current) => ({ id: record.id, nonce: (current?.nonce ?? 0) + 1 }));
+                          return;
+                        }
+                        setEditingDose(null);
+                        setMedicationEntry(null);
+                        setEditingActivity(record);
+                        setLogType(record.type);
                         setShowLogModal(true);
                       }}
                       onDelete={() => setDeleteActivity(activity.sourceActivity ?? activity)}
@@ -1525,7 +1654,7 @@ export default function DashboardPage() {
                 );
               });
             })()}
-            {!isActivityFiltered && activities.length > 0 && !showHistory && (
+            {!isActivityFiltered && (activities.length > 0 || filteredActivities.length > 0) && !showHistory && (
               <button
                 onClick={() => setShowHistory(true)}
                 className="w-full py-2 text-sm text-accent-strong transition-colors hover:text-warm-brown"
@@ -1732,6 +1861,9 @@ export default function DashboardPage() {
             <p className="mt-2 text-sm text-warm-brown-light">
               {getActivityDeleteDescription(deleteActivity)} will be permanently removed.
             </p>
+            {BANK_TRANSFER_TYPES.has(deleteActivity.type) && (
+              <p className="mt-2 text-sm text-warm-brown-light">Available and Frozen totals will be recalculated from the remaining bank history.</p>
+            )}
             <div className="mt-6 flex gap-2">
               <button
                 onClick={() => setDeleteActivity(null)}
@@ -1763,7 +1895,29 @@ export default function DashboardPage() {
           initialMedicationId={medicationEntry.medicationId}
           isStale={sickModeIsStale}
           onClose={() => setMedicationEntry(null)}
-          onRefresh={async () => { await fetchSickMode(baby.id); }}
+          onRefresh={async () => {
+            await fetchSickMode(baby.id);
+            setActivityFilterRefresh((value) => value + 1);
+          }}
+        />
+      )}
+
+      {editingDose?.medicationDose && baby?.id && (
+        <MedicationDoseEditModal
+          key={`${baby.id}:${editingDose.id}:${editingDose.medicationDose.doseId}`}
+          babyId={baby.id}
+          activity={{
+            id: editingDose.id,
+            type: editingDose.type,
+            started_at: editingDose.started_at,
+            medicationDose: editingDose.medicationDose,
+          }}
+          onClose={() => setEditingDose(null)}
+          onRefresh={async () => {
+            await fetchSickMode(baby.id);
+            await fetchData();
+            setActivityFilterRefresh((value) => value + 1);
+          }}
         />
       )}
 
