@@ -141,6 +141,9 @@ test("compact health overview retains readings, all three diapers, all medicatio
   assert.equal((html.match(/data-diaper-row=/g) ?? []).length, 3);
   assert.equal((html.match(/data-medication-row=/g) ?? []).length, 4);
   assert.match(html, /Poo small/);
+  assert.equal((html.match(/aria-hidden="true">· <\/span>/g) ?? []).length, 3);
+  assert.match(html, /health-log-action[^"<>]*"[^>]*>Latest diapers<\/button>/);
+  assert.match(html, /medication-dose-elapsed/);
   assert.match(html, /below the episode’s 400 ml 50% full-day intake threshold/);
   assert.doesNotMatch(html, /Sick mode active/);
 });

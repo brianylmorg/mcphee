@@ -76,10 +76,10 @@ body header,
   backdrop-filter: blur(3px);
 }
 
-/* A glanceable care overview, in reading order. Content grows naturally for
-   long prescriptions, overdue readings, warnings, or opened editors. */
+/* A calm, compact care overview: section gaps are deliberately larger than
+   row gaps. Content grows for long prescriptions, warnings, or editors. */
 [data-care-overview="true"] .dashboard-header {
-  padding: 2px 12px;
+  padding: 5px 12px;
 }
 [data-care-overview="true"] .dashboard-header-inner {
   display: grid;
@@ -136,18 +136,17 @@ body header,
   line-height: 16px;
 }
 [data-care-overview="true"] .dashboard-overview {
-  padding-top: 4px;
-  padding-bottom: 6px;
+  padding-top: 6px;
+  padding-bottom: 8px;
 }
 [data-care-overview="true"] .dashboard-overview > :not([hidden]) ~ :not([hidden]) {
-  margin-top: 3px;
+  margin-top: 8px;
 }
 [data-care-overview="true"] .health-check-in {
-  padding-top: 6px;
-  padding-bottom: 6px;
+  padding: 8px 12px;
 }
 [data-care-overview="true"] .sleep-status-card {
-  padding: 6px 8px;
+  padding: 8px 10px;
 }
 [data-care-overview="true"] .daily-nap-summary {
   margin-top: 2px;
@@ -169,8 +168,27 @@ body header,
   column-gap: 4px;
 }
 .health-reading > button {
-  font-size: 11px;
+  font-size: 12px;
   gap: 4px;
+}
+.health-readings {
+  margin-top: 6px;
+}
+.health-reading {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.health-check-in .health-log-action {
+  text-decoration-line: none;
+}
+.health-check-in .health-log-action:hover {
+  text-decoration-line: underline;
+}
+.medication-dose-elapsed {
+  font-weight: 400;
+}
+[data-medication-row] > div:first-child {
+  min-height: 26px;
 }
 .temperature-value {
   grid-column: 2;
@@ -189,7 +207,7 @@ body header,
   display: none;
 }
 [data-care-overview="true"] .milk-consumption-card {
-  padding: 6px 8px;
+  padding: 8px 12px;
 }
 [data-care-overview="true"] .milk-consumption-card h2 {
   font-size: 14px;
@@ -235,28 +253,28 @@ body header,
   line-height: 14px;
 }
 [data-care-overview="true"] .milk-progress {
-  margin-top: 4px;
+  margin-top: 6px;
   height: 6px;
 }
 [data-care-overview="true"] .milk-threshold-legend {
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-  margin-top: 3px;
-  gap: 2px;
-  font-size: 10px;
-  line-height: 13px;
+  margin-top: 5px;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 14px;
 }
 [data-care-overview="true"] .milk-threshold-legend > span:last-child {
   font-size: 11px;
   line-height: 14px;
 }
 [data-care-overview="true"] .milk-comparison {
-  margin-top: 2px;
+  margin-top: 4px;
   gap: 4px;
 }
 [data-care-overview="true"] .milk-comparison p,
 [data-care-overview="true"] .milk-median p {
   font-size: 11px;
-  line-height: 14px;
+  line-height: 16px;
 }
 [data-care-overview="true"] .milk-comparison button {
   height: 24px;
@@ -271,30 +289,44 @@ body header,
   margin-top: 0;
 }
 [data-care-overview="true"] .latest-feeds {
-  margin-top: 3px;
-  padding-top: 3px;
+  margin-top: 6px;
+  padding-top: 6px;
 }
 [data-care-overview="true"] .latest-feeds > div {
-  margin-top: 0;
+  margin-top: 3px;
 }
 [data-care-overview="true"] .latest-feeds > div > div {
-  padding-top: 0;
-  padding-bottom: 0;
-  min-height: 16px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  min-height: 20px;
 }
 [data-care-overview="true"] .latest-feeds :is(p, span) {
-  line-height: 16px;
+  line-height: 18px;
 }
 .health-diapers {
-  display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
-  align-items: start;
-  column-gap: 4px;
-  padding-top: 2px;
+  margin-top: 5px;
+  padding-top: 3px;
 }
 .health-diapers > button {
+  display: block;
   text-align: left;
-  font-size: 10px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.health-diapers [data-diaper-row] {
+  min-height: 20px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+.health-medications {
+  margin-top: 5px;
+  padding-top: 3px;
+}
+.health-medications > div:first-child > button:first-child {
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: normal;
 }
 @media (max-width: 360px) {
   .temperature-recency,
