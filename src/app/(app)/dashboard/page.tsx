@@ -1204,17 +1204,23 @@ export default function DashboardPage() {
     ? ` (${medianDataDays.length} ${medianDataDays.length === 1 ? "day" : "days"})`
     : "";
 
-  // Signed % difference of today's intake vs a same-time reference total
-  // (comparison day or the 7-day median). Null when the reference is missing
-  // or zero, where a percentage would be meaningless.
-  const todayDeltaPct = (referenceMl: number | null | undefined): string | null => {
+  // Signed volume (ml) and % difference of today's intake vs a same-time
+  // reference total (comparison day or the 7-day median). Both parts share the
+  // same reference. Null when the reference is missing or zero, where a
+  // percentage would be meaningless.
+  const todayDelta = (referenceMl: number | null | undefined): { ml: string; pct: string } | null => {
     if (referenceMl == null || referenceMl <= 0) return null;
     const todayTotalMl = activeSickSummary?.todayConsumedMl ?? dailyMilkMl;
+    const diffMl = Math.round((todayTotalMl - referenceMl) * 100) / 100;
+    const normalizedDiffMl = diffMl === 0 ? 0 : diffMl; // normalize -0
     const pct = Math.round(((todayTotalMl - referenceMl) / referenceMl) * 100);
-    return (pct > 0 ? "+" : "") + pct + "%";
+    return {
+      ml: `${normalizedDiffMl > 0 ? "+" : ""}${normalizedDiffMl} ml`,
+      pct: (pct > 0 ? "+" : "") + pct + "%",
+    };
   };
-  const comparisonDeltaPct = todayDeltaPct(comparisonMilkSummary?.asOfNowMl);
-  const medianDeltaPct = todayDeltaPct(asOfMedianMl);
+  const comparisonDelta = todayDelta(comparisonMilkSummary?.asOfNowMl);
+  const medianDelta = todayDelta(asOfMedianMl);
   const deltaBadgeClass = (delta: string) =>
     delta.startsWith("-")
       ? "bg-danger/10 text-danger"
@@ -1399,12 +1405,12 @@ export default function DashboardPage() {
           <div className="milk-comparison mt-2 flex items-center justify-between gap-3">
             <p className="min-w-0 text-left text-xs text-muted">
               <span className="font-semibold tabular-nums text-warm-brown">{comparisonMilkSummary?.asOfNowMl ?? 0}ml</span>
-              {comparisonDeltaPct && (
+              {comparisonDelta && (
                 <span
-                  title="Today vs this reference"
-                  className={`ml-1.5 inline-flex items-center rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(comparisonDeltaPct)}`}
+                  title="Today vs this reference: volume and percent difference"
+                  className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(comparisonDelta.pct)}`}
                 >
-                  {comparisonDeltaPct}
+                  {comparisonDelta.ml} · {comparisonDelta.pct}
                 </span>
               )}{" "}
               as of {milkHistoryCutoffLabel} {comparisonMilkDateLabel}
@@ -1436,12 +1442,12 @@ export default function DashboardPage() {
           <div className="milk-median mt-1 flex items-center justify-between gap-3">
             <p className="min-w-0 text-left text-xs text-muted">
               <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>
-              {medianDeltaPct && (
+              {medianDelta && (
                 <span
-                  title="Today vs this reference"
-                  className={`ml-1.5 inline-flex items-center rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(medianDeltaPct)}`}
+                  title="Today vs this reference: volume and percent difference"
+                  className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(medianDelta.pct)}`}
                 >
-                  {medianDeltaPct}
+                  {medianDelta.ml} · {medianDelta.pct}
                 </span>
               )}{" "}
               {activeSickSummary ? "7-day median · same time" : "median · same time, last 7 days"}{medianDataDayCountLabel}
