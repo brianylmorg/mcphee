@@ -32,6 +32,7 @@ import type { HistoricalMedicationReference } from "@/lib/historical-medication"
 import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type MedicationEntry, type MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
 import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 import { mutateSickMode } from "@/lib/sick-mode-client";
+import { applyMilkActivityChangeToTotals, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
 
 interface Baby {
   id: string;
@@ -170,6 +171,7 @@ export default function DashboardPage() {
   const [dailyMilkMl, setDailyMilkMl] = useState(0);
   const [dailyBreastmilkMl, setDailyBreastmilkMl] = useState(0);
   const [dailyFormulaMl, setDailyFormulaMl] = useState(0);
+  const dailyMilkTotalsRef = useRef({ totalMl: 0, breastmilkMl: 0, formulaMl: 0 });
   const [recentMilkFeeds, setRecentMilkFeeds] = useState<RecentMilkFeed[]>([]);
   const [breastmilkLibraryMl, setBreastmilkLibraryMl] = useState(0);
   const [breastmilkBatches, setBreastmilkBatches] = useState<PumpedMilkBatch[]>([]);
@@ -184,6 +186,7 @@ export default function DashboardPage() {
   const [asOfDayOffset, setAsOfDayOffset] = useState(-1);
   const milkHistoryRequestRef = useRef(0);
   const sickModeRequestRef = useRef(0);
+  const sickModeDataBabyIdRef = useRef<string | null>(null);
   const dashboardRequestRef = useRef<AbortController | null>(null);
   const dashboardSnapshotRef = useRef("");
   const [selectedMilkDate, setSelectedMilkDate] = useState("");
@@ -191,6 +194,7 @@ export default function DashboardPage() {
   const [isMilkHistoryLoading, setIsMilkHistoryLoading] = useState(false);
   const [sickMode, setSickMode] = useState<SickModeResponse | null>(null);
   const [sickModeIsStale, setSickModeIsStale] = useState(false);
+  const [sickModeLoadedBabyId, setSickModeLoadedBabyId] = useState<string | null>(null);
   const [medicationEntry, setMedicationEntry] = useState<MedicationEntry | null>(null);
   const sickModeActive = Boolean(sickMode?.schemaReady && sickMode.activeEpisode);
   const activeSickEpisodeId = sickModeActive ? sickMode?.activeEpisode?.id : undefined;
@@ -353,15 +357,23 @@ export default function DashboardPage() {
       const data = await response.json().catch(() => null) as SickModeResponse | null;
       if (requestId !== sickModeRequestRef.current) return;
       if (response.ok && data) {
+        sickModeDataBabyIdRef.current = babyId;
         setSickMode(data);
         setSickModeIsStale(false);
         publishCareMode({ householdId, babyId, active: data.schemaReady && Boolean(data.activeEpisode) });
+        setSickModeLoadedBabyId(babyId);
       } else {
+        if (sickModeDataBabyIdRef.current !== babyId) setSickMode(null);
+        sickModeDataBabyIdRef.current = babyId;
         setSickModeIsStale(true);
+        setSickModeLoadedBabyId(babyId);
       }
     } catch (error) {
       console.error("Sick mode error:", error);
+      if (sickModeDataBabyIdRef.current !== babyId) setSickMode(null);
+      sickModeDataBabyIdRef.current = babyId;
       setSickModeIsStale(true);
+      setSickModeLoadedBabyId(babyId);
     }
   }, [householdId]);
 
@@ -377,6 +389,7 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to load dashboard");
 
       const data = await res.json();
+      if (controller.signal.aborted) return;
       const snapshot = JSON.stringify(data);
       if (snapshot === dashboardSnapshotRef.current) return;
       dashboardSnapshotRef.current = snapshot;
@@ -405,9 +418,15 @@ export default function DashboardPage() {
       }
       const weight = Number(data.measurement?.weight_g);
       setLatestWeight(Number.isFinite(weight) && weight > 0 ? weight : null);
-      setDailyMilkMl(Number(data.dailyMilk?.totalMl ?? 0));
-      setDailyBreastmilkMl(Number(data.dailyMilk?.breastmilkMl ?? 0));
-      setDailyFormulaMl(Number(data.dailyMilk?.formulaMl ?? 0));
+      const dailyMilkTotals = {
+        totalMl: Number(data.dailyMilk?.totalMl ?? 0),
+        breastmilkMl: Number(data.dailyMilk?.breastmilkMl ?? 0),
+        formulaMl: Number(data.dailyMilk?.formulaMl ?? 0),
+      };
+      dailyMilkTotalsRef.current = dailyMilkTotals;
+      setDailyMilkMl(dailyMilkTotals.totalMl);
+      setDailyBreastmilkMl(dailyMilkTotals.breastmilkMl);
+      setDailyFormulaMl(dailyMilkTotals.formulaMl);
       setRecentMilkFeeds(Array.isArray(data.recentMilkFeeds) ? data.recentMilkFeeds : []);
       setBreastmilkLibraryMl(Number(data.pumpedMilk?.walletMl ?? 0));
       setBreastmilkBatches(Array.isArray(data.pumpedMilk?.batches) ? data.pumpedMilk.batches : []);
@@ -1212,7 +1231,7 @@ export default function DashboardPage() {
 
   const asOfMilkDays = chartMilkDays.filter((day) => day.date <= todayDateKey);
 
-  if (isLoading) {
+  if (shouldHoldDashboardForSickMode(isLoading, baby?.id ?? null, sickModeLoadedBabyId)) {
     return (
       <main className="min-h-dvh bg-cream flex items-center justify-center">
         <p className="text-warm-brown-light">Loading…</p>
@@ -1987,10 +2006,60 @@ export default function DashboardPage() {
             setShowLogModal(false);
             setEditingActivity(null);
           }}
-          onSuccess={() => {
+          onSuccess={(saved) => {
+            const previous = editingActivity
+              ? {
+                  id: editingActivity.id,
+                  type: editingActivity.type,
+                  startedAt: editingActivity.started_at,
+                  details: editingActivity.details,
+                }
+              : null;
+            const next = {
+              id: saved.id,
+              type: saved.type,
+              startedAt: saved.startedAt,
+              details: saved.details,
+            };
+            const todayTotals = applyMilkActivityChangeToTotals(
+              dailyMilkTotalsRef.current,
+              previous,
+              next,
+              todayDateKey,
+            );
+            dailyMilkTotalsRef.current = todayTotals;
+            setDailyMilkMl(todayTotals.totalMl);
+            setDailyBreastmilkMl(todayTotals.breastmilkMl);
+            setDailyFormulaMl(todayTotals.formulaMl);
+            const previousId = previous?.id ?? null;
+            setRecentMilkFeeds((current) => updateRecentMilkFeedList(current, previousId, next));
+            setSickMode((current) => {
+              if (!current?.summary || current.summary.date !== todayDateKey) return current;
+              const summaryTotals = applyMilkActivityChangeToTotals(
+                {
+                  totalMl: current.summary.todayConsumedMl,
+                  breastmilkMl: current.summary.todayBreastmilkMl,
+                  formulaMl: current.summary.todayFormulaMl,
+                },
+                previous,
+                next,
+                todayDateKey,
+              );
+              return {
+                ...current,
+                summary: {
+                  ...current.summary,
+                  todayConsumedMl: summaryTotals.totalMl,
+                  todayBreastmilkMl: summaryTotals.breastmilkMl,
+                  todayFormulaMl: summaryTotals.formulaMl,
+                  todayFeedDataAvailable: summaryTotals.totalMl > 0,
+                  latestFeeds: updateSickLatestMilkFeeds(current.summary.latestFeeds, previousId, next),
+                },
+              };
+            });
             setShowLogModal(false);
             setEditingActivity(null);
-            fetchData();
+            void fetchData();
             if (baby?.id) void fetchSickMode(baby.id);
             setActivityFilterRefresh((value) => value + 1);
           }}
@@ -2052,7 +2121,7 @@ function LogModal({
   lastPumpedMl: number;
   lastPumpedAt: number | null;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (saved: { id: string; type: string; startedAt: number; details: Record<string, unknown> }) => void;
 }) {
   const isEditing = !!activity;
 
@@ -2353,7 +2422,13 @@ function LogModal({
         throw new Error(data.error || "Failed to save activity");
       }
 
-      onSuccess();
+      const saved = await res.json().catch(() => ({})) as { id?: unknown };
+      onSuccess({
+        id: isEditing && activity ? activity.id : String(saved.id ?? ""),
+        type,
+        startedAt,
+        details,
+      });
     } catch (error) {
       console.error("Log error:", error);
       alert(error instanceof Error ? error.message : "Could not save activity. Try again.");
