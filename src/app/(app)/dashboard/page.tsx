@@ -1333,7 +1333,14 @@ export default function DashboardPage() {
                 {isSelectedMilkToday ? activeSickSummary ? "Today’s milk" : "Today’s milk consumption" : "Milk consumption"}
               </h2>
               {activeSickSummary && isSelectedMilkToday && <p className="care-milk-total glance-primary-value text-warm-brown">{selectedMilkSummary.totalMl} <span className="glance-value-unit text-muted">ml</span></p>}
-              {!isSelectedMilkToday && <p className="mt-0.5 text-[11px] text-muted">{selectedMilkDateLabel}</p>}
+              {!isSelectedMilkToday && (
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted">
+                  <span>{selectedMilkDateLabel}</span>
+                  {selectedMilkSummary.isSickDay === true && (
+                    <span className="whitespace-nowrap rounded-full bg-sky-100 px-1.5 py-0.5 font-medium text-sky-800">Sick day</span>
+                  )}
+                </p>
+              )}
             </div>
             <div className="-mt-2 flex shrink-0 gap-1">
               <button
