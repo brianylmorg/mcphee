@@ -242,8 +242,18 @@ export function MilkBank({
     }
   };
 
+  const dashboardRefreshBlocked = busy
+    || showFreeze
+    || showAvailableReconcile
+    || showPacketAdd
+    || editTransfer !== null;
+
   return (
-    <section className={standalone ? "rounded-lg border border-border bg-surface p-3 shadow-sm" : "mt-4 border-t border-border pt-4"} aria-labelledby="milk-bank-title">
+    <section
+      className={standalone ? "rounded-lg border border-border bg-surface p-3 shadow-sm" : "mt-4 border-t border-border pt-4"}
+      aria-labelledby="milk-bank-title"
+      data-dashboard-refresh-blocked={dashboardRefreshBlocked ? "true" : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id="milk-bank-title" className="glance-card-title text-muted">Breastmilk bank</h3>

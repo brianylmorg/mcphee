@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, Info, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, Info, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -33,6 +33,8 @@ import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type Med
 import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 import { mutateSickMode } from "@/lib/sick-mode-client";
 import { applyMilkActivityChangeToTotals, sameTimeMilkMedianReference, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
+import { aggregateDashboardRefreshResults, runSingleFlight, shouldSkipForManualRefresh, type DashboardRefreshResult, type RefreshTaskResult } from "@/lib/dashboard-refresh";
+import { useDashboardRefreshBlocked, useStandalonePullToRefresh } from "@/hooks/use-standalone-pull-to-refresh";
 
 interface Baby {
   id: string;
@@ -82,6 +84,8 @@ interface PumpedMilkBatch extends AvailableMilkBatch {
   pumpedAt: number;
   isAdjustment?: boolean;
 }
+
+type DashboardRefreshFeedback = DashboardRefreshResult | { kind: "refreshing"; message: string };
 
 const sgtHourFormatter = new Intl.DateTimeFormat("en-SG", {
   hour: "2-digit",
@@ -188,7 +192,13 @@ export default function DashboardPage() {
   const sickModeRequestRef = useRef(0);
   const sickModeDataBabyIdRef = useRef<string | null>(null);
   const dashboardRequestRef = useRef<AbortController | null>(null);
+  const activityRequestRef = useRef<AbortController | null>(null);
   const dashboardSnapshotRef = useRef("");
+  const manualRefreshActiveRef = useRef(false);
+  const manualRefreshPromiseRef = useRef<Promise<DashboardRefreshResult> | null>(null);
+  const refreshFeedbackTimerRef = useRef<number | null>(null);
+  const dashboardMountedRef = useRef(true);
+  const [refreshFeedback, setRefreshFeedback] = useState<DashboardRefreshFeedback | null>(null);
   const [selectedMilkDate, setSelectedMilkDate] = useState("");
   const [showMilkHistoryChart, setShowMilkHistoryChart] = useState(false);
   const [showMedianInfo, setShowMedianInfo] = useState(false);
@@ -332,55 +342,74 @@ export default function DashboardPage() {
     }
   };
 
-  const fetchMilkHistory = useCallback(async (babyId: string, showLoading = true) => {
-    if (!householdId || !babyId) return;
+  const fetchMilkHistory = useCallback(async (
+    babyId: string,
+    showLoading = true,
+    options: { manual?: boolean; background?: boolean } = {},
+  ): Promise<RefreshTaskResult> => {
+    if (!householdId || !babyId) return "skipped";
+    if (shouldSkipForManualRefresh(manualRefreshActiveRef.current, Boolean(options.background))) return "skipped";
     const requestId = ++milkHistoryRequestRef.current;
     if (showLoading) setIsMilkHistoryLoading(true);
     try {
       const res = await fetch(`/api/milk-history?babyId=${encodeURIComponent(babyId)}&asOf=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load milk history");
       const data = await res.json();
-      if (requestId !== milkHistoryRequestRef.current) return;
+      if (requestId !== milkHistoryRequestRef.current) return "superseded";
       setMilkHistory(Array.isArray(data.days) ? data.days : []);
       const cutoffAt = Number(data.asOfTimestamp);
       setMilkHistoryCutoffAt(Number.isFinite(cutoffAt) ? cutoffAt : null);
+      return "success";
     } catch (error) {
+      if (requestId !== milkHistoryRequestRef.current) return "superseded";
       console.error("Milk history error:", error);
+      return "failed";
     } finally {
-      if (showLoading) setIsMilkHistoryLoading(false);
+      if (requestId === milkHistoryRequestRef.current) setIsMilkHistoryLoading(false);
     }
   }, [householdId]);
 
-  const fetchSickMode = useCallback(async (babyId: string) => {
-    if (!householdId || !babyId) return;
+  const fetchSickMode = useCallback(async (
+    babyId: string,
+    options: { manual?: boolean; background?: boolean } = {},
+  ): Promise<RefreshTaskResult> => {
+    if (!householdId || !babyId) return "skipped";
+    if (shouldSkipForManualRefresh(manualRefreshActiveRef.current, Boolean(options.background))) return "skipped";
     const requestId = ++sickModeRequestRef.current;
     try {
       const response = await fetch(`/api/sick-mode?babyId=${encodeURIComponent(babyId)}`, { cache: "no-store" });
       const data = await response.json().catch(() => null) as SickModeResponse | null;
-      if (requestId !== sickModeRequestRef.current) return;
+      if (requestId !== sickModeRequestRef.current) return "superseded";
       if (response.ok && data) {
         sickModeDataBabyIdRef.current = babyId;
         setSickMode(data);
         setSickModeIsStale(false);
         publishCareMode({ householdId, babyId, active: data.schemaReady && Boolean(data.activeEpisode) });
         setSickModeLoadedBabyId(babyId);
+        return "success";
       } else {
         if (sickModeDataBabyIdRef.current !== babyId) setSickMode(null);
         sickModeDataBabyIdRef.current = babyId;
         setSickModeIsStale(true);
         setSickModeLoadedBabyId(babyId);
+        return "failed";
       }
     } catch (error) {
+      if (requestId !== sickModeRequestRef.current) return "superseded";
       console.error("Sick mode error:", error);
       if (sickModeDataBabyIdRef.current !== babyId) setSickMode(null);
       sickModeDataBabyIdRef.current = babyId;
       setSickModeIsStale(true);
       setSickModeLoadedBabyId(babyId);
+      return "failed";
     }
   }, [householdId]);
 
-  const fetchData = useCallback(async () => {
-    if (!householdId) return;
+  const fetchData = useCallback(async (
+    options: { manual?: boolean; background?: boolean; refreshMilkHistory?: boolean } = {},
+  ): Promise<RefreshTaskResult> => {
+    if (!householdId) return "skipped";
+    if (shouldSkipForManualRefresh(manualRefreshActiveRef.current, Boolean(options.background))) return "skipped";
 
     dashboardRequestRef.current?.abort();
     const controller = new AbortController();
@@ -391,15 +420,15 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to load dashboard");
 
       const data = await res.json();
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return "superseded";
       const snapshot = JSON.stringify(data);
-      if (snapshot === dashboardSnapshotRef.current) return;
+      if (snapshot === dashboardSnapshotRef.current) return "success";
       dashboardSnapshotRef.current = snapshot;
 
       if (data.babies?.length > 0) {
         const selectedBaby = data.babies[0];
         setBaby(selectedBaby);
-        fetchMilkHistory(String(selectedBaby.id), false);
+        if (options.refreshMilkHistory !== false) void fetchMilkHistory(String(selectedBaby.id), false);
         const sleeps = Array.isArray(data.sleepActivities)
           ? data.sleepActivities.filter((item: { baby_id?: unknown }) => String(item.baby_id) === String(selectedBaby.id))
           : [];
@@ -445,8 +474,11 @@ export default function DashboardPage() {
       } else {
         setActiveTimer(null);
       }
+      return "success";
     } catch (error) {
-      if ((error as Error).name !== "AbortError") console.error("Fetch error:", error);
+      if ((error as Error).name === "AbortError") return "superseded";
+      console.error("Fetch error:", error);
+      return "failed";
     } finally {
       if (dashboardRequestRef.current === controller) {
         dashboardRequestRef.current = null;
@@ -461,7 +493,7 @@ export default function DashboardPage() {
       return;
     }
     const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") fetchData();
+      if (document.visibilityState === "visible") void fetchData({ background: true });
     };
     fetchData();
 
@@ -480,7 +512,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!baby?.id) return;
     const refreshMilkHistory = () => {
-      if (document.visibilityState === "visible") fetchMilkHistory(baby.id, false);
+      if (document.visibilityState === "visible") void fetchMilkHistory(baby.id, false, { background: true });
     };
     fetchMilkHistory(baby.id);
     document.addEventListener("visibilitychange", refreshMilkHistory);
@@ -492,7 +524,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!baby?.id) return;
     const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") void fetchSickMode(baby.id);
+      if (document.visibilityState === "visible") void fetchSickMode(baby.id, { background: true });
     };
     void fetchSickMode(baby.id);
     const interval = window.setInterval(refreshIfVisible, 30_000);
@@ -516,55 +548,65 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", handleEscape);
   }, []);
 
+  // Abort-safe loader shared by the initial load, the 30s poll, the
+  // focus/visibility refresh, and the awaitable manual refresh group. A
+  // background load never toggles the loading state, so polling can't replace
+  // the rendered diary or reset disclosure, date, or filter selections.
+  const fetchFilteredActivities = useCallback(async (
+    options: { showLoading?: boolean; manual?: boolean; background?: boolean } = {},
+  ): Promise<RefreshTaskResult> => {
+    if (!householdId || !baby?.id) return "skipped";
+    if (shouldSkipForManualRefresh(manualRefreshActiveRef.current, Boolean(options.background))) return "skipped";
+
+    activityRequestRef.current?.abort();
+    const controller = new AbortController();
+    activityRequestRef.current = controller;
+    const showLoading = options.showLoading ?? false;
+
+    // A chosen (or implicit "today") day should render every record for that
+    // day, so request the full set. The unfiltered "All days" view keeps the
+    // bounded 500 record window.
+    const scopedToSelectedDay = Boolean(activityDateFilter) || !showHistory;
+    const params = new URLSearchParams({ limit: scopedToSelectedDay ? "all" : "500", babyId: baby.id });
+    if (activityDateFilter) {
+      params.set("date", activityDateFilter);
+    } else if (!showHistory) {
+      params.set("date", todayDateKey);
+    }
+    activityTypeFilters.forEach((type) => params.append("type", type));
+
+    if (showLoading) setIsActivityFilterLoading(true);
+    try {
+      const response = await fetch("/api/activities?" + params.toString(), {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("Failed to load activities");
+      const data = await response.json();
+      if (controller.signal.aborted || activityRequestRef.current !== controller) return "superseded";
+      setFilteredActivities(data.activities || []);
+      return "success";
+    } catch (error) {
+      if ((error as Error).name === "AbortError") return "superseded";
+      console.error("Activity list error:", error);
+      return "failed";
+    } finally {
+      if (activityRequestRef.current === controller) {
+        activityRequestRef.current = null;
+        setIsActivityFilterLoading(false);
+      }
+    }
+  }, [householdId, baby?.id, activityDateFilter, activityTypeFilters, showHistory, todayDateKey, activityFilterRefresh]);
+
   useEffect(() => {
     if (!householdId || !baby?.id) return;
 
-    let controller: AbortController | null = null;
-    // Abort-safe loader shared by the initial load, the 30s poll, and the
-    // focus/visibility refresh. A background load never toggles the loading
-    // state, so polling can't replace the rendered diary or reset its
-    // disclosure, date, or filter selections.
-    const load = (showLoading: boolean) => {
-      controller?.abort();
-      const next = new AbortController();
-      controller = next;
-      // A chosen (or implicit "today") day should render every record for that
-      // day, so request the full set. The unfiltered "All days" view keeps the
-      // bounded 500 record window.
-      const scopedToSelectedDay = Boolean(activityDateFilter) || !showHistory;
-      const params = new URLSearchParams({ limit: scopedToSelectedDay ? "all" : "500", babyId: baby.id });
-      if (activityDateFilter) {
-        params.set("date", activityDateFilter);
-      } else if (!showHistory) {
-        params.set("date", todayDateKey);
-      }
-      activityTypeFilters.forEach((type) => params.append("type", type));
-
-      if (showLoading) setIsActivityFilterLoading(true);
-      fetch("/api/activities?" + params.toString(), {
-        cache: "no-store",
-        signal: next.signal,
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to load activities");
-          return res.json();
-        })
-        .then((data) => {
-          if (!next.signal.aborted) setFilteredActivities(data.activities || []);
-        })
-        .catch((error) => {
-          if ((error as Error).name !== "AbortError") {
-            console.error("Activity list error:", error);
-          }
-        })
-        .finally(() => {
-          if (!next.signal.aborted) setIsActivityFilterLoading(false);
-        });
-    };
-
-    load(true);
+    // A user changing the selected diary view owns the newest request even if
+    // a manual group is still settling. The superseded group reports partial;
+    // interval/focus refreshes below remain suppressed during manual work.
+    void fetchFilteredActivities({ showLoading: true });
     const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") load(false);
+      if (document.visibilityState === "visible") void fetchFilteredActivities({ background: true });
     };
     const interval = window.setInterval(refreshIfVisible, 30_000);
     window.addEventListener("focus", refreshIfVisible);
@@ -574,9 +616,86 @@ export default function DashboardPage() {
       window.clearInterval(interval);
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", refreshIfVisible);
-      controller?.abort();
+      activityRequestRef.current?.abort();
+      activityRequestRef.current = null;
     };
-  }, [householdId, baby?.id, activityDateFilter, activityTypeFilters, showHistory, todayDateKey, activityFilterRefresh]);
+  }, [householdId, baby?.id, fetchFilteredActivities]);
+
+  const refreshExplicitlyBlocked = isLoading
+    || showLogModal
+    || Boolean(editingActivity)
+    || Boolean(editingDose)
+    || Boolean(deleteActivity)
+    || Boolean(medicationEntry)
+    || showLeaveConfirm
+    || showMilkHistoryChart
+    || isEditingSleepSince
+    || isChangingSleepState
+    || isDeletingActivity
+    || isLeaving
+    || isStartingTimer
+    || isStoppingTimer
+    || pushLoading
+    || refreshFeedback?.kind === "refreshing";
+  const refreshBlocked = useDashboardRefreshBlocked(refreshExplicitlyBlocked);
+
+  const refreshDashboard = useCallback((): Promise<DashboardRefreshResult> => {
+    if (!baby?.id || refreshBlocked) {
+      return Promise.resolve({ kind: "failure", message: "Refresh is paused while an editor or dialog is open." });
+    }
+
+    return runSingleFlight(manualRefreshPromiseRef, async () => {
+      if (refreshFeedbackTimerRef.current != null) {
+        window.clearTimeout(refreshFeedbackTimerRef.current);
+        refreshFeedbackTimerRef.current = null;
+      }
+      manualRefreshActiveRef.current = true;
+      setRefreshFeedback({ kind: "refreshing", message: "Refreshing dashboard…" });
+
+      let result: DashboardRefreshResult;
+      try {
+        const outcomes = await Promise.all([
+          fetchData({ manual: true, refreshMilkHistory: false }),
+          fetchSickMode(baby.id, { manual: true }),
+          fetchMilkHistory(baby.id, false, { manual: true }),
+          fetchFilteredActivities({ manual: true }),
+        ]);
+        result = aggregateDashboardRefreshResults(outcomes);
+      } catch (error) {
+        console.error("Manual dashboard refresh error:", error);
+        result = { kind: "failure", message: "Couldn’t refresh the dashboard. Check your connection and retry." };
+      } finally {
+        manualRefreshActiveRef.current = false;
+      }
+
+      if (dashboardMountedRef.current) setRefreshFeedback(result);
+      if (result.kind === "success" && dashboardMountedRef.current) {
+        refreshFeedbackTimerRef.current = window.setTimeout(() => {
+          if (dashboardMountedRef.current) setRefreshFeedback(null);
+          refreshFeedbackTimerRef.current = null;
+        }, 3200);
+      }
+      return result;
+    });
+  }, [baby?.id, fetchData, fetchFilteredActivities, fetchMilkHistory, fetchSickMode, refreshBlocked]);
+
+  useEffect(() => {
+    dashboardMountedRef.current = true;
+    return () => {
+      dashboardMountedRef.current = false;
+      manualRefreshActiveRef.current = false;
+      milkHistoryRequestRef.current += 1;
+      sickModeRequestRef.current += 1;
+      dashboardRequestRef.current?.abort();
+      activityRequestRef.current?.abort();
+      if (refreshFeedbackTimerRef.current != null) window.clearTimeout(refreshFeedbackTimerRef.current);
+    };
+  }, []);
+
+  const { isStandalone: standalonePullEnabled, pullDistance, pullPhase } = useStandalonePullToRefresh({
+    disabled: refreshBlocked,
+    onRefresh: () => { void refreshDashboard(); },
+  });
 
   const handleLeave = async () => {
     setIsLeaving(true);
@@ -1246,7 +1365,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <main data-care-overview={Boolean(sickMode?.activeEpisode)} className="min-h-dvh bg-cream pb-24">
+    <main
+      data-care-overview={Boolean(sickMode?.activeEpisode)}
+      data-dashboard-refresh-blocked={refreshExplicitlyBlocked ? "true" : undefined}
+      className="min-h-dvh bg-cream pb-24"
+    >
       <header className="dashboard-header bg-surface border-b border-border px-4 py-2 sm:px-5 sm:py-3">
         <div className="dashboard-header-inner mx-auto max-w-lg">
           <div className="dashboard-baby-identity text-center">
@@ -1274,9 +1397,58 @@ export default function DashboardPage() {
               <span className="whitespace-nowrap text-xs text-muted">Invite code</span>
               <span className="truncate font-mono text-sm font-semibold text-accent-strong">{inviteCode}</span>
             </div>
+            <button
+              type="button"
+              onClick={() => { void refreshDashboard(); }}
+              disabled={refreshBlocked}
+              aria-label="Refresh dashboard"
+              aria-busy={refreshFeedback?.kind === "refreshing"}
+              title={refreshBlocked && refreshFeedback?.kind !== "refreshing" ? "Close the active editor or dialog to refresh" : "Refresh dashboard"}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-accent-strong shadow-sm transition-colors hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent-strong/60 disabled:opacity-45"
+            >
+              <RotateCw aria-hidden="true" className={`h-4 w-4 ${refreshFeedback?.kind === "refreshing" ? "animate-spin motion-reduce:animate-none" : ""}`} />
+            </button>
           </div>
         </div>
       </header>
+
+      {!refreshFeedback && standalonePullEnabled && pullPhase !== "idle" && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed left-1/2 z-[70] -translate-x-1/2 rounded-full border border-border bg-surface/95 px-3 py-1.5 text-xs font-semibold text-warm-brown shadow-lg backdrop-blur transition-[transform,opacity] motion-reduce:transition-none"
+          style={{
+            top: "calc(env(safe-area-inset-top) + 0.5rem)",
+            transform: `translate(-50%, ${Math.min(28, pullDistance * 0.24)}px)`,
+          }}
+        >
+          <span className="inline-flex items-center gap-2">
+            <RotateCw className={`h-3.5 w-3.5 text-accent-strong ${pullPhase === "ready" ? "rotate-180" : ""}`} />
+            {pullPhase === "ready" ? "Release to refresh" : "Pull to refresh"}
+          </span>
+        </div>
+      )}
+
+      {refreshFeedback && (
+        <div
+          role={refreshFeedback.kind === "failure" || refreshFeedback.kind === "partial" ? "alert" : "status"}
+          aria-live={refreshFeedback.kind === "failure" || refreshFeedback.kind === "partial" ? "assertive" : "polite"}
+          className={`fixed left-1/2 z-[70] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur ${refreshFeedback.kind === "failure" || refreshFeedback.kind === "partial" ? "border-warning/35 bg-surface text-warning" : "border-border bg-surface/95 text-warm-brown"}`}
+          style={{ top: "calc(env(safe-area-inset-top) + 0.5rem)" }}
+        >
+          <RotateCw aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 text-accent-strong ${refreshFeedback.kind === "refreshing" ? "animate-spin motion-reduce:animate-none" : ""}`} />
+          <span>{refreshFeedback.message}</span>
+          {(refreshFeedback.kind === "failure" || refreshFeedback.kind === "partial") && (
+            <button
+              type="button"
+              onClick={() => { void refreshDashboard(); }}
+              disabled={refreshBlocked}
+              className="min-h-8 shrink-0 rounded-full bg-terracotta-dark px-3 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="dashboard-overview max-w-lg mx-auto px-3 py-3 sm:px-5 sm:py-4 space-y-2">
         <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45")} aria-label="Sleep status">
@@ -2969,7 +3141,7 @@ function SettingsField({
   }
 
   return (
-    <div className="bg-surface p-4 rounded-lg border border-terracotta/30 space-y-2">
+    <div data-dashboard-refresh-blocked="true" className="bg-surface p-4 rounded-lg border border-terracotta/30 space-y-2">
       <label htmlFor={fieldId} className="text-xs text-muted">{label}</label>
       <input
         id={fieldId}
