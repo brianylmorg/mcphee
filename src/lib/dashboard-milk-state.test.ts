@@ -3,10 +3,12 @@ import test from "node:test";
 
 import {
   applyMilkActivityChangeToTotals,
+  sameTimeMilkMedianReference,
   shouldHoldDashboardForSickMode,
   updateRecentMilkFeedList,
   updateSickLatestMilkFeeds,
   type MilkActivitySnapshot,
+  type SameTimeMilkHistoryDay,
 } from "./dashboard-milk-state";
 
 const today = "2026-10-08";
@@ -14,6 +16,14 @@ const todayAtNoon = Date.parse(`${today}T12:00:00+08:00`);
 
 function feed(id: string, startedAt: number, feeds: Array<{ milkType: string; amount: number }>): MilkActivitySnapshot {
   return { id, type: "bottlefeed", startedAt, details: { feeds } };
+}
+
+function historyDay(
+  date: string,
+  asOfNowMl: number,
+  overrides: Partial<SameTimeMilkHistoryDay> = {},
+): SameTimeMilkHistoryDay {
+  return { date, totalMl: Math.max(1, asOfNowMl), asOfNowMl, ...overrides };
 }
 
 test("a newly logged mixed feed immediately updates today's consumed totals", () => {
@@ -84,4 +94,174 @@ test("the first dashboard render waits for sick mode to resolve for its baby", (
   assert.equal(shouldHoldDashboardForSickMode(false, "baby-1", "baby-2"), true);
   assert.equal(shouldHoldDashboardForSickMode(false, "baby-1", "baby-1"), false);
   assert.equal(shouldHoldDashboardForSickMode(false, null, null), false);
+});
+
+test("a long-running illness keeps the same pre-sickness source dates as today advances", () => {
+  const sourceDates = [
+    "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30",
+  ];
+  const history = [
+    ...sourceDates.map((date, index) => historyDay(date, (index + 1) * 10, { totalMl: 500 + index })),
+    ...["2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14"]
+      .map((date) => historyDay(date, 999)),
+  ];
+  const episode = {
+    startedAt: Date.parse("2026-10-01T09:00:00+08:00"),
+    baselineSourceDays: sourceDates.map((date) => ({ date, totalMl: 700 })),
+  };
+
+  const first = sameTimeMilkMedianReference(history, "2026-10-15", episode);
+  const nextDay = sameTimeMilkMedianReference(history, "2026-10-16", episode);
+
+  assert.equal(first.kind, "pre-sickness");
+  assert.deepEqual(first.days.map((day) => day.date), sourceDates);
+  assert.equal(first.medianMl, 40);
+  assert.deepEqual(nextDay.days.map((day) => day.date), sourceDates);
+  assert.equal(nextDay.medianMl, 40);
+});
+
+test("sick feeds never enter either pre-sickness or normal same-time references", () => {
+  const history = [
+    historyDay("2026-09-29", 200),
+    historyDay("2026-09-30", 900, { isSickDay: true }),
+    historyDay("2026-10-08", 300),
+    historyDay("2026-10-09", 800, { isSickDay: true }),
+  ];
+  const sick = sameTimeMilkMedianReference(history, "2026-10-10", {
+    startedAt: Date.parse("2026-10-01T08:00:00+08:00"),
+    baselineSourceDays: [
+      { date: "2026-09-29", totalMl: 600 },
+      { date: "2026-09-30", totalMl: 600 },
+    ],
+  });
+  const normal = sameTimeMilkMedianReference(history, "2026-10-10");
+
+  assert.deepEqual(sick.days.map((day) => day.date), ["2026-09-29"]);
+  assert.equal(sick.medianMl, 200);
+  assert.deepEqual(normal.days.map((day) => day.date), ["2026-10-08"]);
+  assert.equal(normal.medianMl, 300);
+});
+
+test("normal mode retains the rolling seven completed SGT day reference", () => {
+  const history = [
+    historyDay("2026-10-01", 1),
+    historyDay("2026-10-02", 20),
+    historyDay("2026-10-04", 40),
+    historyDay("2026-10-06", 60, { totalMl: 0 }),
+    historyDay("2026-10-07", 70),
+    historyDay("2026-10-08", 80, { isSickDay: true }),
+    historyDay("2026-10-09", 900),
+  ];
+
+  const reference = sameTimeMilkMedianReference(history, "2026-10-09");
+
+  assert.equal(reference.kind, "rolling");
+  assert.equal(reference.anchorDate, "2026-10-09");
+  assert.deepEqual(reference.days.map((day) => day.date), ["2026-10-02", "2026-10-04", "2026-10-07"]);
+  assert.equal(reference.medianMl, 40);
+});
+
+test("active episodes without usable saved history do not fall back to rolling dates", () => {
+  const history = [historyDay("2026-10-08", 800), historyDay("2026-09-30", 300, { totalMl: 0 })];
+  const startedAt = Date.parse("2026-10-01T09:00:00+08:00");
+
+  const missingMetadata = sameTimeMilkMedianReference(history, "2026-10-10", { startedAt });
+  const manualEmpty = sameTimeMilkMedianReference(history, "2026-10-10", { startedAt, baselineSourceDays: [] });
+  const missingHistory = sameTimeMilkMedianReference(history, "2026-10-10", {
+    startedAt,
+    baselineSourceDays: [{ date: "2026-09-29", totalMl: 700 }],
+  });
+  const zeroFullDay = sameTimeMilkMedianReference(history, "2026-10-10", {
+    startedAt,
+    baselineSourceDays: [{ date: "2026-09-30", totalMl: 700 }],
+  });
+
+  for (const reference of [missingMetadata, manualEmpty, missingHistory, zeroFullDay]) {
+    assert.deepEqual(reference.days, []);
+    assert.equal(reference.medianMl, null);
+  }
+});
+
+test("pre-sickness source dates are canonical, bounded, and deduplicated", () => {
+  const history = [
+    historyDay("2026-09-23", 10),
+    historyDay("2026-09-24", 20),
+    historyDay("2026-09-30", 30),
+    historyDay("2026-10-01", 40),
+  ];
+  const reference = sameTimeMilkMedianReference(history, "2026-10-15", {
+    startedAt: Date.parse("2026-10-01T09:00:00+08:00"),
+    baselineSourceDays: [
+      { date: "2026-09-24", totalMl: 700 },
+      { date: "2026-09-24", totalMl: 700 },
+      { date: "2026-09-30", totalMl: 700 },
+      { date: "2026-09-31", totalMl: 700 },
+      { date: "2026-09-23", totalMl: 700 },
+      { date: "2026-10-01", totalMl: 700 },
+      { date: "2026-10-02", totalMl: 700 },
+    ],
+  });
+
+  assert.deepEqual(reference.days.map((day) => day.date), ["2026-09-24", "2026-09-30"]);
+  assert.equal(reference.medianMl, 25);
+});
+
+test("an onset timestamp at the UTC-to-SGT boundary uses the previous SGT date", () => {
+  const reference = sameTimeMilkMedianReference([
+    historyDay("2026-10-04", 140),
+    historyDay("2026-10-05", 999),
+  ], "2026-10-12", {
+    startedAt: Date.parse("2026-10-04T16:00:00.000Z"),
+    baselineSourceDays: [
+      { date: "2026-10-04", totalMl: 600 },
+      { date: "2026-10-05", totalMl: 600 },
+    ],
+  });
+
+  assert.equal(reference.anchorDate, "2026-10-05");
+  assert.deepEqual(reference.days.map((day) => day.date), ["2026-10-04"]);
+});
+
+test("an invalid active episode timestamp fails closed without reading rolling history", () => {
+  const reference = sameTimeMilkMedianReference([historyDay("2026-10-08", 800)], "2026-10-09", {
+    startedAt: Number.MAX_VALUE,
+    baselineSourceDays: [{ date: "2026-10-08", totalMl: 800 }],
+  });
+
+  assert.equal(reference.kind, "pre-sickness");
+  assert.equal(reference.anchorDate, "");
+  assert.deepEqual(reference.days, []);
+  assert.equal(reference.medianMl, null);
+});
+
+test("a valid positive full-day source preserves a zero same-time amount", () => {
+  const reference = sameTimeMilkMedianReference([
+    historyDay("2026-09-29", 0, { totalMl: 500 }),
+    historyDay("2026-09-30", 100, { totalMl: 600 }),
+  ], "2026-10-08", {
+    startedAt: Date.parse("2026-10-01T09:00:00+08:00"),
+    baselineSourceDays: [
+      { date: "2026-09-29", totalMl: 500 },
+      { date: "2026-09-30", totalMl: 600 },
+    ],
+  });
+
+  assert.equal(reference.days.length, 2);
+  assert.equal(reference.days[0].asOfNowMl, 0);
+  assert.equal(reference.medianMl, 50);
+});
+
+test("same-time median selection does not mutate history or episode metadata", () => {
+  const history = [historyDay("2026-09-30", 100, { totalMl: 600 })];
+  const episode = {
+    startedAt: Date.parse("2026-10-01T09:00:00+08:00"),
+    baselineSourceDays: [{ date: "2026-09-30", totalMl: 600 }],
+  };
+  const originalHistory = structuredClone(history);
+  const originalEpisode = structuredClone(episode);
+
+  sameTimeMilkMedianReference(history, "2026-10-08", episode);
+
+  assert.deepEqual(history, originalHistory);
+  assert.deepEqual(episode, originalEpisode);
 });

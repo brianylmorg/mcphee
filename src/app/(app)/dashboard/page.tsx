@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useId } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, Info, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -32,7 +32,7 @@ import type { HistoricalMedicationReference } from "@/lib/historical-medication"
 import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type MedicationEntry, type MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
 import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 import { mutateSickMode } from "@/lib/sick-mode-client";
-import { applyMilkActivityChangeToTotals, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
+import { applyMilkActivityChangeToTotals, sameTimeMilkMedianReference, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
 
 interface Baby {
   id: string;
@@ -191,6 +191,8 @@ export default function DashboardPage() {
   const dashboardSnapshotRef = useRef("");
   const [selectedMilkDate, setSelectedMilkDate] = useState("");
   const [showMilkHistoryChart, setShowMilkHistoryChart] = useState(false);
+  const [showMedianInfo, setShowMedianInfo] = useState(false);
+  const medianInfoId = useId();
   const [isMilkHistoryLoading, setIsMilkHistoryLoading] = useState(false);
   const [sickMode, setSickMode] = useState<SickModeResponse | null>(null);
   const [sickModeIsStale, setSickModeIsStale] = useState(false);
@@ -1188,21 +1190,19 @@ export default function DashboardPage() {
   const canGoToPreviousComparisonDay = comparisonMilkDate > earliestMilkDate;
   const canGoToNextComparisonDay = asOfDayOffset < -1;
 
-  // Median of milk consumed "by this time" over the 7 days before today. The
-  // window is anchored to today so it stays fixed when the comparison day is
-  // toggled. Days with no milk logged are skipped so a missed logging day
-  // doesn't drag the typical value down.
-  const medianWindowStart = shiftMilkDate(todayDateKey, -7);
-  const medianWindowEnd = shiftMilkDate(todayDateKey, -1);
-  const medianDataDays = milkHistory.filter(
-    (day) => day.date >= medianWindowStart && day.date <= medianWindowEnd && day.totalMl > 0 && day.isSickDay !== true
-  );
-  const asOfMedianMl = medianDataDays.length > 0
-    ? median(medianDataDays.map((day) => day.asOfNowMl))
-    : null;
-  const medianDataDayCountLabel = medianDataDays.length > 0 && medianDataDays.length < 7
+  // Normal mode uses the rolling seven completed days before today. Sick mode
+  // stays pinned to the active episode's saved pre-onset source dates, even if
+  // its live summary is temporarily unavailable or the comparison day changes.
+  const activeMedianEpisode = sickMode?.schemaReady ? sickMode.activeEpisode : null;
+  const medianReference = sameTimeMilkMedianReference(milkHistory, todayDateKey, activeMedianEpisode);
+  const medianDataDays = medianReference.days;
+  const asOfMedianMl = medianReference.medianMl;
+  const medianDataDayCountLabel = medianDataDays.length < 7 && (activeMedianEpisode || medianDataDays.length > 0)
     ? ` (${medianDataDays.length} ${medianDataDays.length === 1 ? "day" : "days"})`
     : "";
+  const medianInfoText = activeMedianEpisode
+    ? "Uses the saved eligible days from the seven completed calendar days before sick mode began, comparing milk consumed by the current Singapore time on each day. These dates stay fixed for the episode. Recorded sick days and days without milk logs are excluded. Missing days reduce the count; no eligible days means unavailable."
+    : "Compares milk consumed by the current Singapore time across the seven completed calendar days before today. Recorded sick days and days without milk logs are excluded. The count shows when fewer than seven days qualify.";
 
   // Signed volume (ml) and % difference of today's intake vs a same-time
   // reference total (comparison day or the 7-day median). Both parts share the
@@ -1447,19 +1447,38 @@ export default function DashboardPage() {
           </div>
 
           <div className="milk-median mt-1 flex items-center justify-between gap-3">
-            <p className="min-w-0 text-left text-xs text-muted">
-              <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>
-              {medianDelta && (
-                <span
-                  title="Today vs this reference: volume and percent difference"
-                  className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(medianDelta.pct)}`}
-                >
-                  {medianDelta.ml} · {medianDelta.pct}
-                </span>
-              )}{" "}
-              {activeSickSummary ? "7-day median · same time" : "median · same time, last 7 days"}{medianDataDayCountLabel}
-            </p>
+            <div className="flex min-w-0 items-center">
+              <p className="min-w-0 text-left text-xs text-muted">
+                <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>
+                {medianDelta && (
+                  <span
+                    title="Today vs this reference: volume and percent difference"
+                    className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(medianDelta.pct)}`}
+                  >
+                    {medianDelta.ml} · {medianDelta.pct}
+                  </span>
+                )}{" "}
+                7-day median · same time{medianDataDayCountLabel}
+              </p>
+              <button
+                type="button"
+                aria-label="How the milk median is calculated"
+                aria-expanded={showMedianInfo}
+                aria-controls={medianInfoId}
+                onClick={() => setShowMedianInfo((current) => !current)}
+                className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/60 hover:text-warm-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong/60"
+              >
+                <Info aria-hidden="true" className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
+          <p
+            id={medianInfoId}
+            hidden={!showMedianInfo}
+            className="rounded-lg bg-white/55 px-3 py-2 text-xs leading-relaxed text-muted"
+          >
+            {medianInfoText}
+          </p>
 
           <RecentBottleFeeds feeds={activeSickSummary?.latestFeeds?.map((feed) => ({ id: feed.id, startedAt: feed.startedAt, amountMl: feed.totalMl })) ?? recentMilkFeeds} />
         </section>

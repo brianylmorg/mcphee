@@ -1,5 +1,5 @@
 import { bottleVolumes, parseActivityDetails, sgtDateKey } from "@/lib/milk-volumes";
-import type { SickFeedSummary } from "@/lib/sick-mode";
+import { medianMilk, shiftSgtDate, type SickBaselineDay, type SickFeedSummary } from "@/lib/sick-mode";
 
 export type MilkActivitySnapshot = {
   id: string;
@@ -13,6 +13,98 @@ export type DailyMilkTotals = {
   breastmilkMl: number;
   formulaMl: number;
 };
+
+export type SameTimeMilkHistoryDay = {
+  date: string;
+  totalMl: number;
+  asOfNowMl: number;
+  isSickDay?: boolean;
+};
+
+export type SameTimeMilkMedianEpisode = {
+  startedAt: number;
+  baselineSourceDays?: readonly SickBaselineDay[] | null;
+};
+
+export type SameTimeMilkMedianReference<T extends SameTimeMilkHistoryDay = SameTimeMilkHistoryDay> = {
+  anchorDate: string;
+  kind: "rolling" | "pre-sickness";
+  days: T[];
+  medianMl: number | null;
+};
+
+const SGT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isCanonicalSgtDate(date: unknown): date is string {
+  if (typeof date !== "string" || !SGT_DATE_PATTERN.test(date)) return false;
+  const timestamp = Date.parse(`${date}T00:00:00+08:00`);
+  return Number.isFinite(timestamp) && sgtDateKey(timestamp) === date;
+}
+
+function isEligibleSameTimeDay(day: SameTimeMilkHistoryDay): boolean {
+  return Number.isFinite(day.totalMl)
+    && day.totalMl > 0
+    && Number.isFinite(day.asOfNowMl)
+    && day.asOfNowMl >= 0
+    && day.isSickDay !== true;
+}
+
+/**
+ * Selects the history used by the dashboard's same-time median.
+ *
+ * During an active sick episode, the saved baseline source dates are the only
+ * allowed reference dates. Their saved full-day totals are deliberately not
+ * used here: the current history supplies both eligibility and its same-time
+ * amount. Without an active episode, the reference remains the seven completed
+ * SGT days before today.
+ */
+export function sameTimeMilkMedianReference<T extends SameTimeMilkHistoryDay>(
+  history: readonly T[],
+  todayDate: string,
+  activeEpisode: SameTimeMilkMedianEpisode | null = null,
+): SameTimeMilkMedianReference<T> {
+  if (activeEpisode) {
+    const startedAt = Number(activeEpisode.startedAt);
+    const anchorDate = Number.isFinite(startedAt) && Number.isFinite(new Date(startedAt).getTime())
+      ? sgtDateKey(startedAt)
+      : "";
+    if (!isCanonicalSgtDate(anchorDate)) {
+      return { anchorDate, kind: "pre-sickness", days: [], medianMl: null };
+    }
+
+    const windowStart = shiftSgtDate(anchorDate, -7);
+    const windowEnd = shiftSgtDate(anchorDate, -1);
+    const sourceDates = new Set<string>();
+    for (const sourceDay of activeEpisode.baselineSourceDays ?? []) {
+      const date = sourceDay?.date;
+      if (isCanonicalSgtDate(date) && date >= windowStart && date <= windowEnd) {
+        sourceDates.add(date);
+      }
+    }
+
+    const days = history.filter((day) => sourceDates.has(day.date) && isEligibleSameTimeDay(day));
+    return {
+      anchorDate,
+      kind: "pre-sickness",
+      days,
+      medianMl: medianMilk(days.map((day) => day.asOfNowMl)),
+    };
+  }
+
+  const anchorDate = isCanonicalSgtDate(todayDate) ? todayDate : "";
+  if (!anchorDate) return { anchorDate, kind: "rolling", days: [], medianMl: null };
+  const windowStart = shiftSgtDate(anchorDate, -7);
+  const windowEnd = shiftSgtDate(anchorDate, -1);
+  const days = history.filter((day) =>
+    day.date >= windowStart && day.date <= windowEnd && isEligibleSameTimeDay(day)
+  );
+  return {
+    anchorDate,
+    kind: "rolling",
+    days,
+    medianMl: medianMilk(days.map((day) => day.asOfNowMl)),
+  };
+}
 
 function milkContribution(activity: MilkActivitySnapshot | null, date: string): DailyMilkTotals {
   if (!activity || activity.type !== "bottlefeed" || sgtDateKey(activity.startedAt) !== date) {
