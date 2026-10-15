@@ -52,6 +52,9 @@ interface Activity {
   created_by?: string;
   medicationDose?: MedicationDoseReference;
   historicalMedication?: HistoricalMedicationReference;
+  /** Present only on the virtual, read-only care markers projected from a
+   * committed caretaker import. */
+  careBoundary?: "start" | "end";
 }
 
 interface SleepState {
@@ -1911,7 +1914,11 @@ export default function DashboardPage() {
                       comment={comment || undefined}
                       createdBy={activity.created_by || undefined}
                       multiline={activity.type === "note"}
+                      readOnly={Boolean(activity.careBoundary)}
                       onEdit={() => {
+                        // Virtual caretaker care markers are display-only and
+                        // must never open the generic activity editor.
+                        if (activity.careBoundary) return;
                         const record = activity.sourceActivity ?? activity;
                         if (record.type === "medication") {
                           setShowLogModal(false);
@@ -1942,7 +1949,12 @@ export default function DashboardPage() {
                         setLogType(record.type);
                         setShowLogModal(true);
                       }}
-                      onDelete={() => setDeleteActivity(activity.sourceActivity ?? activity)}
+                      onDelete={() => {
+                        // Defence in depth: a marker has no stored activity row,
+                        // so there is nothing it could safely delete.
+                        if (activity.careBoundary) return;
+                        setDeleteActivity(activity.sourceActivity ?? activity);
+                      }}
                     />
                   </div>
                 );

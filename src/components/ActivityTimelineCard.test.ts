@@ -61,3 +61,25 @@ test("activity card keeps full note text and comments without clamping", () => {
   assert.doesNotMatch(html, /truncate/);
   assert.match(html, /Trailing comment stays visible\./);
 });
+
+test("read-only care markers keep the layout but drop every action control", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityTimelineCard, {
+      icon: Milk,
+      title: "Care started",
+      when: "09:00 hrs",
+      elapsed: "3h ago",
+      createdBy: "childcare",
+      readOnly: true,
+      onEdit: () => {},
+      onDelete: () => {},
+    }),
+  );
+
+  assert.match(html, /data-activity-card/);
+  assert.match(html, />Care started</);
+  assert.match(html, /Entered by childcare/);
+  // Read-only markers are static markup: no edit affordance, no delete action.
+  assert.equal((html.match(/<button/g) ?? []).length, 0);
+  assert.doesNotMatch(html, /aria-label="Delete/);
+});

@@ -7,6 +7,7 @@ import { parseActivityDetails } from "@/lib/milk-volumes";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { assertMilkLedgerMutation, MilkLedgerError, replayMilkLedger } from "@/lib/milk-bank-ledger";
 import { readActivityTimeline, TIMELINE_TYPES } from "@/lib/activity-timeline";
+import { projectCaretakerActivityLog } from "@/lib/caretaker-activity-log";
 import { parseHistoricalMedicationDetails } from "@/lib/historical-medication";
 import { milkLedgerForHousehold, validateActivityInput } from "@/lib/activity-input";
 
@@ -45,7 +46,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Invalid date" }, { status: 400 });
       }
     }
-    const activities = await readActivityTimeline(db, householdId, {
+    // Read the full diary first, then let the display-only caretaker projector
+    // merge its imported attribution and virtual care markers before the
+    // caller's limit is applied.
+    const timeline = await readActivityTimeline(db, householdId, {
+      babyId, types, date, limit: null,
+    });
+    const activities = await projectCaretakerActivityLog(db, householdId, timeline, {
       babyId, types, date, limit: unlimited ? null : limit,
     });
     return NextResponse.json({ activities }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });

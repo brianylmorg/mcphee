@@ -15,6 +15,12 @@ export interface ActivityTimelineCardProps {
    * allowed to grow and wrap instead of being truncated to a single line.
    */
   multiline?: boolean;
+  /**
+   * Virtual caretaker care markers render as static rows: the layout is kept,
+   * but the edit affordance, the delete action and every interactive style are
+   * dropped.
+   */
+  readOnly?: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }
@@ -34,19 +40,13 @@ export default function ActivityTimelineCard({
   createdBy,
   icon: Icon,
   multiline = false,
+  readOnly = false,
   onEdit,
   onDelete,
 }: ActivityTimelineCardProps) {
-  return (
-    <div
-      data-activity-card
-      className="flex items-start gap-1.5 rounded-lg border border-border bg-surface p-1 transition-colors hover:border-terracotta/30"
-    >
-      <button
-        type="button"
-        onClick={onEdit}
-        className="min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-      >
+  // Shared row content. Read-only markers render it without any action chrome.
+  const body = (
+    <>
         <span className="flex min-w-0 items-start gap-2">
           <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-accent-strong" />
           <span
@@ -72,16 +72,38 @@ export default function ActivityTimelineCard({
             {comment}
           </span>
         )}
-      </button>
-      <button
-        type="button"
-        aria-label={`Delete ${title.toLowerCase()} activity`}
-        onClick={onDelete}
-        className="flex min-h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-        title="Delete"
-      >
-        <Trash2 aria-hidden="true" className="h-4 w-4" />
-      </button>
+    </>
+  );
+
+  return (
+    <div
+      data-activity-card
+      className={`flex items-start gap-1.5 rounded-lg border border-border bg-surface p-1${
+        readOnly ? "" : " transition-colors hover:border-terracotta/30"
+      }`}
+    >
+      {readOnly ? (
+        <div className="min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-left">{body}</div>
+      ) : (
+        <button
+          type="button"
+          onClick={onEdit}
+          className="min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+        >
+          {body}
+        </button>
+      )}
+      {!readOnly && (
+        <button
+          type="button"
+          aria-label={`Delete ${title.toLowerCase()} activity`}
+          onClick={onDelete}
+          className="flex min-h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          title="Delete"
+        >
+          <Trash2 aria-hidden="true" className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }
