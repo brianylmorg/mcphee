@@ -15,7 +15,9 @@ import {
   type CaretakerImportRow,
   type CaretakerImportSnapshot,
   type CaretakerOcrLine,
+  type CaretakerSleepReconciliationPreview,
 } from "./caretaker-import-contract";
+import type { ExistingSleepActivity } from "./caretaker-sleep-reconciliation";
 
 type Executor = Pick<Client, "execute">;
 
@@ -43,6 +45,15 @@ export type CaretakerBatchDb = {
   committed_at: number | null;
   purged_at: number | null;
   source_available: number;
+  draft_metadata: string | null;
+  audit_metadata: string | null;
+};
+
+export type CaretakerDraftMetadata = {
+  version: 2;
+  lineCount: number;
+  napSectionDetected: boolean;
+  sleepReconciliation: CaretakerSleepReconciliationPreview | null;
 };
 
 type CaretakerRowDb = {
@@ -177,6 +188,37 @@ function safeJson<T>(value: unknown, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
+export function parseCaretakerDraftMetadata(value: unknown): CaretakerDraftMetadata {
+  const parsed = safeJson<Partial<CaretakerDraftMetadata>>(value, {});
+  const reconciliation = parsed.sleepReconciliation;
+  const validCoverage = reconciliation?.coverage
+    && Number.isFinite(reconciliation.coverage.startedAt)
+    && Number.isFinite(reconciliation.coverage.endedAt)
+    && reconciliation.coverage.startedAt < reconciliation.coverage.endedAt;
+  const validCounts = reconciliation && [
+    reconciliation.authoritativeNapCount,
+    reconciliation.retainedExactCount,
+    reconciliation.removedCount,
+    reconciliation.trimmedCount,
+    reconciliation.splitCount,
+    reconciliation.insertedCount,
+  ].every((count) => Number.isInteger(count) && count >= 0);
+  const validReconciliation = validCoverage && validCounts
+    && reconciliation.napsChecked === true
+    && typeof reconciliation.napSectionDetected === "boolean"
+    && typeof reconciliation.fingerprint === "string"
+    && /^[a-f0-9]{64}$/.test(reconciliation.fingerprint);
+  return {
+    version: 2,
+    lineCount: Number.isInteger(parsed.lineCount) && Number(parsed.lineCount) >= 0
+      ? Number(parsed.lineCount) : 0,
+    napSectionDetected: parsed.napSectionDetected === true,
+    sleepReconciliation: validReconciliation
+      ? reconciliation as CaretakerSleepReconciliationPreview
+      : null,
+  };
+}
+
 export function dbRowDraft(row: Pick<CaretakerRowDb, "type" | "started_at" | "ended_at" | "details" | "note" | "reviewed_payload">): CaretakerActivityDraft {
   const reviewed = safeJson<CaretakerActivityDraft | null>(row.reviewed_payload, null);
   if (reviewed) return reviewed;
@@ -191,9 +233,16 @@ export function dbRowDraft(row: Pick<CaretakerRowDb, "type" | "started_at" | "en
 
 export function serializeCaretakerRow(row: CaretakerRowDb): CaretakerImportRow {
   const source = safeJson<{ sourceLineIds?: string[] }>(row.source_payload, {});
-  const issues = safeJson<CaretakerImportIssue[]>(row.issues, []);
+  let issues = safeJson<CaretakerImportIssue[]>(row.issues, []);
   const origin = row.origin === "household" || row.origin === "uncertain" ? row.origin : "caretaker";
-  const status = row.status as CaretakerImportRow["status"];
+  let status = row.status as CaretakerImportRow["status"];
+  if (row.type === "sleep" && (status === "duplicate" || status === "conflict")) {
+    // Older staged imports locked naps against the existing McPhee timer.
+    // Let them enter the new explicit care-window review; source overlaps and
+    // incomplete endpoints still remain blocking until corrected/excluded.
+    status = "needs_review";
+    issues = issues.filter((issue) => issue.code !== "EXACT_DUPLICATE" && issue.code !== "ACTIVITY_CONFLICT");
+  }
   return {
     id: row.id,
     rowIndex: Number(row.row_index),
@@ -217,6 +266,7 @@ export function serializeCaretakerRow(row: CaretakerRowDb): CaretakerImportRow {
 export function serializeCaretakerBatch(row: CaretakerBatchDb, now = Date.now()): CaretakerImportBatch {
   const sourceAvailable = Boolean(row.source_available) && row.purged_at == null && Number(row.expires_at) > now;
   const status = row.status === "committed" ? "committed" : sourceAvailable ? "staged" : "expired";
+  const metadata = parseCaretakerDraftMetadata(row.draft_metadata);
   return {
     id: row.id,
     babyId: row.baby_id,
@@ -228,6 +278,8 @@ export function serializeCaretakerBatch(row: CaretakerBatchDb, now = Date.now())
     committedAt: row.committed_at == null ? null : Number(row.committed_at),
     sourceAvailable,
     sourceMime: sourceAvailable ? row.source_mime as CaretakerImportBatch["sourceMime"] : null,
+    sleepCoverage: metadata.sleepReconciliation?.coverage ?? null,
+    napSectionDetected: metadata.napSectionDetected,
   };
 }
 
@@ -240,7 +292,8 @@ export async function loadOwnedCaretakerBatch(
     sql: `SELECT id, household_id, baby_id, status, created_at, created_by,
                  source_hash, source_mime, expires_at, revision, stage_request_id,
                  selected_date, commit_request_id, commit_result, committed_at,
-                 purged_at, CASE WHEN source_image IS NULL THEN 0 ELSE 1 END AS source_available
+                 purged_at, draft_metadata, audit_metadata,
+                 CASE WHEN source_image IS NULL THEN 0 ELSE 1 END AS source_available
           FROM paper_log_import_batches
           WHERE id = ? AND household_id = ? AND source_kind = 'caretaker_screenshot'
           LIMIT 1`,
@@ -270,7 +323,37 @@ export async function loadCaretakerSnapshot(
   const rows = serializedBatch.status === "expired" && batch.status !== "committed"
     ? []
     : (await loadCaretakerRows(db, batch.id)).map(serializeCaretakerRow);
-  return { schemaReady: true, batch: serializedBatch, rows };
+  return {
+    schemaReady: true,
+    batch: serializedBatch,
+    rows,
+    sleepReconciliation: parseCaretakerDraftMetadata(batch.draft_metadata).sleepReconciliation,
+  };
+}
+
+export async function loadRelevantSleepActivities(
+  db: Executor,
+  babyId: string,
+  startedAt: number,
+  endedAt: number,
+): Promise<ExistingSleepActivity[]> {
+  const result = await db.execute({
+    sql: `SELECT id, started_at, ended_at, details, created_at, created_by
+          FROM activities
+          WHERE baby_id = ? AND type = 'sleep'
+            AND started_at < ?
+            AND COALESCE(ended_at, 9223372036854775807) > ?
+          ORDER BY started_at ASC, created_at ASC, id ASC`,
+    args: [babyId, endedAt, startedAt],
+  });
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    startedAt: Number(row.started_at),
+    endedAt: row.ended_at == null ? null : Number(row.ended_at),
+    details: row.details == null ? null : String(row.details),
+    createdAt: Number(row.created_at),
+    createdBy: row.created_by == null ? null : String(row.created_by),
+  }));
 }
 
 export function isCaretakerOcrLine(value: unknown): value is CaretakerOcrLine {
@@ -344,6 +427,10 @@ export function classifyCaretakerClashes(
   return rows.map((sourceRow) => {
     const row = structuredClone(sourceRow);
     if (row.origin === "household") return row;
+    // Reviewed caretaker naps replace the McPhee sleep record inside their
+    // confirmed care window. Existing or separately staged sleeps therefore
+    // cannot turn a source nap into a locked duplicate/conflict here.
+    if (row.draft.type === "sleep") return row;
     let exact: ClashCandidate | null = null;
     let conflict: ClashCandidate | null = null;
     for (const candidate of preceding) {

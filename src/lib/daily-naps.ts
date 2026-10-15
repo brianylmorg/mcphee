@@ -9,6 +9,11 @@ export type DailyNapSession = {
   endedAt?: number | null;
 };
 
+export type ConfirmedSleepCoverage = {
+  startedAt: number;
+  endedAt: number;
+};
+
 export type DailyNapTotal = {
   totalMs: number;
   dayStartAt: number | null;
@@ -38,7 +43,11 @@ function sgtDayStart(timestamp: number): number {
  * later overnight activity are excluded. Overlapping intervals are merged to
  * avoid double-counting duplicated legacy rows.
  */
-export function calculateDailyNaps(sessions: readonly DailyNapSession[], now: number): DailyNapTotal {
+export function calculateDailyNaps(
+  sessions: readonly DailyNapSession[],
+  now: number,
+  confirmedCoverage: readonly ConfirmedSleepCoverage[] = [],
+): DailyNapTotal {
   if (!Number.isFinite(now)) {
     return { totalMs: 0, dayStartAt: null, bedtimeAt: null, waitingForMorningWake: true };
   }
@@ -59,7 +68,7 @@ export function calculateDailyNaps(sessions: readonly DailyNapSession[], now: nu
     return [{ start, end }];
   });
 
-  const dayStartAt = validSessions.reduce<number | null>((earliest, session) => {
+  const recordedWake = validSessions.reduce<number | null>((earliest, session) => {
     if (
       session.end == null ||
       session.end < morningBoundary ||
@@ -69,6 +78,18 @@ export function calculateDailyNaps(sessions: readonly DailyNapSession[], now: nu
     }
     return earliest == null || session.end < earliest ? session.end : earliest;
   }, null);
+
+  const coverageStart = confirmedCoverage.reduce<number | null>((earliest, coverage) => {
+    const start = Number(coverage.startedAt);
+    const end = Number(coverage.endedAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return earliest;
+    const candidate = Math.max(start, morningBoundary);
+    if (candidate > now || candidate >= calendarDayEnd || end <= candidate) return earliest;
+    return earliest == null || candidate < earliest ? candidate : earliest;
+  }, null);
+  const dayStartAt = recordedWake == null
+    ? coverageStart
+    : coverageStart == null ? recordedWake : Math.min(recordedWake, coverageStart);
 
   if (dayStartAt == null) {
     return { totalMs: 0, dayStartAt: null, bedtimeAt: null, waitingForMorningWake: true };

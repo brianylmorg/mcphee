@@ -254,3 +254,62 @@ deployed changes.
 - Hosting remains on the existing Hobby plan. No paid provider, plan upgrade, billing changes or credential rotation were performed.
 - Initial candidate `dpl_3py26FyNCXptuCvwMXZGPTPZjWV7` was blocked because the machine's default commit identity was Brainie. Both authenticated Vercel and GitHub identities were verified as brianylm; the unpublished feature commit was corrected to the existing repository owner identity while retaining Brainie co-authorship, and the next candidate built successfully. No team membership or global Git identity was changed.
 - Automatic approval review rejected a broad decrypted production-environment export. The safer protected migration endpoint avoided exporting Turso credentials. Temporary deployment metadata and the existing pulled migration-secret file were removed after rollout verification.
+
+
+## Care-window sleep authority — user clarification 2026-10-15
+
+The user reports leaving the awake/sleep counter in either state when bringing
+the child to infant care. They require imported caregiver sleep to override
+McPhee: only the screenshot's reviewed nap periods count as sleeping, and the
+gaps count as awake. The user chose entering care start/end during review.
+
+Implementation acceptance criteria:
+
+- Require an explicit care range on the selected Singapore date and explicit
+  confirmation that the complete nap history for that range has been checked.
+  Do not invent drop-off/pick-up times from the first/last event. Reject invalid
+  or future ranges and included naps outside the chosen period.
+- Treat only reviewed, complete, non-blue naps as sleep inside that range.
+  Included incomplete, low-confidence or conflicting source groups still need
+  correction, confirmation or explicit exclusion. Blue records remain excluded.
+  Missing nap sections and zero-nap captures require a clear warning.
+- Replace overlapping McPhee sleep inside the range in the same transaction as
+  activity insertion and milk-bank validation. Trim/split completed records to
+  preserve outside portions. A stale open sleep that began before/inside care
+  closes at care start or is removed when it has no outside prefix; never resume
+  its open tail after care end. Preserve later home sleep that starts at/after
+  care end.
+- Retain an exact existing nap once rather than insert it twice. Other staged
+  screenshots must not veto the reviewed care schedule. Repeated/overlapping
+  source nap groups within one capture still need explicit resolution.
+- Show a saved replacement preview. A relevant sleep change after review must
+  invalidate it and require review again, with no partial writes. Changing the
+  care range invalidates saved review and frozen commit identity. Lost-response
+  retries must not repeat replacement or milk deductions.
+- Support no-nap and zero-new-activity reconciliation, without inserting fake
+  zero-duration sleep records. Reuse existing batch draft/audit metadata; no
+  schema migration is intended. Preserve sanitized reconciliation audit metadata
+  while maintaining source/draft deletion policy.
+- Current state and daily totals must use the reconciled history. Awake since
+  means the last actual nap end (e.g. 12:40), not care end (e.g. 17:00). Preserve
+  an already-known earlier awake start on no-nap days; use confirmed coverage
+  only as a fallback when no closed sleep history exists. Count the first
+  imported daytime nap even if no morning home wake was recorded.
+
+Implementation and local verification are complete. The full suite passed
+193 tests; the seven reconciliation API integration tests also passed after
+the final old-response compatibility assertion. TypeScript and the webpack
+production build passed. A real browser-local OCR test at 390px verified the
+care window, source exclusions, saved replacement preview, revision invalidation,
+forgotten-timer closure, wrong-nap removal, awake-since-last-nap behavior, daily
+sleep total and lost-response retry without another milk deduction.
+
+No schema migration is required. Existing batch draft/audit metadata stores the
+reviewed coverage, relevant-sleep fingerprint and sanitized applied summary.
+Unchanged exact naps are retained once; explicit reviewed notes on retained
+naps are applied while existing details/attribution are preserved. Legacy
+staged nap locks can enter the new review, and old committed responses remain
+replayable without reapplying reconciliation. Dashboard reads also tolerate an
+old or partially migrated caretaker schema. No production care records have
+been changed during validation. Deployment verification is recorded below
+when the candidate is promoted.

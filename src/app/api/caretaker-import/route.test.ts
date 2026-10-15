@@ -138,10 +138,18 @@ function stageRequest(
 }
 
 function jsonRequest(path: string, method: string, body: unknown, options = {}) {
+  const payload = path === "/api/caretaker-import/review"
+    && body != null && typeof body === "object" && !Array.isArray(body)
+    && !("sleepCoverage" in body)
+    ? {
+        ...body,
+        sleepCoverage: { startedAt: at("08:00"), endedAt: at("17:00"), napsChecked: true },
+      }
+    : body;
   return request(path, {
     method,
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   }, options);
 }
 
@@ -376,7 +384,7 @@ test("caretaker import is household-bound, reviewed, replay-safe, ledger-safe, a
       batchId: napBody.batch.id, requestId: "commit-napcheck", expectedRevision: 2,
     }));
     assert.equal(napCommit.status, 409);
-    assert.equal((await napCommit.json()).code, "NAP_OVERLAP", "sleep overlap is rechecked inside commit transaction");
+    assert.equal((await napCommit.json()).code, "SLEEP_PLAN_CHANGED", "sleep replacement fingerprint is rechecked inside commit transaction");
     assert.equal(Number((await client.execute({ sql: "SELECT COUNT(*) AS n FROM activities WHERE type = 'sleep' AND id != ?", args: ["concurrent-sleep"] })).rows[0].n), 0);
 
     const historicalStockStage = await stageImport(stageRequest(milkLines(450, "7:00 a.m."), "stage-history-stock", 9));

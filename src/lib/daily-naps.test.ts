@@ -110,3 +110,29 @@ test("resets at Singapore midnight independently of the host timezone", () => {
     waitingForMorningWake: true,
   });
 });
+
+test("confirmed infant-care coverage starts tracking without a prior sleep wake", () => {
+  const now = sgt("2026-10-05", "16:00:00");
+  const result = calculateDailyNaps([
+    { id: "care-nap", startedAt: sgt("2026-10-05", "10:00:00"), endedAt: sgt("2026-10-05", "11:30:00") },
+  ], now, [{
+    startedAt: sgt("2026-10-05", "08:00:00"),
+    endedAt: sgt("2026-10-05", "16:00:00"),
+  }]);
+
+  assert.equal(result.waitingForMorningWake, false);
+  assert.equal(result.dayStartAt, sgt("2026-10-05", "08:00:00"));
+  assert.equal(result.totalMs, 90 * minute);
+});
+
+test("coverage spanning 05:00 starts tracking at the morning boundary", () => {
+  const result = calculateDailyNaps([
+    { startedAt: sgt("2026-10-05", "05:15:00"), endedAt: sgt("2026-10-05", "06:00:00") },
+  ], sgt("2026-10-05", "10:00:00"), [{
+    startedAt: sgt("2026-10-05", "04:30:00"),
+    endedAt: sgt("2026-10-05", "09:00:00"),
+  }]);
+
+  assert.equal(result.dayStartAt, sgt("2026-10-05", "05:00:00"));
+  assert.equal(result.totalMs, 45 * minute);
+});

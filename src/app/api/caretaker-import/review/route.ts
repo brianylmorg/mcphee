@@ -6,8 +6,10 @@ import { purgeExpiredCaretakerImports } from "@/db/caretaker-import-schema";
 import {
   canonicalCaretakerActivity,
   findNapOverlaps,
+  singaporeDateKey,
   validateCaretakerDraft,
 } from "@/lib/caretaker-import";
+import { planCaretakerSleepReconciliation } from "@/lib/caretaker-sleep-reconciliation";
 import {
   CARETAKER_IMPORT_LOW_CONFIDENCE,
   type CaretakerActivityDraft,
@@ -23,6 +25,8 @@ import {
   loadCaretakerSnapshot,
   loadClashCandidates,
   loadOwnedCaretakerBatch,
+  loadRelevantSleepActivities,
+  parseCaretakerDraftMetadata,
   requireCaretakerMember,
   requireCaretakerSchema,
   requireSameOrigin,
@@ -80,6 +84,20 @@ export async function PATCH(request: NextRequest) {
   }
   if (Number(batch.revision) !== body.expectedRevision) {
     return caretakerError(409, "REVISION_CONFLICT", "The review changed on another device. Reload it before saving.");
+  }
+  const coverage = body.sleepCoverage;
+  if (!coverage || coverage.napsChecked !== true
+      || typeof coverage.startedAt !== "number" || !Number.isSafeInteger(coverage.startedAt)
+      || typeof coverage.endedAt !== "number" || !Number.isSafeInteger(coverage.endedAt)
+      || coverage.startedAt <= 0 || coverage.startedAt >= coverage.endedAt
+      || coverage.endedAt > now
+      || singaporeDateKey(coverage.startedAt) !== batch.selected_date
+      || singaporeDateKey(coverage.endedAt) !== batch.selected_date) {
+    return caretakerError(
+      400,
+      "INVALID_SLEEP_COVERAGE",
+      "Refresh McPhee, then confirm a valid, non-future care start and end on the selected Singapore date.",
+    );
   }
 
   const stored = await loadCaretakerRows(db, batch.id);
@@ -211,16 +229,10 @@ export async function PATCH(request: NextRequest) {
     });
   }
   for (const row of activelyIncluded.filter((entry) => entry.draft.type === "sleep" && entry.draft.endedAt != null)) {
-    const overlap = await db.execute({
-      sql: `SELECT id FROM activities WHERE baby_id = ? AND type = 'sleep'
-            AND started_at < ? AND COALESCE(ended_at, 9223372036854775807) > ? LIMIT 1`,
-      args: [batch.baby_id, row.draft.endedAt!, row.draft.startedAt],
-    });
-    if (overlap.rows.length > 0) {
-      row.conflictActivityId = String(overlap.rows[0].id);
+    if (row.draft.startedAt < coverage.startedAt || row.draft.endedAt! > coverage.endedAt) {
       withIssue(row, {
-        code: "NAP_OVERLAP",
-        message: "This nap overlaps an existing McPhee nap; correct or exclude it.",
+        code: "INVALID_TIME",
+        message: "This nap must be inside the confirmed infant-care window.",
         blocking: true,
       });
     }
@@ -229,6 +241,29 @@ export async function PATCH(request: NextRequest) {
   const nextRevision = Number(batch.revision) + 1;
   const tx = await db.transaction("write");
   try {
+    const authoritativeNaps = reviewed
+      .filter((row) => row.status === "reviewed" && row.draft.type === "sleep" && row.draft.endedAt != null)
+      .map((row) => ({ rowId: row.id, startedAt: row.draft.startedAt, endedAt: row.draft.endedAt! }));
+    const existingSleeps = await loadRelevantSleepActivities(
+      tx as unknown as ReturnType<typeof createDB>,
+      batch.baby_id,
+      coverage.startedAt,
+      coverage.endedAt,
+    );
+    const sleepPlan = planCaretakerSleepReconciliation(coverage, authoritativeNaps, existingSleeps);
+    const existingMetadata = parseCaretakerDraftMetadata(batch.draft_metadata);
+    const sleepReconciliation = {
+      coverage: sleepPlan.coverage,
+      napsChecked: true,
+      napSectionDetected: existingMetadata.napSectionDetected,
+      authoritativeNapCount: sleepPlan.authoritativeNapCount,
+      retainedExactCount: sleepPlan.retainedExactCount,
+      removedCount: sleepPlan.removedCount,
+      trimmedCount: sleepPlan.trimmedCount,
+      splitCount: sleepPlan.splitCount,
+      insertedCount: sleepPlan.insertedCount,
+      fingerprint: sleepPlan.fingerprint,
+    };
     for (const row of reviewed) {
       const canonicalHash = createHash("sha256").update(canonicalCaretakerActivity(row.draft)).digest("hex");
       await tx.execute({
@@ -248,9 +283,16 @@ export async function PATCH(request: NextRequest) {
       });
     }
     const updated = await tx.execute({
-      sql: `UPDATE paper_log_import_batches SET revision = ?, audit_metadata = ?
+      sql: `UPDATE paper_log_import_batches SET revision = ?, audit_metadata = ?, draft_metadata = ?
             WHERE id = ? AND household_id = ? AND revision = ? AND status = 'staged'`,
-      args: [nextRevision, JSON.stringify(reviewAudit(reviewed)), batch.id, member.householdId, body.expectedRevision],
+      args: [
+        nextRevision,
+        JSON.stringify(reviewAudit(reviewed)),
+        JSON.stringify({ ...existingMetadata, sleepReconciliation }),
+        batch.id,
+        member.householdId,
+        body.expectedRevision,
+      ],
     });
     if (updated.rowsAffected !== 1) throw new Error("REVISION_CONFLICT");
     await tx.commit();
@@ -258,6 +300,9 @@ export async function PATCH(request: NextRequest) {
     try { await tx.rollback(); } catch {}
     if (error instanceof Error && error.message === "REVISION_CONFLICT") {
       return caretakerError(409, "REVISION_CONFLICT", "The review changed on another device. Reload it before saving.");
+    }
+    if (error instanceof Error && error.message.startsWith("INVALID_")) {
+      return caretakerError(409, "SLEEP_REVIEW_INCOMPLETE", "The sleep replacement preview is invalid. Reload and review it again.");
     }
     throw error;
   } finally {

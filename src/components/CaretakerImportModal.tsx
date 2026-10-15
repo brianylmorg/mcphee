@@ -167,6 +167,30 @@ function draftsFromSnapshot(snapshot: CaretakerImportSnapshot): Record<string, R
   return Object.fromEntries(snapshot.rows.map(row => [row.id, draftFromRow(row)]));
 }
 
+function sleepReviewFromSnapshot(snapshot: CaretakerImportSnapshot) {
+  const coverage = snapshot.batch.sleepCoverage ?? snapshot.sleepReconciliation?.coverage ?? null;
+  return {
+    careStartedAt: singaporeDateTimeInput(coverage?.startedAt ?? null),
+    careEndedAt: singaporeDateTimeInput(coverage?.endedAt ?? null),
+    napsChecked: Boolean(snapshot.sleepReconciliation?.napsChecked),
+  };
+}
+
+function formatSingaporeCoverage(coverage: { startedAt: number; endedAt: number }): string {
+  const date = new Intl.DateTimeFormat("en-SG", {
+    timeZone: "Asia/Singapore",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(coverage.startedAt));
+  const time = new Intl.DateTimeFormat("en-SG", {
+    timeZone: "Asia/Singapore",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${date}, ${time.format(new Date(coverage.startedAt))}–${time.format(new Date(coverage.endedAt))} SGT`;
+}
+
 function isLowConfidence(row: CaretakerImportRow): boolean {
   return row.confidence < CARETAKER_IMPORT_LOW_CONFIDENCE || row.issues.some(issue => issue.code === "LOW_CONFIDENCE");
 }
@@ -465,6 +489,9 @@ export default function CaretakerImportModal({
   const [progress, setProgress] = useState<CaretakerOcrProgress>({ status: "loading", progress: 0 });
   const [snapshot, setSnapshot] = useState<CaretakerImportSnapshot | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
+  const [careStartedAt, setCareStartedAt] = useState("");
+  const [careEndedAt, setCareEndedAt] = useState("");
+  const [napsChecked, setNapsChecked] = useState(false);
   const [reviewDirty, setReviewDirty] = useState(false);
   const [hasSavedReview, setHasSavedReview] = useState(false);
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
@@ -503,20 +530,48 @@ export default function CaretakerImportModal({
     return order.map(type => ({ type, rows: visibleRows.filter(row => (drafts[row.id]?.type ?? row.draft.type) === type) })).filter(group => group.rows.length > 0);
   }, [drafts, visibleRows]);
   const selectedRows = visibleRows.filter(row => drafts[row.id]?.action === "include");
+  const selectedNaps = selectedRows.filter(row => drafts[row.id]?.type === "sleep");
+  const sourceNapRows = rows.filter(row => row.draft.type === "sleep");
   const selectedBreastmilk = selectedRows.reduce((total, row) => {
     const draft = drafts[row.id];
     return total + (draft?.type === "bottlefeed" && draft.milkType === "breastmilk" ? Number(draft.amount) || 0 : 0);
   }, 0);
   const localBlockers = selectedRows.flatMap(row => localBlockingIssues(row, drafts[row.id], snapshot?.batch.selectedDate ?? selectedDate));
   const serverBlockers = selectedRows.flatMap(row => row.issues.filter(issue => issue.blocking));
+  const careStart = parseSingaporeDateTime(careStartedAt);
+  const careEnd = parseSingaporeDateTime(careEndedAt);
+  const sleepPlanErrors = (() => {
+    if (!snapshot) return [];
+    const errors: string[] = [];
+    const datePrefix = `${snapshot.batch.selectedDate}T`;
+    if (careStart == null) errors.push("Enter a valid care start time.");
+    else if (!careStartedAt.startsWith(datePrefix)) errors.push("Care start must be on the selected date.");
+    if (careEnd == null) errors.push("Enter a valid care end time.");
+    else if (!careEndedAt.startsWith(datePrefix)) errors.push("Care end must be on the selected date.");
+    if (careStart != null && careEnd != null) {
+      if (careStart >= careEnd) errors.push("Care end must be after care start.");
+      if (careStart > Date.now() || careEnd > Date.now()) errors.push("The care period cannot be in the future.");
+      for (const row of selectedNaps) {
+        const draft = drafts[row.id];
+        const napStart = parseSingaporeDateTime(draft.startedAt);
+        const napEnd = parseSingaporeDateTime(draft.endedAt);
+        if (napStart != null && napEnd != null && (napStart < careStart || napEnd > careEnd)) {
+          errors.push(`Nap row ${row.rowIndex + 1} must stay inside the care period.`);
+        }
+      }
+    }
+    return [...new Set(errors)];
+  })();
+  const savedSleepPlan = hasSavedReview && !reviewDirty ? snapshot?.sleepReconciliation ?? null : null;
   const canCommit = Boolean(
     snapshot
-    && selectedRows.length > 0
     && hasSavedReview
     && !reviewDirty
     && !stale
     && localBlockers.length === 0
     && serverBlockers.length === 0
+    && sleepPlanErrors.length === 0
+    && napsChecked
     && reviewConfirmed
     && !busy,
   );
@@ -531,6 +586,9 @@ export default function CaretakerImportModal({
     if (!keepDate) setSelectedDate(singaporeDate());
     setSnapshot(null);
     setDrafts({});
+    setCareStartedAt("");
+    setCareEndedAt("");
+    setNapsChecked(false);
     setReviewDirty(false);
     setHasSavedReview(false);
     setReviewConfirmed(false);
@@ -576,15 +634,27 @@ export default function CaretakerImportModal({
 
   const finishCommittedSnapshot = async (committed: CaretakerImportSnapshot) => {
     const committedCount = committed.rows.filter(row => row.status === "committed").length;
+    const reconciliation = committed.sleepReconciliation;
     setSuccess({
       batchId: committed.batch.id,
       committedActivityIds: [],
       committedCount,
       idempotent: true,
+      ...(reconciliation ? {
+        sleepReconciliation: {
+          coverage: reconciliation.coverage,
+          authoritativeNapCount: reconciliation.authoritativeNapCount,
+          retainedExactCount: reconciliation.retainedExactCount,
+          removedCount: reconciliation.removedCount,
+          trimmedCount: reconciliation.trimmedCount,
+          splitCount: reconciliation.splitCount,
+          insertedCount: reconciliation.insertedCount,
+        },
+      } : {}),
     });
     setView("success");
     try { await onImported(); } catch {
-      setRefreshWarning("The activities were already imported, but the dashboard could not refresh. Close this window and refresh when you are online.");
+      setRefreshWarning("The reviewed care log was already applied, but the dashboard could not refresh. Close this window and refresh when you are online.");
     }
   };
 
@@ -631,8 +701,12 @@ export default function CaretakerImportModal({
       }
       setSnapshot(staged);
       setDrafts(draftsFromSnapshot(staged));
+      const sleepReview = sleepReviewFromSnapshot(staged);
+      setCareStartedAt(sleepReview.careStartedAt);
+      setCareEndedAt(sleepReview.careEndedAt);
+      setNapsChecked(sleepReview.napsChecked);
       setReviewDirty(false);
-      setHasSavedReview(false);
+      setHasSavedReview(sleepReview.napsChecked);
       setReviewConfirmed(false);
       setStale(false);
       setView("review");
@@ -649,11 +723,29 @@ export default function CaretakerImportModal({
   };
 
   const updateDraft = (rowId: string, change: Partial<ReviewDraft>) => {
+    const changesNap = drafts[rowId]?.type === "sleep" || change.type === "sleep";
     setDrafts(current => {
       const next = { ...current[rowId], ...change };
       if (change.resolvedOrigin === "household") next.action = "exclude";
       return { ...current, [rowId]: next };
     });
+    if (changesNap) setNapsChecked(false);
+    setReviewDirty(true);
+    setReviewConfirmed(false);
+    setHasSavedReview(false);
+    setStale(false);
+    setError(null);
+    commitAttemptRef.current = null;
+  };
+
+  const updateSleepPlan = (change: {
+    careStartedAt?: string;
+    careEndedAt?: string;
+    napsChecked?: boolean;
+  }) => {
+    if (change.careStartedAt != null) setCareStartedAt(change.careStartedAt);
+    if (change.careEndedAt != null) setCareEndedAt(change.careEndedAt);
+    if (change.napsChecked != null) setNapsChecked(change.napsChecked);
     setReviewDirty(true);
     setReviewConfirmed(false);
     setHasSavedReview(false);
@@ -670,6 +762,7 @@ export default function CaretakerImportModal({
         || row.issues.some(issue => issue.code === "EXACT_DUPLICATE");
       return [row.id, isHousehold || isExactDuplicate ? { ...draft, action: "exclude" } : draft];
     })));
+    setNapsChecked(false);
     setReviewDirty(true);
     setHasSavedReview(false);
     setReviewConfirmed(false);
@@ -684,6 +777,14 @@ export default function CaretakerImportModal({
       setError("Fix or exclude every highlighted row before saving the review.");
       return;
     }
+    if (sleepPlanErrors.length > 0 || careStart == null || careEnd == null) {
+      setError("Fix the care period and keep every included nap inside it before saving the review.");
+      return;
+    }
+    if (!napsChecked) {
+      setError("Confirm that you checked the complete nap history for this care period.");
+      return;
+    }
     setBusy("save");
     setError(null);
     try {
@@ -694,13 +795,22 @@ export default function CaretakerImportModal({
           batchId: snapshot.batch.id,
           expectedRevision: snapshot.batch.revision,
           rows: rows.map(row => reviewInput(row, drafts[row.id])),
+          sleepCoverage: {
+            startedAt: careStart,
+            endedAt: careEnd,
+            napsChecked: true,
+          },
         }),
       });
       if (updated.batch.status === "expired" || !updated.batch.sourceAvailable) return expireImport();
       setSnapshot(updated);
       setDrafts(draftsFromSnapshot(updated));
+      const sleepReview = sleepReviewFromSnapshot(updated);
+      setCareStartedAt(sleepReview.careStartedAt);
+      setCareEndedAt(sleepReview.careEndedAt);
+      setNapsChecked(sleepReview.napsChecked);
       setReviewDirty(false);
-      setHasSavedReview(true);
+      setHasSavedReview(sleepReview.napsChecked);
       setReviewConfirmed(false);
       setStale(false);
       commitAttemptRef.current = null;
@@ -730,8 +840,12 @@ export default function CaretakerImportModal({
       if (latest.batch.status === "expired" || !latest.batch.sourceAvailable) return expireImport();
       setSnapshot(latest);
       setDrafts(draftsFromSnapshot(latest));
+      const sleepReview = sleepReviewFromSnapshot(latest);
+      setCareStartedAt(sleepReview.careStartedAt);
+      setCareEndedAt(sleepReview.careEndedAt);
+      setNapsChecked(sleepReview.napsChecked);
       setReviewDirty(false);
-      setHasSavedReview(false);
+      setHasSavedReview(sleepReview.napsChecked);
       setReviewConfirmed(false);
       setStale(false);
       commitAttemptRef.current = null;
@@ -767,11 +881,15 @@ export default function CaretakerImportModal({
       try {
         await onImported();
       } catch {
-        setRefreshWarning("The activities were imported, but the dashboard could not refresh. Close this window and refresh when you are online.");
+        setRefreshWarning("The reviewed care log was applied, but the dashboard could not refresh. Close this window and refresh when you are online.");
       }
     } catch (caught) {
       if (caught instanceof CaretakerRequestError && caught.code.includes("EXPIRED")) return expireImport();
-      if (caught instanceof CaretakerRequestError && (caught.status === 409 || (caught.issues?.length ?? 0) > 0)) {
+      if (caught instanceof CaretakerRequestError && (
+        caught.code === "SLEEP_PLAN_CHANGED"
+        || caught.status === 409
+        || (caught.issues?.length ?? 0) > 0
+      )) {
         setReviewConfirmed(false);
         setStale(true);
         commitAttemptRef.current = null;
@@ -885,6 +1003,97 @@ export default function CaretakerImportModal({
             </div>
           </section>
 
+          <section className="space-y-3 rounded-xl border border-terracotta/30 bg-terracotta/5 p-3 sm:p-4" aria-labelledby="care-sleep-period-title">
+            <div>
+              <SectionHeading icon={<Moon className="h-4 w-4" />}>
+                <span id="care-sleep-period-title">Infant-care sleep period</span>
+              </SectionHeading>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                Enter the exact period covered by infant care. Within this period, only the reviewed non-blue naps count as sleep; every gap counts as awake. Completed sleep outside the period is kept. A timer left running before or during care is stopped and will not resume afterward. Later sleep recorded at home is kept.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care start (Singapore)
+                <input
+                  type="datetime-local"
+                  required
+                  min={`${snapshot.batch.selectedDate}T00:00`}
+                  max={`${snapshot.batch.selectedDate}T23:59`}
+                  value={careStartedAt}
+                  disabled={Boolean(busy)}
+                  onChange={event => updateSleepPlan({ careStartedAt: event.target.value, napsChecked: false })}
+                  className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
+                />
+              </label>
+              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care end (Singapore)
+                <input
+                  type="datetime-local"
+                  required
+                  min={`${snapshot.batch.selectedDate}T00:00`}
+                  max={`${snapshot.batch.selectedDate}T23:59`}
+                  value={careEndedAt}
+                  disabled={Boolean(busy)}
+                  onChange={event => updateSleepPlan({ careEndedAt: event.target.value, napsChecked: false })}
+                  className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
+                />
+              </label>
+            </div>
+
+            {!snapshot.batch.napSectionDetected && (
+              <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+                <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                No complete nap-history section was detected. Do not treat this period as awake unless the screenshot genuinely covers the full nap history. Use a complete screenshot if it was cropped.
+              </p>
+            )}
+            {snapshot.batch.napSectionDetected && sourceNapRows.length === 0 && (
+              <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+                <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                The nap section contains no detected naps. Confirm only if {babyName} stayed awake for the whole care period.
+              </p>
+            )}
+            {sourceNapRows.length > 0 && selectedNaps.length === 0 && (
+              <p role="status" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+                <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                No naps are currently included. Applying this plan records the entire care period as awake.
+              </p>
+            )}
+
+            <label className="flex min-h-12 items-start gap-3 rounded-xl border border-border bg-surface p-3 text-sm leading-relaxed">
+              <input
+                type="checkbox"
+                checked={napsChecked}
+                disabled={Boolean(busy)}
+                onChange={event => updateSleepPlan({ napsChecked: event.target.checked })}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark"
+              />
+              I checked the complete nap history for this care period. Only these naps were sleep; the gaps were awake.
+            </label>
+
+            {sleepPlanErrors.length > 0 && (
+              <div role="status" className="space-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-warning">
+                {sleepPlanErrors.map(message => <p key={message}>{message}</p>)}
+              </div>
+            )}
+
+            {savedSleepPlan && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-warm-brown">
+                <p className="flex items-center gap-2 font-semibold text-success"><CheckCircle2 aria-hidden="true" className="h-4 w-4" />Saved sleep replacement</p>
+                <p className="mt-1.5 font-medium">{formatSingaporeCoverage(savedSleepPlan.coverage)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted">
+                  {savedSleepPlan.authoritativeNapCount} reviewed {savedSleepPlan.authoritativeNapCount === 1 ? "nap defines" : "naps define"} sleep in this period. All other time in the period will be awake.
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-5">
+                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.retainedExactCount}</strong> retained</span>
+                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.removedCount}</strong> removed</span>
+                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.trimmedCount}</strong> trimmed</span>
+                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.splitCount}</strong> split</span>
+                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.insertedCount}</strong> inserted</span>
+                </div>
+              </div>
+            )}
+          </section>
+
           {householdRows.length > 0 && (
             <details className="rounded-xl border border-sky-200 bg-sky-50/70">
               <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-3 py-2 text-sm font-semibold text-sky-900">
@@ -903,7 +1112,7 @@ export default function CaretakerImportModal({
           </div>
 
           {visibleRows.length === 0 ? (
-            <p className="rounded-xl border border-border bg-surface-muted p-4 text-sm text-muted">No infant-care entries are available to import from this screenshot.</p>
+            <p className="rounded-xl border border-border bg-surface-muted p-4 text-sm text-muted">No additional infant-care activity rows are available. You can still apply the reviewed sleep schedule for this care period.</p>
           ) : groupedRows.map(group => (
             <section key={group.type} className="space-y-2.5">
               <SectionHeading icon={group.type === "bottlefeed" ? <Milk className="h-4 w-4" /> : group.type === "sleep" ? <Moon className="h-4 w-4" /> : group.type === "diaper" ? <Baby className="h-4 w-4" /> : <UtensilsCrossed className="h-4 w-4" />}>
@@ -921,18 +1130,20 @@ export default function CaretakerImportModal({
           )}
 
           <div className="sticky bottom-0 -mx-4 space-y-3 border-t border-border bg-surface/95 px-4 pb-4 pt-3 backdrop-blur sm:-mx-5 sm:px-5 sm:pb-5">
-            <button type="button" disabled={Boolean(busy) || stale} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
+            <button type="button" disabled={Boolean(busy) || stale || !napsChecked || sleepPlanErrors.length > 0} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
               {busy === "save" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-4 w-4" />}
-              {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Review saved" : "Save reviewed rows"}
+              {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Care review saved" : "Save care review"}
             </button>
             <label className={`flex items-start gap-3 rounded-xl border p-3 text-sm leading-relaxed ${hasSavedReview && !reviewDirty && !stale ? "border-border" : "border-border bg-surface-muted text-muted"}`}>
-              <input type="checkbox" checked={reviewConfirmed} disabled={!hasSavedReview || reviewDirty || stale || Boolean(busy) || selectedRows.length === 0 || localBlockers.length > 0 || serverBlockers.length > 0} onChange={event => setReviewConfirmed(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark" />
-              I reviewed every included row against the screenshot. Amounts are consumed amounts, and included breastmilk feeds can be deducted from the breastmilk bank.
+              <input type="checkbox" checked={reviewConfirmed} disabled={!hasSavedReview || reviewDirty || stale || Boolean(busy) || localBlockers.length > 0 || serverBlockers.length > 0 || sleepPlanErrors.length > 0} onChange={event => setReviewConfirmed(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark" />
+              <span>
+                I approve replacing McPhee sleep during {savedSleepPlan ? formatSingaporeCoverage(savedSleepPlan.coverage) : "the reviewed care period"} with the reviewed infant-care naps. I reviewed every included row against the screenshot; included breastmilk feeds will deduct their consumed amounts from the breastmilk bank.
+              </span>
             </label>
-            {(localBlockers.length > 0 || serverBlockers.length > 0) && <p className="flex items-start gap-2 text-xs leading-relaxed text-warning"><AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Fix or exclude every highlighted entry, then save the review again.</p>}
+            {(localBlockers.length > 0 || serverBlockers.length > 0 || sleepPlanErrors.length > 0 || !napsChecked) && <p className="flex items-start gap-2 text-xs leading-relaxed text-warning"><AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Complete the care period and nap-history check, then fix or exclude every highlighted entry before saving.</p>}
             <button type="button" disabled={!canCommit} onClick={() => { void commit(); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
               {busy === "commit" ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin motion-reduce:animate-none" /> : <ImageUp aria-hidden="true" className="h-5 w-5" />}
-              {busy === "commit" ? "Importing…" : `Import ${selectedRows.length} ${selectedRows.length === 1 ? "entry" : "entries"}`}
+              {busy === "commit" ? "Applying…" : selectedRows.length === 0 ? "Apply sleep schedule" : "Apply reviewed care log"}
             </button>
           </div>
         </div>
@@ -941,12 +1152,26 @@ export default function CaretakerImportModal({
       {view === "success" && success && (
         <div className="flex min-h-[440px] flex-col items-center justify-center p-6 text-center">
           <span className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-success"><CheckCircle2 aria-hidden="true" className="h-11 w-11" /></span>
-          <h3 className="mt-5 font-display text-2xl font-semibold">Import complete</h3>
-          <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
-            {success.idempotent
-              ? `${success.committedCount} ${success.committedCount === 1 ? "activity from this screenshot is" : "activities from this screenshot are"} already in ${babyName}'s diary.`
-              : `${success.committedCount} ${success.committedCount === 1 ? "activity was" : "activities were"} added to ${babyName}'s diary.`}
-          </p>
+          <h3 className="mt-5 font-display text-2xl font-semibold">{success.sleepReconciliation ? "Care log applied" : "Import complete"}</h3>
+          {success.sleepReconciliation ? (
+            <div className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
+              <p className="font-medium text-warm-brown">Sleep schedule updated for {formatSingaporeCoverage(success.sleepReconciliation.coverage)}.</p>
+              <p className="mt-1">
+                {success.sleepReconciliation.authoritativeNapCount} reviewed {success.sleepReconciliation.authoritativeNapCount === 1 ? "nap now defines" : "naps now define"} sleep in the care period.
+                {success.committedCount > 0
+                  ? success.idempotent
+                    ? ` ${success.committedCount} ${success.committedCount === 1 ? "reviewed activity was" : "reviewed activities were"} already applied.`
+                    : ` ${success.committedCount} ${success.committedCount === 1 ? "reviewed activity was" : "reviewed activities were"} applied.`
+                  : " No new diary entries were needed."}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
+              {success.idempotent
+                ? `${success.committedCount} ${success.committedCount === 1 ? "activity from this screenshot is" : "activities from this screenshot are"} already in ${babyName}'s diary.`
+                : `${success.committedCount} ${success.committedCount === 1 ? "activity was" : "activities were"} added to ${babyName}'s diary.`}
+            </p>
+          )}
           {refreshWarning && <p role="alert" className="mt-4 max-w-sm rounded-lg bg-amber-50 px-3 py-2 text-sm text-warning">{refreshWarning}</p>}
           <div className="mt-7 grid w-full max-w-sm gap-2 sm:grid-cols-2">
             <button type="button" onClick={() => { setError(null); resetImport(true); }} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border px-4 text-sm font-semibold"><ImageUp aria-hidden="true" className="h-4 w-4" />Import another</button>

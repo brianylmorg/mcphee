@@ -2,12 +2,24 @@
 
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Info } from "lucide-react";
-import { calculateDailyNaps, type DailyNapSession } from "@/lib/daily-naps";
+import {
+  calculateDailyNaps,
+  type ConfirmedSleepCoverage,
+  type DailyNapSession,
+} from "@/lib/daily-naps";
 import { formatElapsedDuration } from "@/lib/elapsed-time";
 
 const TICK_MS = 30 * 1000;
 
-export function DailyNapSummary({ sessions, trailingAction }: { sessions: readonly DailyNapSession[]; trailingAction?: ReactNode }) {
+export function DailyNapSummary({
+  sessions,
+  confirmedCoverage = [],
+  trailingAction,
+}: {
+  sessions: readonly DailyNapSession[];
+  confirmedCoverage?: readonly ConfirmedSleepCoverage[];
+  trailingAction?: ReactNode;
+}) {
   const [now, setNow] = useState(() => Date.now());
   const [showInfo, setShowInfo] = useState(false);
   const infoId = useId();
@@ -28,7 +40,7 @@ export function DailyNapSummary({ sessions, trailingAction }: { sessions: readon
     };
   }, []);
 
-  const summary = calculateDailyNaps(sessions, now);
+  const summary = calculateDailyNaps(sessions, now, confirmedCoverage);
 
   return (
     <div className="daily-nap-summary mt-1 border-t border-current/10 pt-1">
@@ -61,7 +73,7 @@ export function DailyNapSummary({ sessions, trailingAction }: { sessions: readon
         hidden={!showInfo}
         className="rounded-lg bg-white/55 px-3 py-2 text-xs leading-relaxed text-muted"
       >
-          Singapore time: counting starts at the first recorded wake at or after 5am and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight.
+          Singapore time: counting starts at the first recorded wake at or after 5am, or an earlier confirmed infant-care period, and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight.
       </p>
     </div>
   );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
+import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 import { canUndoSleepTransition, isSleepUndoToken } from "@/lib/sleep-transition";
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest) {
     const db = createDB();
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
+    const caretakerImportReady = await isCaretakerImportSchemaReady(db);
     const tx = await db.transaction("write");
     try {
       if (body.action === "undo") {
@@ -48,6 +50,22 @@ export async function POST(request: NextRequest) {
           startedAt: Number(row.started_at),
           endedAt: row.ended_at == null ? null : Number(row.ended_at),
         }));
+        if (caretakerImportReady) {
+          const newerImport = await tx.execute({
+            sql: `SELECT id FROM paper_log_import_batches
+                  WHERE baby_id = ? AND source_kind = 'caretaker_screenshot'
+                    AND status = 'committed' AND committed_at >= ?
+                  LIMIT 1`,
+            args: [body.babyId, token.changedAt],
+          });
+          if (newerImport.rows.length > 0) {
+            await tx.rollback();
+            return NextResponse.json({
+              error: "Sleep state changed during a caretaker import. Refreshed to the latest state.",
+              code: "STALE_UNDO",
+            }, { status: 409 });
+          }
+        }
         if (!canUndoSleepTransition(token, currentRows)) {
           await tx.rollback();
           return NextResponse.json({

@@ -5,6 +5,8 @@ import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { bottleVolumes, parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
 import { replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
 import { selectRecentMilkFeeds, type RecentMilkFeedActivity } from "@/lib/recent-milk-feeds";
+import { caretakerSleepCoverageFromAudit } from "@/lib/caretaker-sleep-audit";
+import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
 
 const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Singapore",
@@ -37,8 +39,9 @@ export async function GET(request: NextRequest) {
     const sgtDate = [sgtPart("year"), sgtPart("month"), sgtPart("day")].join("-");
     const dayStart = Date.parse(sgtDate + "T00:00:00+08:00");
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const caretakerColumnsPresent = await isCaretakerImportSchemaReady(db);
 
-    const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities] = await db.batch([
+    const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, caretakerSleepAudits] = await db.batch([
       {
         sql: "SELECT * FROM babies WHERE household_id = ?",
         args: [householdId],
@@ -97,6 +100,14 @@ export async function GET(request: NextRequest) {
               WHERE b.household_id = ? AND a.type = 'sleep'
               ORDER BY (a.ended_at IS NULL) DESC, COALESCE(a.ended_at, a.started_at) DESC`,
         args: [householdId],
+      },
+      {
+        sql: caretakerColumnsPresent ? `SELECT baby_id, audit_metadata
+              FROM paper_log_import_batches
+              WHERE household_id = ? AND source_kind = 'caretaker_screenshot'
+                AND status = 'committed' AND audit_metadata IS NOT NULL
+              ORDER BY committed_at ASC` : "SELECT NULL AS baby_id, NULL AS audit_metadata WHERE 0",
+        args: caretakerColumnsPresent ? [householdId] : [],
       },
     ], "read");
 
@@ -169,6 +180,10 @@ export async function GET(request: NextRequest) {
         : null,
       timers: timers.rows,
       sleepActivities: sleepActivities.rows,
+      sleepCoverages: caretakerSleepAudits.rows.flatMap((row) => {
+        const coverage = caretakerSleepCoverageFromAudit(row.audit_metadata);
+        return coverage ? [{ baby_id: String(row.baby_id), ...coverage }] : [];
+      }),
       measurement: measurements.rows[0] ?? null,
       dailyMilk: {
         date: sgtDate,

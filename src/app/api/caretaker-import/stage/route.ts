@@ -174,6 +174,7 @@ export async function POST(request: NextRequest) {
   if (new Set(typedLines.map((line) => line.id)).size !== typedLines.length) {
     return caretakerError(400, "INVALID_OCR", "OCR line IDs must be unique.");
   }
+  const napSectionDetected = typedLines.some((line) => /past\s+nap\s+times?/i.test(line.text));
 
   const bytes = new Uint8Array(await image.arrayBuffer());
   if (!imageMatchesMime(bytes, image.type)) {
@@ -246,7 +247,12 @@ export async function POST(request: NextRequest) {
     args: [
       batchId, member.householdId, babyId, now, member.name, sourceHash, bytes,
       image.type, expiresAt, requestId, date,
-      JSON.stringify({ version: 1, lineCount: typedLines.length }),
+      JSON.stringify({
+        version: 2,
+        lineCount: typedLines.length,
+        napSectionDetected,
+        sleepReconciliation: null,
+      }),
       JSON.stringify(auditMetadata(rows)),
     ],
   }];

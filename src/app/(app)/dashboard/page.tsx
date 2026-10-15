@@ -25,7 +25,7 @@ import SickMilkProgress from "@/components/SickMilkProgress";
 import BabyCareMenu from "@/components/BabyCareMenu";
 import { publishCareMode } from "@/lib/care-mode";
 import type { SleepUndoToken } from "@/lib/sleep-transition";
-import type { DailyNapSession } from "@/lib/daily-naps";
+import type { ConfirmedSleepCoverage, DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
 import type { SickModeResponse } from "@/lib/sick-mode";
 import type { MedicationDoseReference } from "@/lib/activity-timeline";
@@ -161,6 +161,7 @@ export default function DashboardPage() {
   const [activeTimer, setActiveTimer] = useState<Record<string, unknown> | null>(null);
   const [sleepState, setSleepState] = useState<SleepState>({ state: "awake", since: null, activity: null });
   const [sleepActivities, setSleepActivities] = useState<DailyNapSession[]>([]);
+  const [confirmedSleepCoverages, setConfirmedSleepCoverages] = useState<ConfirmedSleepCoverage[]>([]);
   const [isChangingSleepState, setIsChangingSleepState] = useState(false);
   const [sleepUndo, setSleepUndo] = useState<{ token: SleepUndoToken; message: string } | null>(null);
   const [sleepNotice, setSleepNotice] = useState<string | null>(null);
@@ -436,14 +437,32 @@ export default function DashboardPage() {
           : [];
         const openSleep = sleeps.find((item: { ended_at?: unknown }) => item.ended_at == null);
         const latestClosed = sleeps.find((item: { ended_at?: unknown }) => item.ended_at != null);
+        const coverages: ConfirmedSleepCoverage[] = Array.isArray(data.sleepCoverages)
+          ? data.sleepCoverages
+            .filter((item: { baby_id?: unknown }) => String(item.baby_id) === String(selectedBaby.id))
+            .flatMap((item: { startedAt?: unknown; endedAt?: unknown }) => {
+              const startedAt = Number(item.startedAt);
+              const endedAt = Number(item.endedAt);
+              return Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt > startedAt
+                ? [{ startedAt, endedAt }]
+                : [];
+            })
+          : [];
+        const confirmedAwakeFallback = coverages.reduce<number | null>((earliest, coverage) =>
+          earliest == null || coverage.startedAt < earliest ? coverage.startedAt : earliest, null);
         setSleepActivities(sleeps.map((item: { id?: unknown; started_at?: unknown; ended_at?: unknown }) => ({
           id: item.id == null ? undefined : String(item.id),
           startedAt: Number(item.started_at),
           endedAt: item.ended_at == null ? null : Number(item.ended_at),
         })));
+        setConfirmedSleepCoverages(coverages);
         setSleepState(openSleep
           ? { state: "sleeping", since: Number(openSleep.started_at), activity: openSleep as Activity }
-          : { state: "awake", since: latestClosed ? Number(latestClosed.ended_at) : null, activity: latestClosed as Activity | null });
+          : {
+              state: "awake",
+              since: latestClosed ? Number(latestClosed.ended_at) : confirmedAwakeFallback,
+              activity: latestClosed as Activity | null,
+            });
       }
       setActivities(data.activities || []);
       if (data.household?.inviteCode) {
@@ -1474,7 +1493,7 @@ export default function DashboardPage() {
             disabled={isChangingSleepState}
             onSelect={handleSleepTransition}
           />
-          <DailyNapSummary sessions={sleepActivities} trailingAction={sleepState.since != null && sleepState.activity && !isEditingSleepSince ? (
+          <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={sleepState.since != null && sleepState.activity && !isEditingSleepSince ? (
             <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-white/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
           ) : undefined} />
           {sleepState.since != null && sleepState.activity && isEditingSleepSince && (

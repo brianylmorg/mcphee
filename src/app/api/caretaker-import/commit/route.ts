@@ -15,11 +15,17 @@ import type {
   CaretakerImportRow,
 } from "@/lib/caretaker-import-contract";
 import {
+  planCaretakerSleepReconciliation,
+  summarizeCaretakerSleepPlan,
+} from "@/lib/caretaker-sleep-reconciliation";
+import {
   caretakerError,
   classifyCaretakerClashes,
   loadCaretakerRows,
   loadClashCandidates,
   loadOwnedCaretakerBatch,
+  loadRelevantSleepActivities,
+  parseCaretakerDraftMetadata,
   requireCaretakerMember,
   requireCaretakerSchema,
   requireSameOrigin,
@@ -31,9 +37,12 @@ import { generateId } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
-function committedAudit(rows: CaretakerImportRow[]) {
+function committedAudit(
+  rows: CaretakerImportRow[],
+  sleepPlan: ReturnType<typeof planCaretakerSleepReconciliation>,
+) {
   return {
-    version: 1,
+    version: 2,
     rowCount: rows.length,
     rows: rows.map((row) => ({
       rowIndex: row.rowIndex,
@@ -43,6 +52,12 @@ function committedAudit(rows: CaretakerImportRow[]) {
       status: row.status,
       importedActivityId: row.status === "committed" ? row.duplicateActivityId : null,
     })),
+    sleepReconciliation: {
+      ...summarizeCaretakerSleepPlan(sleepPlan),
+      fingerprint: sleepPlan.fingerprint,
+      changedActivityHashes: [...sleepPlan.removedActivityIds, ...sleepPlan.updates.map((entry) => entry.activityId)]
+        .map((id) => createHash("sha256").update(id).digest("hex")),
+    },
   };
 }
 
@@ -92,6 +107,12 @@ export async function POST(request: NextRequest) {
 
     const stored = await loadCaretakerRows(tx as unknown as ReturnType<typeof createDB>, batch.id);
     const rows = stored.map(serializeCaretakerRow);
+    const metadata = parseCaretakerDraftMetadata(batch.draft_metadata);
+    const savedSleepPreview = metadata.sleepReconciliation;
+    if (!savedSleepPreview || savedSleepPreview.napsChecked !== true) {
+      await tx.rollback();
+      return caretakerError(409, "SLEEP_REVIEW_REQUIRED", "Confirm the infant-care window and complete nap history before importing.");
+    }
     const unresolved = rows.filter((row) => ["staged", "needs_review", "conflict"].includes(row.status));
     if (unresolved.length > 0) {
       await tx.rollback();
@@ -104,6 +125,15 @@ export async function POST(request: NextRequest) {
         await tx.rollback();
         return caretakerError(409, "REVIEW_INCOMPLETE", "An included row no longer passes validation.", issues);
       }
+    }
+
+    const coverage = savedSleepPreview.coverage;
+    const authoritativeNaps = included
+      .filter((row) => row.draft.type === "sleep" && row.draft.endedAt != null)
+      .map((row) => ({ rowId: row.id, startedAt: row.draft.startedAt, endedAt: row.draft.endedAt! }));
+    if (authoritativeNaps.some((nap) => nap.startedAt < coverage.startedAt || nap.endedAt > coverage.endedAt)) {
+      await tx.rollback();
+      return caretakerError(409, "SLEEP_REVIEW_REQUIRED", "A reviewed nap is outside the confirmed infant-care window.");
     }
 
     if (included.length > 0) {
@@ -130,19 +160,24 @@ export async function POST(request: NextRequest) {
       await tx.rollback();
       return caretakerError(409, "NAP_OVERLAP", "Included naps overlap. Correct or exclude one before importing.");
     }
-    for (const row of included.filter((entry) => entry.draft.type === "sleep")) {
-      const overlap = await tx.execute({
-        sql: `SELECT id FROM activities WHERE baby_id = ? AND type = 'sleep'
-              AND started_at < ? AND COALESCE(ended_at, 9223372036854775807) > ? LIMIT 1`,
-        args: [batch.baby_id, row.draft.endedAt!, row.draft.startedAt],
-      });
-      if (overlap.rows.length > 0) {
-        await tx.rollback();
-        return caretakerError(409, "NAP_OVERLAP", "A reviewed nap now overlaps an existing McPhee nap.");
-      }
+    const relevantSleeps = await loadRelevantSleepActivities(
+      tx as unknown as ReturnType<typeof createDB>,
+      batch.baby_id,
+      coverage.startedAt,
+      coverage.endedAt,
+    );
+    const sleepPlan = planCaretakerSleepReconciliation(coverage, authoritativeNaps, relevantSleeps);
+    if (sleepPlan.fingerprint !== savedSleepPreview.fingerprint) {
+      await tx.rollback();
+      return caretakerError(
+        409,
+        "SLEEP_PLAN_CHANGED",
+        "Sleep records changed after review. Reload and review the replacement preview again.",
+      );
     }
 
-    const activityIds = included.map(() => generateId());
+    const retainedSleepIds = new Map(sleepPlan.retainedExact.map((nap) => [nap.rowId, nap.activityId]));
+    const activityIds = included.map((row) => retainedSleepIds.get(row.id) ?? generateId());
     const ledgerEvents = await milkLedgerForHousehold(tx as unknown as ReturnType<typeof createDB>, member.householdId);
     const bottleEvents = included.flatMap((row, index) => row.draft.type === "bottlefeed" ? [{
       id: activityIds[index],
@@ -155,17 +190,64 @@ export async function POST(request: NextRequest) {
       assertMilkLedgerMutation(ledgerEvents, [...ledgerEvents, ...bottleEvents], now);
     }
 
+    const changedSleepIds = [...new Set([
+      ...sleepPlan.removedActivityIds,
+      ...sleepPlan.updates.map((entry) => entry.activityId),
+    ])];
+    for (const activityId of changedSleepIds) {
+      for (const column of ["duplicate_activity_id", "imported_activity_id", "conflict_activity_id"] as const) {
+        await tx.execute({
+          sql: `UPDATE paper_log_import_rows SET ${column} = NULL WHERE ${column} = ?
+                AND batch_id IN (SELECT id FROM paper_log_import_batches WHERE household_id = ?)`,
+          args: [activityId, member.householdId],
+        });
+      }
+    }
+    for (const update of sleepPlan.updates) {
+      await tx.execute({
+        sql: `UPDATE activities SET started_at = ?, ended_at = ?
+              WHERE id = ? AND baby_id = ? AND type = 'sleep'`,
+        args: [update.startedAt, update.endedAt, update.activityId, batch.baby_id],
+      });
+    }
+    for (const activityId of sleepPlan.removedActivityIds) {
+      await tx.execute({
+        sql: "DELETE FROM activities WHERE id = ? AND baby_id = ? AND type = 'sleep'",
+        args: [activityId, batch.baby_id],
+      });
+    }
+    for (const split of sleepPlan.splits) {
+      await tx.execute({
+        sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
+              VALUES (?, ?, 'sleep', ?, ?, ?, ?, ?)`,
+        args: [
+          generateId(), batch.baby_id, split.startedAt, split.endedAt,
+          split.details, split.createdAt, split.createdBy,
+        ],
+      });
+    }
+
     for (let index = 0; index < included.length; index++) {
       const row = included[index];
       const activityId = activityIds[index];
-      await tx.execute({
-        sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          activityId, batch.baby_id, row.draft.type, row.draft.startedAt, row.draft.endedAt,
-          JSON.stringify(row.draft.details), now + index, member.name,
-        ],
-      });
+      if (!retainedSleepIds.has(row.id)) {
+        await tx.execute({
+          sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            activityId, batch.baby_id, row.draft.type, row.draft.startedAt, row.draft.endedAt,
+            JSON.stringify(row.draft.details), now + index, member.name,
+          ],
+        });
+      } else if (typeof row.draft.details.notes === "string" && row.draft.details.notes.trim()) {
+        const retained = relevantSleeps.find((sleep) => sleep.id === activityId)!;
+        let existingDetails: Record<string, unknown> = {};
+        try { existingDetails = JSON.parse(retained.details ?? "{}"); } catch {}
+        await tx.execute({
+          sql: "UPDATE activities SET details = ? WHERE id = ? AND baby_id = ? AND type = 'sleep'",
+          args: [JSON.stringify({ ...existingDetails, ...row.draft.details }), activityId, batch.baby_id],
+        });
+      }
       await tx.execute({
         sql: `UPDATE paper_log_import_rows SET status = 'committed', imported_activity_id = ?
               WHERE id = ? AND batch_id = ? AND status = 'reviewed'`,
@@ -176,11 +258,13 @@ export async function POST(request: NextRequest) {
       row.duplicateActivityId = activityId;
     }
 
+    const sleepSummary = summarizeCaretakerSleepPlan(sleepPlan);
     const result: CaretakerCommitResponse = {
       batchId: batch.id,
       committedActivityIds: activityIds,
       committedCount: activityIds.length,
       idempotent: false,
+      sleepReconciliation: sleepSummary,
     };
     const updated = await tx.execute({
       sql: `UPDATE paper_log_import_batches
@@ -188,7 +272,7 @@ export async function POST(request: NextRequest) {
                 revision = revision + 1, audit_metadata = ?
             WHERE id = ? AND household_id = ? AND status = 'staged' AND revision = ?`,
       args: [
-        body.requestId, JSON.stringify(result), now, JSON.stringify(committedAudit(rows)),
+        body.requestId, JSON.stringify(result), now, JSON.stringify(committedAudit(rows, sleepPlan)),
         batch.id, member.householdId, body.expectedRevision,
       ],
     });
@@ -205,6 +289,9 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof Error && error.message === "COMMIT_RACE") {
       return caretakerError(409, "COMMIT_RACE", "The import changed while committing. Reload before retrying.");
+    }
+    if (error instanceof Error && error.message.startsWith("INVALID_")) {
+      return caretakerError(409, "SLEEP_REVIEW_INCOMPLETE", "The reviewed sleep replacement is invalid. Reload and review it again.");
     }
     throw error;
   } finally {

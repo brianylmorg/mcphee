@@ -92,6 +92,31 @@ export type CaretakerImportRow = {
   lowConfidenceConfirmed: boolean;
 };
 
+export type CaretakerSleepCoverage = {
+  startedAt: number;
+  endedAt: number;
+};
+
+export type CaretakerSleepReviewInput = CaretakerSleepCoverage & {
+  napsChecked: true;
+};
+
+export type CaretakerSleepReconciliationSummary = {
+  coverage: CaretakerSleepCoverage;
+  authoritativeNapCount: number;
+  retainedExactCount: number;
+  removedCount: number;
+  trimmedCount: number;
+  splitCount: number;
+  insertedCount: number;
+};
+
+export type CaretakerSleepReconciliationPreview = CaretakerSleepReconciliationSummary & {
+  napsChecked: boolean;
+  napSectionDetected: boolean;
+  fingerprint: string;
+};
+
 export type CaretakerImportBatch = {
   id: string;
   babyId: string;
@@ -103,12 +128,15 @@ export type CaretakerImportBatch = {
   committedAt: number | null;
   sourceAvailable: boolean;
   sourceMime: CaretakerImportImageType | null;
+  sleepCoverage: CaretakerSleepCoverage | null;
+  napSectionDetected: boolean;
 };
 
 export type CaretakerImportSnapshot = {
   schemaReady: true;
   batch: CaretakerImportBatch;
   rows: CaretakerImportRow[];
+  sleepReconciliation: CaretakerSleepReconciliationPreview | null;
 };
 
 export type CaretakerStageResponse = CaretakerImportSnapshot & { idempotent: boolean };
@@ -129,6 +157,7 @@ export type CaretakerReviewRequest = {
   batchId: string;
   expectedRevision: number;
   rows: CaretakerReviewRowInput[];
+  sleepCoverage: CaretakerSleepReviewInput;
 };
 
 export type CaretakerCommitRequest = {
@@ -142,6 +171,7 @@ export type CaretakerCommitResponse = {
   committedActivityIds: string[];
   committedCount: number;
   idempotent: boolean;
+  sleepReconciliation?: CaretakerSleepReconciliationSummary;
 };
 
 export type CaretakerImportError = {
