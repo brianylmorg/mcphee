@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@libsql/client";
 import { applySickModeSchema } from "@/db/sick-mode-schema";
+import { applyCaretakerImportSchema } from "@/db/caretaker-import-schema";
 
 export const runtime = "nodejs";
 
@@ -132,6 +133,7 @@ export async function GET(request: NextRequest) {
       await client.execute(stmt);
     }
     await applySickModeSchema(client);
+    await applyCaretakerImportSchema(client);
 
     // Fix activities where created_by is a userId instead of a name
     await client.execute(`

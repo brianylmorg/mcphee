@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { babyBelongsToHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
+import { hasPaperLogImportSourceKind } from "@/db/caretaker-import-schema";
 
 export const runtime = "nodejs";
 
@@ -65,12 +66,15 @@ export async function GET(request: NextRequest) {
     const batchId = searchParams.get("batchId");
     const householdId = searchParams.get("householdId");
     const db = createDB();
+    const hasSourceKind = await hasPaperLogImportSourceKind(db);
+    const legacyBatchFilter = hasSourceKind ? " AND COALESCE(source_kind, 'paper_log') = 'paper_log'" : "";
 
     if (batchId) {
       const batch = await db.execute({
-        sql: "SELECT * FROM paper_log_import_batches WHERE id = ?",
+        sql: `SELECT * FROM paper_log_import_batches WHERE id = ?${legacyBatchFilter}`,
         args: [batchId],
       });
+      if (batch.rows.length === 0) return NextResponse.json({ batch: null, rows: [] });
       const rows = await db.execute({
         sql: "SELECT * FROM paper_log_import_rows WHERE batch_id = ? ORDER BY row_index ASC",
         args: [batchId],
@@ -87,6 +91,7 @@ export async function GET(request: NextRequest) {
             JOIN babies baby ON baby.id = b.baby_id
             LEFT JOIN paper_log_import_rows r ON r.batch_id = b.id
             WHERE (? IS NULL OR b.household_id = ?)
+              ${hasSourceKind ? "AND COALESCE(b.source_kind, 'paper_log') = 'paper_log'" : ""}
             GROUP BY b.id
             ORDER BY b.created_at DESC`,
       args: [householdId, householdId],
@@ -106,6 +111,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = body.action ?? "stage";
     const db = createDB();
+    const hasSourceKind = await hasPaperLogImportSourceKind(db);
+    const legacyBatchFilter = hasSourceKind ? " AND COALESCE(source_kind, 'paper_log') = 'paper_log'" : "";
 
     if (action === "stage") {
       const { householdId, babyId, rows, sourceNote, createdBy } = body as {
@@ -213,7 +220,7 @@ export async function POST(request: NextRequest) {
       const tx = await db.transaction("write");
       try {
         const batchResult = await tx.execute({
-          sql: "SELECT * FROM paper_log_import_batches WHERE id = ? AND status = ?",
+          sql: `SELECT * FROM paper_log_import_batches WHERE id = ? AND status = ?${legacyBatchFilter}`,
           args: [batchId, "staged"],
         });
         if (batchResult.rows.length === 0) {
@@ -299,7 +306,7 @@ export async function POST(request: NextRequest) {
       }
 
       const batch = await db.execute({
-        sql: "SELECT id FROM paper_log_import_batches WHERE id = ? AND status = ?",
+        sql: `SELECT id FROM paper_log_import_batches WHERE id = ? AND status = ?${legacyBatchFilter}`,
         args: [batchId, "staged"],
       });
       if (batch.rows.length === 0) {

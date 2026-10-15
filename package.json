@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test src/**/*.test.ts src/app/api/sick-mode/*.test.ts src/app/api/activities/*.test.ts src/app/api/historical-medications/*.test.ts",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "test": "tsx --test src/**/*.test.ts src/app/api/sick-mode/*.test.ts src/app/api/activities/*.test.ts src/app/api/historical-medications/*.test.ts src/app/api/caretaker-import/*.test.ts src/app/api/admin/caretaker-import/migrate/*.test.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:migrate:caretaker-import": "tsx src/db/migrate-caretaker-import.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
@@ -17,6 +18,7 @@
     "next": "16.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tesseract.js": "7.0.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "mcphee-v1";
+const CACHE_NAME = "mcphee-v2";
 const PRECACHE = ["/dashboard", "/icon.svg"];
 
 self.addEventListener("install", (e) => {
@@ -19,6 +19,23 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  if (url.origin === self.location.origin && url.pathname.startsWith("/ocr/")) {
+    e.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(e.request);
+        if (cached) return cached;
+        const response = await fetch(e.request);
+        if (response.ok) {
+          try { await cache.put(e.request, response.clone()); } catch {
+            // The reader can still use the network response when device storage is full.
+          }
+        }
+        return response;
+      })
+    );
+    return;
+  }
   e.respondWith(
     fetch(e.request).catch(() => caches.match(e.request))
   );

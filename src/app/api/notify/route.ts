@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { generateId } from "@/lib/utils";
 import webpush from "web-push";
+import { purgeExpiredCaretakerImports } from "@/db/caretaker-import-schema";
 
 export const runtime = "nodejs";
 
@@ -21,13 +22,21 @@ async function handleNotify(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const db = createDB();
+  // Hobby cron runs daily. Purging sources due before the next run keeps the
+  // physical source/draft lifetime at no more than seven days when cron runs.
+  const purge = await purgeExpiredCaretakerImports(
+    db,
+    Date.now() + 24 * 60 * 60 * 1000,
+    Date.now(),
+  );
+
   const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT } = process.env;
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY || !VAPID_SUBJECT) {
-    return NextResponse.json({ error: "VAPID not configured" }, { status: 503 });
+    return NextResponse.json({ error: "VAPID not configured", caretakerImportPurge: purge }, { status: 503 });
   }
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
-  const db = createDB();
   const households = await db.execute({ sql: "SELECT id FROM households", args: [] });
   const sent: string[] = [];
 
@@ -107,7 +116,7 @@ async function handleNotify(request: NextRequest) {
     sent.push(hhId);
   }
 
-  return NextResponse.json({ sent: sent.length });
+  return NextResponse.json({ sent: sent.length, caretakerImportPurge: purge });
 }
 
 export async function GET(request: NextRequest) {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, Info, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, ImageUp, Info, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -18,6 +18,7 @@ import ActivityRecency from "@/components/ActivityRecency";
 import ActivityTimelineCard from "@/components/ActivityTimelineCard";
 import SickModePanel from "@/components/SickModePanel";
 import MedicationLogModal from "@/components/MedicationLogModal";
+import CaretakerImportModal from "@/components/CaretakerImportModal";
 import MedicationDoseEditModal from "@/components/MedicationDoseEditModal";
 import MedicationPrescriptionModal from "@/components/MedicationPrescriptionModal";
 import SickMilkProgress from "@/components/SickMilkProgress";
@@ -146,6 +147,7 @@ export default function DashboardPage() {
   const [inviteCode, setInviteCode] = useState("");
   const [showLogModal, setShowLogModal] = useState(false);
   const [showActivityMenu, setShowActivityMenu] = useState(false);
+  const [showCaretakerImport, setShowCaretakerImport] = useState(false);
   const [logType, setLogType] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editingDose, setEditingDose] = useState<Activity | null>(null);
@@ -623,6 +625,7 @@ export default function DashboardPage() {
 
   const refreshExplicitlyBlocked = isLoading
     || showLogModal
+    || showCaretakerImport
     || Boolean(editingActivity)
     || Boolean(editingDose)
     || Boolean(deleteActivity)
@@ -998,6 +1001,18 @@ export default function DashboardPage() {
     setLogType(type);
     setShowLogModal(true);
     setShowActivityMenu(false);
+  };
+
+  const openCaretakerImport = () => {
+    setShowActivityMenu(false);
+    setShowLogModal(false);
+    setEditingActivity(null);
+    setEditingDose(null);
+    setDeleteActivity(null);
+    setMedicationEntry(null);
+    setShowLeaveConfirm(false);
+    setShowMilkHistoryChart(false);
+    setShowCaretakerImport(true);
   };
 
 
@@ -1987,6 +2002,17 @@ export default function DashboardPage() {
       <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
         {showActivityMenu && (
           <div className="activity-picker flex max-h-[calc(100dvh-7rem)] w-[min(320px,calc(100vw-2.5rem))] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
+            <button
+              type="button"
+              onClick={openCaretakerImport}
+              className="mb-1 flex min-h-11 w-full shrink-0 items-center justify-between gap-3 rounded-lg border border-terracotta/25 bg-terracotta/10 px-3 py-2 text-left text-warm-brown transition-colors hover:bg-terracotta/15"
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <ImageUp aria-hidden="true" className="h-5 w-5 shrink-0 text-accent-strong" />
+                <span className="text-sm font-semibold">Import caretaker screenshot</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted">Review first</span>
+            </button>
             {activityActionTypes.map((type) => {
               const last = getLastActivity(type);
               const overdue = isOverdue(type);
@@ -2111,6 +2137,22 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showCaretakerImport && baby?.id && (
+        <CaretakerImportModal
+          babyId={baby.id}
+          babyName={baby.name || "Baby"}
+          onClose={() => setShowCaretakerImport(false)}
+          onImported={async () => {
+            await Promise.all([
+              fetchData({ refreshMilkHistory: false }),
+              fetchFilteredActivities({ showLoading: true }),
+              fetchMilkHistory(baby.id, false),
+              fetchSickMode(baby.id),
+            ]);
+          }}
+        />
       )}
 
       {/* Delete Confirmation Modal */}

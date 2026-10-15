@@ -1,85 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
+import { hasCaretakerConflictActivityColumn } from "@/db/caretaker-import-schema";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 import { parseActivityDetails } from "@/lib/milk-volumes";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
-import { MilkLedgerError, replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
+import { assertMilkLedgerMutation, MilkLedgerError, replayMilkLedger } from "@/lib/milk-bank-ledger";
 import { readActivityTimeline, TIMELINE_TYPES } from "@/lib/activity-timeline";
 import { parseHistoricalMedicationDetails } from "@/lib/historical-medication";
+import { milkLedgerForHousehold, validateActivityInput } from "@/lib/activity-input";
 
 export const runtime = "nodejs";
-
-const VALID_TYPES = new Set(["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "bankadjust", "note", "temperature"]);
-const FUTURE_CLOCK_SKEW_MS = 2 * 60 * 1000;
-
-function isValidTimestamp(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-function validateActivityInput(body: Record<string, unknown>) {
-  if (typeof body.babyId !== "string" || !body.babyId) return "babyId is required";
-  if (typeof body.type !== "string" || !VALID_TYPES.has(body.type)) return "Invalid activity type";
-  if (!isValidTimestamp(body.startedAt)) return "startedAt must be a timestamp";
-  if (body.endedAt != null && !isValidTimestamp(body.endedAt)) return "endedAt must be a timestamp";
-  if (body.endedAt != null && Number(body.endedAt) < Number(body.startedAt)) {
-    return "endedAt must be after startedAt";
-  }
-  if (body.details != null && (typeof body.details !== "object" || Array.isArray(body.details))) {
-    return "details must be an object";
-  }
-  if ((body.type === "note" || body.type === "temperature" || body.type === "sleep") && Number(body.startedAt) > Date.now() + FUTURE_CLOCK_SKEW_MS) {
-    return "startedAt cannot be in the future";
-  }
-  if (body.type === "sleep" && body.endedAt != null && Number(body.endedAt) > Date.now() + FUTURE_CLOCK_SKEW_MS) {
-    return "endedAt cannot be in the future";
-  }
-  const details = (body.details ?? {}) as Record<string, unknown>;
-  if (typeof details.notes === "string" && details.notes.length > 500) {
-    return "Notes must be 500 characters or fewer";
-  }
-  if (body.type === "note" && (typeof details.notes !== "string" || !details.notes.trim())) {
-    return "Note text is required";
-  }
-  if (body.type === "temperature") {
-    const celsius = Number(details.celsius);
-    if (!Number.isFinite(celsius) || celsius < 30 || celsius > 45) {
-      return "Temperature must be between 30 and 45 °C";
-    }
-    const methods = new Set(["armpit", "ear", "oral", "rectal", "forehead", "other"]);
-    if (details.method != null && details.method !== "" && !methods.has(String(details.method))) {
-      return "Invalid temperature measurement method";
-    }
-  }
-  return null;
-}
-
-type DB = ReturnType<typeof createDB>;
-
-async function milkLedgerForHousehold(
-  db: Pick<DB, "execute">,
-  householdId: string,
-  excludeActivityId?: string,
-): Promise<MilkLedgerActivity[]> {
-  let sql = `SELECT a.id, a.type, a.started_at, a.created_at, a.details FROM activities a
-             JOIN babies b ON b.id = a.baby_id
-             WHERE b.household_id = ? AND a.type IN (?, ?, ?, ?, ?, ?)`;
-  const args: Array<string | number> = [householdId, "pump", "bottlefeed", "bankadjust", "bankfreeze", "bankthaw", "bankdiscard"];
-  if (excludeActivityId) {
-    sql += " AND a.id != ?";
-    args.push(excludeActivityId);
-  }
-  sql += " ORDER BY a.started_at ASC, a.created_at ASC, a.id ASC";
-
-  const result = await db.execute({ sql, args });
-  return result.rows.map((row) => ({
-    id: String(row.id),
-    type: String(row.type),
-    startedAt: Number(row.started_at),
-    createdAt: Number(row.created_at),
-    details: parseActivityDetails(row.details),
-  }));
-}
 
 export async function GET(request: NextRequest) {
   const householdId = request.cookies.get("mcphee_hh")?.value;
@@ -202,13 +133,13 @@ export async function POST(request: NextRequest) {
         const ledgerEvents = await milkLedgerForHousehold(tx, householdId);
         const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(body.details));
         if (requestedBreastmilkMl > 0) {
-          replayMilkLedger([...ledgerEvents, {
+          assertMilkLedgerMutation(ledgerEvents, [...ledgerEvents, {
             id: "__candidate_bottle__",
             type: "bottlefeed",
             startedAt: Number(body.startedAt),
             createdAt: Date.now(),
             details: parseActivityDetails(body.details),
-          }], Date.now(), new Set(ledgerEvents.map((event) => event.id)));
+          }], Date.now());
         }
         const activityId = generateId();
         await tx.execute({
@@ -330,15 +261,15 @@ export async function PUT(request: NextRequest) {
       const tx = await db.transaction("write");
       try {
         const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(mergedDetails));
-        const ledgerEvents = await milkLedgerForHousehold(tx, householdId, body.id);
+        const ledgerEvents = await milkLedgerForHousehold(tx, householdId);
         if (requestedBreastmilkMl > 0) {
-          replayMilkLedger([...ledgerEvents, {
+          assertMilkLedgerMutation(ledgerEvents, [...ledgerEvents.filter((event) => event.id !== body.id), {
             id: body.id,
             type: "bottlefeed",
             startedAt: Number(body.startedAt),
             createdAt: Date.now(),
             details: parseActivityDetails(mergedDetails),
-          }], Date.now(), new Set(ledgerEvents.map((event) => event.id)));
+          }], Date.now());
         }
         await tx.execute({
           sql: `UPDATE activities SET type = ?, started_at = ?, ended_at = ?, details = ?
@@ -423,7 +354,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Bank transfers must be changed through the milk bank" }, { status: 400 });
     }
 
-    await db.batch([
+    const referenceCleanup: Parameters<typeof db.batch>[0] = [
       {
         sql: `UPDATE paper_log_import_rows
               SET duplicate_activity_id = NULL
@@ -438,11 +369,21 @@ export async function DELETE(request: NextRequest) {
                 AND batch_id IN (SELECT id FROM paper_log_import_batches WHERE household_id = ?)`,
         args: [activityId, householdId],
       },
-      {
+    ];
+    if (await hasCaretakerConflictActivityColumn(db)) {
+      referenceCleanup.push({
+        sql: `UPDATE paper_log_import_rows
+              SET conflict_activity_id = NULL
+              WHERE conflict_activity_id = ?
+                AND batch_id IN (SELECT id FROM paper_log_import_batches WHERE household_id = ?)`,
+        args: [activityId, householdId],
+      });
+    }
+    referenceCleanup.push({
         sql: "DELETE FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
         args: [activityId, householdId],
-      },
-    ], "write");
+    });
+    await db.batch(referenceCleanup, "write");
 
     return NextResponse.json({ success: true });
   } catch (error) {
