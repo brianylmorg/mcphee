@@ -171,7 +171,7 @@ export function planCaretakerSleepReconciliation(
   }
 
   return {
-    coverage: { ...coverage },
+    coverage: { startedAt: coverage.startedAt, endedAt: coverage.endedAt },
     authoritativeNapCount: orderedNaps.length,
     retainedExactCount: retainedExact.length,
     removedCount: removedActivityIds.length,

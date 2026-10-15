@@ -100,7 +100,10 @@ test("existing sleeps must be unique, valid and actually overlap the care window
 });
 
 test("the plan owns copies of mutable coverage and nap inputs", () => {
-  const mutableCoverage = { startedAt: 800, endedAt: 1_600 };
+  const mutableCoverage = {
+    startedAt: 800, endedAt: 1_600,
+    napsChecked: true, rawSource: "must-not-survive-in-audit",
+  };
   const mutableNap = { rowId: "nap", startedAt: 900, endedAt: 1_000 };
   const plan = planCaretakerSleepReconciliation(mutableCoverage, [mutableNap], []);
   mutableCoverage.startedAt = 700;
