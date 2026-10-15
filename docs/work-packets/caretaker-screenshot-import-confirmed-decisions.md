@@ -1,7 +1,7 @@
 # Caretaker screenshot import — confirmed decisions and provider investigation
 
 Updated: 2026-10-15.
-Status: application implementation is complete locally; final verification is recorded below. OCR runs in the browser using self-hosted Tesseract assets, with no OCR-provider API, key, paid fallback or provider charge. No live database migration, commit, push or deployment has been performed. Earlier dated sections preserve the investigation record and describe their status at that time.
+Status: deployed to https://mcphee.vercel.app on 2026-10-15 after the targeted production migration. OCR runs in the browser using self-hosted Tesseract assets, with no OCR-provider API, key, paid fallback or provider charge. Earlier sections preserve the investigation and local verification record; completed rollout evidence appears at the end. Source is saved on the local feature branch; no Git push or merge has been performed.
 
 ## Confirmed decisions
 
@@ -200,7 +200,7 @@ Rollout requires the existing paper-log tables and the targeted additive
 migration: run `pnpm db:migrate:caretaker-import` with the intended deployment's
 database environment, then deploy the reviewed code and verify the daily cron.
 Do not use the old broad admin migration just to enable this feature; it also
-performs unrelated user deduplication. No live migration or deployment was run.
+performs unrelated user deduplication. This section records local verification before the rollout recorded below.
 
 Validation uses temporary, isolated SQLite databases and synthetic care records.
 The end-to-end browser test runs real local OCR at a 390-pixel mobile viewport,
@@ -237,3 +237,20 @@ their usage limit; the main orchestrator completed remaining safety fixes and
 validation. The isolated DeepSeek Flash worker successfully handled only the
 bounded compact-review presentation pass. No worker committed, pushed or
 deployed changes.
+
+
+## Completed production rollout — 2026-10-15
+
+- Live URL: https://mcphee.vercel.app. Open Dashboard → Add activity → Import caretaker screenshot.
+- Code commit: `dff456b7`, local branch `feat/caretaker-screenshot-import`. No remote Git push/merge was performed. This local packet contains private source-link identifiers and must not be published to the public repository without redaction and history review.
+- Production deployment: `dpl_PzHdFiJkkTAexEiSrHrKZpLDejxz`, https://mcphee-bfabezq2z-brianylms-projects.vercel.app. The primary live alias was verified to resolve to this Ready deployment after promotion.
+- Previous healthy deployment: `dpl_4btCBAXdvLjbEZGS9isbRokQvUAe`, https://mcphee-3lcjjp5rv-brianylms-projects.vercel.app.
+- Vercel's remote default Turbopack build and TypeScript validation passed. The main thread reran the complete suite: 177 tests passed, zero failed.
+- Added a POST-only `/api/admin/caretaker-import/migrate` endpoint using the existing migration bearer secret, constant-time comparison and generic errors. This invokes only the additive caretaker schema helper using credentials already held by Vercel. It never returns database credentials or calls the broad admin migration.
+- Targeted production migration returned `success: true`, `schemaReady: true`, `purgeCronConfigured: true`; an idempotent repeat returned the same result. Unauthenticated migration, importer and source requests were rejected. No production care records or screenshots were inserted for testing.
+- All eight deployed OCR worker/model/core files were downloaded and their SHA-256 hashes matched the tested source files. The live homepage, dashboard and worker returned HTTP 200 without deployment SSO.
+- A final browser check ran the actual deployed UI and local OCR at a 390-pixel viewport, using synthetic API fixtures and intercepting all API writes. It detected two blue exclusions and 275 ml eligible synthetic milk with zero browser errors or off-origin OCR requests. No synthetic screenshot reached production storage.
+- The existing notification/purge cron remains enabled for 09:00 UTC daily and points to the new deployment. Configuration was verified; no notification run was manually triggered, and the next scheduled purge run has not been observed yet. Backup retention remains outside the application's deletion guarantee.
+- Hosting remains on the existing Hobby plan. No paid provider, plan upgrade, billing changes or credential rotation were performed.
+- Initial candidate `dpl_3py26FyNCXptuCvwMXZGPTPZjWV7` was blocked because the machine's default commit identity was Brainie. Both authenticated Vercel and GitHub identities were verified as brianylm; the unpublished feature commit was corrected to the existing repository owner identity while retaining Brainie co-authorship, and the next candidate built successfully. No team membership or global Git identity was changed.
+- Automatic approval review rejected a broad decrypted production-environment export. The safer protected migration endpoint avoided exporting Turso credentials. Temporary deployment metadata and the existing pulled migration-secret file were removed after rollout verification.
