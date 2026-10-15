@@ -311,5 +311,39 @@ naps are applied while existing details/attribution are preserved. Legacy
 staged nap locks can enter the new review, and old committed responses remain
 replayable without reapplying reconciliation. Dashboard reads also tolerate an
 old or partially migrated caretaker schema. No production care records have
-been changed during validation. Deployment verification is recorded below
-when the candidate is promoted.
+been changed during validation. Deployment verification is recorded below.
+
+
+## Care-window sleep authority — production verification 2026-10-15
+
+- Live at https://mcphee.vercel.app, final code revision `51813cdb`
+  (main implementation `4ac93243`), deployment
+  `dpl_J8JQgMa72N5YMte32ngtweDSFns5`, candidate URL
+  https://mcphee-iegcr2rto-brianylms-projects.vercel.app.
+  Primary alias was verified to serve this READY deployment after promotion.
+- Final full suite: 193/193 passing. TypeScript passed locally, and the final
+  remote production build passed compilation and TypeScript. The final audit
+  normalization regression verifies that extra client properties cannot survive
+  into retained coverage metadata. Existing lint script remains incompatible
+  with the repository's Next/ESLint versions; no lint pass is claimed.
+- Candidate homepage returned 200, deployed OCR worker matched the source hash,
+  private import/source reads returned 401 without membership, and a nonexistent
+  household dashboard probe returned 200 with no babies. Promotion followed
+  verification that the primary alias had no intervening deployment.
+- Final live browser check used real deployed UI/OCR and intercepted synthetic
+  API responses: care range and saved replacement preview worked, two blue rows
+  stayed excluded, eligible synthetic milk was 275 ml, and the dialog fit 320,
+  375 and 390 pixel widths. No page errors, external OCR requests or live API
+  writes occurred. Real local API/transaction browser validation additionally
+  verified stale timer closure, wrong-nap replacement, awake since 12:40,
+  corrected daily totals, bank deduction and lost-response idempotency.
+- No new migration, real production care imports, paid OCR provider, plan
+  upgrade or billing change was performed. OCR remains browser-local Tesseract.
+  The new rule is applied when a new care log is explicitly reviewed and applied;
+  previously committed imports are not silently rewritten.
+- Native Sol workers reached their usage limit after implementing/reviewing the
+  main changes. The main thread completed integration safeguards and final
+  validation; no DeepSeek implementation or paid model upgrade was used.
+- All commits remain local. No Git push was made: this work packet contains
+  private source references and must not be published to the public repository
+  without redacting the relevant history. Deployment excludes documentation.
