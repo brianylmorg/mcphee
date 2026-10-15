@@ -347,3 +347,43 @@ been changed during validation. Deployment verification is recorded below.
 - All commits remain local. No Git push was made: this work packet contains
   private source references and must not be published to the public repository
   without redacting the relevant history. Deployment excludes documentation.
+
+
+## Childcare activity-log labels — 2026-10-15
+
+User requested DeepSeek implementation, visible care start/end in the activity
+log, and screenshot-created activities authored as exactly `childcare`.
+
+- Code revision `670614a8` adds a GET-only display projection in
+  `src/lib/caretaker-activity-log.ts`, integrates it with activities GET, and
+  renders virtual care boundaries as static ActivityTimelineCard rows.
+- Reads only household/baby-scoped committed caretaker screenshot audits.
+  Existing imported activity IDs from v1/v2 audits display `childcare`; stored
+  uploader attribution remains unchanged. Reviewed v2 care coverage produces
+  `Care started` and `Care ended` at its actual SGT times. Legacy imports without
+  saved coverage do not receive invented care times.
+- Markers behave as notes for the existing type filter, respect date and combined
+  global limits, deduplicate identical care windows and survive source deletion.
+  They have no edit/delete buttons and guarded handlers. The CSV exporter and
+  dashboard totals retain their established semantics.
+- DeepSeek Flash produced the implementation patch from supplied source. Its
+  first read-only shell investigation hit the host bubblewrap error, so the
+  working patch was generated without tools and mechanically applied by the
+  orchestrator. One focused DeepSeek correction fixed an incorrect guessed table
+  and tightened the audit parser. Native Sol reviewed architectural/data-access
+  boundaries and supplied the independent synthetic API integration tests.
+- Main-thread validation: full suite 196/196 passing; card tests 3/3 and focused
+  new API tests 2/2; production webpack build and remote Turbopack/TypeScript
+  build passed. A real Chromium browser at 320/390px verified both care markers,
+  `Entered by childcare`, no marker actions, ordinary activity actions and no
+  horizontal overflow. All browser APIs were intercepted with synthetic fixtures;
+  no production care data was written or changed. No schema migration is needed.
+
+- Promoted final deployment `dpl_BuZfX4Yc9hEwU4Fcu8Xo2F7nrJZc`
+  (https://mcphee-qudqzeq5e-brianylms-projects.vercel.app) to
+  https://mcphee.vercel.app after candidate homepage/activities/dashboard health
+  probes and private-route authorization probes passed. Primary alias verified
+  against final READY deployment. Final live Chromium check also passed with
+  intercepted synthetic APIs, zero browser errors and zero live API writes.
+- No Git push, new provider, credential export, billing change or migration.
+  Work packet remains local because it contains private source references.
