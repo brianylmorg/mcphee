@@ -279,7 +279,7 @@ export function MilkBank({
             aria-controls="frozen-bank-details"
             aria-label={showFrozenDetails ? "Hide frozen milk details" : "Show frozen milk details"}
             title="Freezer"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-sky-800 hover:bg-sky-100"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-frozen-strong hover:bg-frozen/15"
           >
             <Snowflake aria-hidden="true" className="h-4 w-4" />
           </button>
@@ -289,78 +289,78 @@ export function MilkBank({
       {showAvailableReconcile && (
         <div className="mt-3 flex gap-2">
           <input aria-label="Actual Available milk in ml" type="number" min="0" step="any" value={reconcileAvailable} onChange={(event) => setReconcileAvailable(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3" />
-          <button type="button" onClick={setAvailable} disabled={busy} className="min-h-9 rounded-xl bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Set</button>
+          <button type="button" onClick={setAvailable} disabled={busy} className="min-h-9 rounded-xl bg-terracotta-dark px-4 text-sm font-semibold text-on-accent disabled:opacity-50">Set</button>
         </div>
       )}
 
       <div id="frozen-bank-details" hidden={!showFrozenDetails} className="mt-3">
-        <div className="overflow-hidden rounded-xl border border-sky-200/80 bg-sky-50/60">
+        <div className="overflow-hidden rounded-xl border border-frozen/30 bg-frozen/10">
           <div className="flex min-h-14 items-center justify-between gap-3 px-3 py-2">
             <div className="flex items-center gap-2">
-              <Snowflake aria-hidden="true" className="h-5 w-5 text-sky-700" />
+              <Snowflake aria-hidden="true" className="h-5 w-5 text-frozen-strong" />
               <div>
-                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-sky-800">Frozen</span>
-                <p className="glance-secondary-value text-sky-950">{roundMl(frozenMl)} <span className="glance-value-unit">ml</span></p>
+                <span className="rounded-full bg-frozen/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-frozen-strong">Frozen</span>
+                <p className="glance-secondary-value text-frozen-strong">{roundMl(frozenMl)} <span className="glance-value-unit">ml</span></p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              <button type="button" onClick={() => setShowFreeze((shown) => !shown)} className="min-h-9 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white hover:bg-sky-900">Freeze</button>
+              <button type="button" onClick={() => setShowFreeze((shown) => !shown)} className="min-h-9 rounded-xl bg-frozen-strong px-4 text-sm font-semibold text-on-accent hover:bg-frozen-strong">Freeze</button>
             </div>
           </div>
 
           {showFreeze && (
-            <div className="mx-3 mb-2.5 rounded-lg bg-white/80 p-2.5">
-              <label className="text-xs font-semibold text-sky-950">Amount from Available (ml)</label>
+            <div className="mx-3 mb-2.5 rounded-lg bg-surface/80 p-2.5">
+              <label className="text-xs font-semibold text-frozen-strong">Amount from Available (ml)</label>
               <div className="mt-1.5 flex gap-2">
-                <input type="number" min="0.01" step="any" inputMode="decimal" value={freezeAmount} onChange={(event) => setFreezeAmount(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-sky-200 bg-white px-3" />
-                <button type="button" onClick={freeze} disabled={busy} className="min-h-9 rounded-xl bg-sky-800 px-4 text-sm font-semibold text-white disabled:opacity-50">Freeze</button>
+                <input type="number" min="0.01" step="any" inputMode="decimal" value={freezeAmount} onChange={(event) => setFreezeAmount(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-frozen/30 bg-surface px-3" />
+                <button type="button" onClick={freeze} disabled={busy} className="min-h-9 rounded-xl bg-frozen-strong px-4 text-sm font-semibold text-on-accent disabled:opacity-50">Freeze</button>
               </div>
             </div>
           )}
 
-          <div className="border-t border-sky-200/70 px-2.5 pb-2.5">
-            <details className="mt-2 rounded-lg bg-white/70 px-2.5 py-1.5" open={frozenPackets.length > 0}>
-              <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
+          <div className="border-t border-frozen/30 px-2.5 pb-2.5">
+            <details className="mt-2 rounded-lg bg-surface/70 px-2.5 py-1.5" open={frozenPackets.length > 0}>
+              <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-frozen-strong">
                 Packets · oldest first
                 <ChevronDown aria-hidden="true" className="h-4 w-4" />
               </summary>
               <div className="space-y-1.5 pb-1">
                 {frozenPackets.length === 0 && <p className="py-2 text-xs text-muted">No frozen packets.</p>}
                 {frozenPackets.map((packet) => (
-                  <div key={packet.id} className="rounded-lg border border-sky-100 bg-white p-2.5">
+                  <div key={packet.id} className="rounded-lg border border-frozen/20 bg-surface p-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-semibold tabular-nums text-sky-950">{roundMl(packet.amountMl)} ml</p>
+                        <p className="text-sm font-semibold tabular-nums text-frozen-strong">{roundMl(packet.amountMl)} ml</p>
                         <p className="mt-0.5 text-xs text-muted">Frozen {singaporeDateTime(packet.frozenAt)} · expires {singaporeDateTime(packet.expiresAt)}</p>
                       </div>
-                      {packet.isExpired && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">Expired</span>}
+                      {packet.isExpired && <span className="rounded-full bg-warning/15 px-2 py-1 text-xs font-semibold text-warning">Expired</span>}
                     </div>
                     <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
                       {packet.isExpired ? (
-                        <button type="button" onClick={() => packetAction("discard", packet)} disabled={busy} className="min-h-9 rounded-xl bg-amber-700 px-3 text-sm font-semibold text-white disabled:opacity-50">Discard</button>
+                        <button type="button" onClick={() => packetAction("discard", packet)} disabled={busy} className="min-h-9 rounded-xl bg-warning px-3 text-sm font-semibold text-on-accent disabled:opacity-50">Discard</button>
                       ) : (
-                        <button type="button" aria-label={`Thaw ${packet.amountMl} ml packet`} onClick={() => packetAction("thaw", packet)} disabled={busy} className="min-h-9 rounded-xl bg-sky-800 px-3 text-sm font-semibold text-white disabled:opacity-50">Thaw whole</button>
+                        <button type="button" aria-label={`Thaw ${packet.amountMl} ml packet`} onClick={() => packetAction("thaw", packet)} disabled={busy} className="min-h-9 rounded-xl bg-frozen-strong px-3 text-sm font-semibold text-on-accent disabled:opacity-50">Thaw whole</button>
                       )}
-                      <button type="button" onClick={() => correctPacket(packet)} aria-label={`Edit ${packet.amountMl} ml packet`} title="Edit packet" className="flex min-h-9 min-w-8 items-center justify-center rounded-xl border border-sky-200 text-sky-900"><Pencil aria-hidden="true" className="h-4 w-4" /></button>
-                      <button type="button" onClick={() => removePacket(packet)} className="flex min-h-9 min-w-8 items-center justify-center rounded-xl border border-sky-200 text-sky-900" aria-label={`Delete ${packet.amountMl} ml packet`} title="Delete packet"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                      <button type="button" onClick={() => correctPacket(packet)} aria-label={`Edit ${packet.amountMl} ml packet`} title="Edit packet" className="flex min-h-9 min-w-8 items-center justify-center rounded-xl border border-frozen/30 text-frozen-strong"><Pencil aria-hidden="true" className="h-4 w-4" /></button>
+                      <button type="button" onClick={() => removePacket(packet)} className="flex min-h-9 min-w-8 items-center justify-center rounded-xl border border-frozen/30 text-frozen-strong" aria-label={`Delete ${packet.amountMl} ml packet`} title="Delete packet"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
                     </div>
                   </div>
                 ))}
               </div>
             </details>
 
-            <details className="mt-1.5 rounded-lg bg-white/70 px-2.5 py-1.5">
-              <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-sky-950">
+            <details className="mt-1.5 rounded-lg bg-surface/70 px-2.5 py-1.5">
+              <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-sm font-semibold text-frozen-strong">
                 <span className="flex items-center gap-2"><PackagePlus aria-hidden="true" className="h-4 w-4" /> Reconcile frozen packets</span>
                 <ChevronDown aria-hidden="true" className="h-4 w-4" />
               </summary>
               <p className="text-xs text-muted">Add a missing physical packet. Correct or remove existing packets above; no opaque Frozen total adjustment is created.</p>
-              <button type="button" onClick={() => setShowPacketAdd((shown) => !shown)} className="mt-2 min-h-9 w-full rounded-xl border border-sky-200 text-sm font-semibold text-sky-900">Add packet</button>
+              <button type="button" onClick={() => setShowPacketAdd((shown) => !shown)} className="mt-2 min-h-9 w-full rounded-xl border border-frozen/30 text-sm font-semibold text-frozen-strong">Add packet</button>
               {showPacketAdd && (
                 <div className="mt-2 grid gap-2">
-                  <input aria-label="Frozen packet amount in ml" type="number" min="0.01" step="any" value={packetAmount} onChange={(event) => setPacketAmount(event.target.value)} className="min-h-11 rounded-xl border border-sky-200 bg-white px-3" placeholder="Amount (ml)" />
-                  <input aria-label="Frozen packet recorded time" type="datetime-local" value={packetDate} onChange={(event) => setPacketDate(event.target.value)} className="min-h-11 rounded-xl border border-sky-200 bg-white px-3" />
-                  <button type="button" onClick={addPacket} disabled={busy} className="min-h-9 rounded-xl bg-sky-800 text-sm font-semibold text-white disabled:opacity-50">Add frozen packet</button>
+                  <input aria-label="Frozen packet amount in ml" type="number" min="0.01" step="any" value={packetAmount} onChange={(event) => setPacketAmount(event.target.value)} className="min-h-11 rounded-xl border border-frozen/30 bg-surface px-3" placeholder="Amount (ml)" />
+                  <input aria-label="Frozen packet recorded time" type="datetime-local" value={packetDate} onChange={(event) => setPacketDate(event.target.value)} className="min-h-11 rounded-xl border border-frozen/30 bg-surface px-3" />
+                  <button type="button" onClick={addPacket} disabled={busy} className="min-h-9 rounded-xl bg-frozen-strong text-sm font-semibold text-on-accent disabled:opacity-50">Add frozen packet</button>
                 </div>
               )}
             </details>
@@ -397,7 +397,7 @@ export function MilkBank({
                 </div>
                 <div className="flex shrink-0 items-center">
                   <button type="button" onClick={() => setEditTransfer({ ...item, localTime: toSingaporeInput(item.at)})} className="flex h-8 w-8 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted" aria-label={"Edit " + item.eventType + " transfer"}><Pencil aria-hidden="true" className="h-4 w-4" /></button>
-                  <button type="button" onClick={() => deleteTransfer(item)} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50" aria-label={"Delete " + item.eventType + " transfer"}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => deleteTransfer(item)} disabled={busy} className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50" aria-label={"Delete " + item.eventType + " transfer"}><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
                 </div>
               </div>
             ))}
@@ -415,13 +415,16 @@ export function MilkBank({
           </div>
           <div className="mt-2 flex gap-2">
             <button type="button" onClick={() => setEditTransfer(null)} className="min-h-9 flex-1 rounded-xl border border-border text-sm font-semibold">Cancel</button>
-            <button type="button" onClick={saveTransfer} disabled={busy} className="min-h-9 flex-1 rounded-xl bg-terracotta-dark text-sm font-semibold text-white disabled:opacity-50">Save</button>
+            <button type="button" onClick={saveTransfer} disabled={busy} className="min-h-9 flex-1 rounded-xl bg-terracotta-dark text-sm font-semibold text-on-accent disabled:opacity-50">Save</button>
           </div>
+          {history.some((item) => item.id === editTransfer.id) && (
+            <button type="button" onClick={() => deleteTransfer(editTransfer)} disabled={busy} className="mt-2 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" />Delete {editTransfer.eventType.toLowerCase()}</button>
+          )}
           <p className="mt-2 text-xs text-muted">Freeze expiry is recalculated from the corrected Singapore date. Impossible later balances or packet states are rejected.</p>
         </div>
       )}
 
-      {error && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-danger">{error}</p>}
+      {error && <p role="alert" className="mt-3 rounded-xl bg-danger/10 px-3 py-2 text-xs font-semibold text-danger">{error}</p>}
     </section>
   );
 }

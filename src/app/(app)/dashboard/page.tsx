@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -1482,12 +1482,15 @@ export default function DashboardPage() {
   const milkProgress = selectedExpectedMilkMl
     ? Math.min(100, Math.round((selectedMilkSummary.totalMl / selectedExpectedMilkMl) * 100))
     : 0;
+  // Whole percentages; when the day is only breastmilk + formula they add to 100.
   const breastmilkPercent = selectedMilkSummary.totalMl > 0
-    ? (selectedMilkSummary.breastmilkMl / selectedMilkSummary.totalMl * 100).toFixed(2)
-    : "0.00";
-  const formulaPercent = selectedMilkSummary.totalMl > 0
-    ? (selectedMilkSummary.formulaMl / selectedMilkSummary.totalMl * 100).toFixed(2)
-    : "0.00";
+    ? Math.round(selectedMilkSummary.breastmilkMl / selectedMilkSummary.totalMl * 100)
+    : 0;
+  const formulaPercent = selectedMilkSummary.totalMl <= 0
+    ? 0
+    : selectedMilkSummary.breastmilkMl + selectedMilkSummary.formulaMl === selectedMilkSummary.totalMl
+      ? 100 - breastmilkPercent
+      : Math.round(selectedMilkSummary.formulaMl / selectedMilkSummary.totalMl * 100);
   const earliestMilkDate = milkHistory[0]?.date ?? todayDateKey;
   const canGoToPreviousMilkDay = activeMilkDate > earliestMilkDate;
   const canGoToNextMilkDay = activeMilkDate < todayDateKey;
@@ -1562,6 +1565,71 @@ export default function DashboardPage() {
     );
   }
 
+  const renderHouseholdSettings = (closeMenu: () => void) => (
+    <section aria-labelledby="household-settings-title" className="mt-5 space-y-3 border-t border-border pt-4">
+      <h3 id="household-settings-title" className="text-sm font-semibold text-warm-brown">Household & settings</h3>
+          <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border bg-surface-muted px-3 py-2">
+            <span className="min-w-0">
+              <span className="block text-xs text-muted">Invite code</span>
+              <span className="block font-mono text-base font-semibold tracking-wide text-accent-strong">{inviteCode}</span>
+            </span>
+            <span className="text-right text-xs text-muted">Share to add a<br />household member</span>
+          </div>
+
+          <SettingsField
+            label="Your name"
+            value={userName || ""}
+            onSave={async (name) => {
+              const res = await fetch("/api/users", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.error || "Failed to save user name");
+              setUserId(data.user?.id || userId, data.user?.name || name);
+              router.refresh();
+            }}
+          />
+
+          <SettingsField
+            label="Baby name"
+            value={baby?.name || ""}
+            onSave={async (name) => {
+              if (!baby?.id) return;
+              await fetch("/api/babies", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: baby.id, name }),
+              });
+              setBaby({ ...baby, name });
+            }}
+          />
+
+          {pushSupported && (
+            <button
+              onClick={togglePush}
+              disabled={pushLoading}
+              className={`inline-flex min-h-8 w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium transition-colors ${
+                pushEnabled
+                  ? "bg-success text-on-accent"
+                  : "bg-surface border border-border text-warm-brown"
+              } disabled:opacity-50`}
+            >
+              {pushEnabled ? <Bell aria-hidden="true" className="h-4 w-4" /> : <BellOff aria-hidden="true" className="h-4 w-4" />}
+              <span>{pushLoading ? "Updating…" : pushEnabled ? "Notifications on" : "Enable notifications"}</span>
+            </button>
+          )}
+          <button
+            onClick={() => { closeMenu(); setShowLeaveConfirm(true); }}
+            className="inline-flex min-h-8 items-center justify-center gap-2 w-full py-3 text-sm text-muted hover:text-danger transition-colors"
+          >
+            <LogOut aria-hidden="true" className="h-4 w-4" />
+            Leave household
+          </button>
+    </section>
+  );
+
   const childcareDimmed = Boolean(childcareMode.activeSession)
     && childcareBrowseSessionId !== childcareMode.activeSession?.id;
 
@@ -1571,7 +1639,7 @@ export default function DashboardPage() {
       data-childcare-active={Boolean(childcareMode.activeSession)}
       data-childcare-dimmed={childcareDimmed ? "true" : undefined}
       data-dashboard-refresh-blocked={refreshExplicitlyBlocked ? "true" : undefined}
-      className="min-h-dvh bg-cream pb-24"
+      className="min-h-dvh bg-cream pb-[calc(8rem+env(safe-area-inset-bottom))]"
     >
       <header className="dashboard-header bg-surface border-b border-border px-4 py-2 sm:px-5 sm:py-3">
         <div className="dashboard-header-inner relative mx-auto max-w-lg">
@@ -1589,7 +1657,7 @@ export default function DashboardPage() {
           <div className="dashboard-baby-identity text-center">
             <div className="dashboard-baby-name flex min-w-0 items-center justify-center gap-1 px-10">
               <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
-                {(closeCareMenu) => baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}
+                {(closeCareMenu) => <>{baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}{renderHouseholdSettings(closeCareMenu)}</>}
               </BabyCareMenu>
               {baby?.id && childcareMode.schemaReady && (
                 <ChildcareHeaderMenu
@@ -1620,7 +1688,7 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
-          <div className="dashboard-header-tools mt-2 flex items-stretch justify-between gap-3">
+          <div className="dashboard-header-tools mt-2 flex items-stretch justify-center gap-3">
             <Link
               href="/weight"
               className="inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-xs font-semibold text-accent-strong shadow-sm transition-colors hover:bg-terracotta/15"
@@ -1628,10 +1696,6 @@ export default function DashboardPage() {
               <Scale aria-hidden="true" className="h-4 w-4" />
               Weight details
             </Link>
-            <div className="inline-flex min-h-8 min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-muted px-3 py-2">
-              <span className="whitespace-nowrap text-xs text-muted">Invite code</span>
-              <span className="truncate font-mono text-sm font-semibold text-accent-strong">{inviteCode}</span>
-            </div>
           </div>
         </div>
       </header>
@@ -1666,7 +1730,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => { void refreshDashboard(); }}
               disabled={refreshBlocked}
-              className="min-h-8 shrink-0 rounded-full bg-terracotta-dark px-3 text-xs font-semibold text-white disabled:opacity-50"
+              className="min-h-8 shrink-0 rounded-full bg-terracotta-dark px-3 text-xs font-semibold text-on-accent disabled:opacity-50"
             >
               Retry
             </button>
@@ -1691,7 +1755,7 @@ export default function DashboardPage() {
             </button>
           </div>
         )}
-        <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45") } aria-label="Sleep status">
+        <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none"} aria-label="Sleep status">
           <SleepStateControl
             compact={Boolean(sickMode?.activeEpisode)}
             state={sleepState.state}
@@ -1700,7 +1764,7 @@ export default function DashboardPage() {
             onSelect={handleSleepTransition}
           />
           <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={sleepState.since != null && sleepState.activity && !isEditingSleepSince ? (
-            <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-white/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
           ) : undefined} />
           {sleepState.since != null && sleepState.activity && isEditingSleepSince && (
               <div className="mt-3 flex flex-wrap items-end gap-2">
@@ -1714,7 +1778,7 @@ export default function DashboardPage() {
                     className="mt-1 min-h-8 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-warm-brown outline-none focus:border-accent-strong"
                   />
                 </label>
-                <button type="button" onClick={saveSleepSince} disabled={isChangingSleepState} className="min-h-8 rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">Save</button>
+                <button type="button" onClick={saveSleepSince} disabled={isChangingSleepState} className="min-h-8 rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-on-accent disabled:opacity-60">Save</button>
                 <button type="button" onClick={() => setIsEditingSleepSince(false)} className="min-h-8 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-warm-brown">Cancel</button>
               </div>
           )}
@@ -1757,7 +1821,7 @@ export default function DashboardPage() {
                 <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted">
                   <span>{selectedMilkDateLabel}</span>
                   {selectedMilkSummary.isSickDay === true && (
-                    <span className="whitespace-nowrap rounded-full bg-sky-100 px-1.5 py-0.5 font-medium text-sky-800">Sick day</span>
+                    <span className="whitespace-nowrap rounded-full bg-frozen/15 px-1.5 py-0.5 font-medium text-frozen-strong">Sick day</span>
                   )}
                 </p>
               )}
@@ -1886,7 +1950,7 @@ export default function DashboardPage() {
                 aria-expanded={showMedianInfo}
                 aria-controls={medianInfoId}
                 onClick={() => setShowMedianInfo((current) => !current)}
-                className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/60 hover:text-warm-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong/60"
+                className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface/60 hover:text-warm-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong/60"
               >
                 <Info aria-hidden="true" className="h-3.5 w-3.5" />
               </button>
@@ -1895,7 +1959,7 @@ export default function DashboardPage() {
           <p
             id={medianInfoId}
             hidden={!showMedianInfo}
-            className="rounded-lg bg-white/55 px-3 py-2 text-xs leading-relaxed text-muted"
+            className="rounded-lg bg-surface/55 px-3 py-2 text-xs leading-relaxed text-muted"
           >
             {medianInfoText}
           </p>
@@ -1929,7 +1993,7 @@ export default function DashboardPage() {
                   onClick={() => handleSwitchSide(s)}
                   className={`flex-1 py-3 rounded-lg text-sm font-medium transition-colors ${
                     activeTimer.current_side === s
-                      ? "bg-terracotta-dark text-white"
+                      ? "bg-terracotta-dark text-on-accent"
                       : "bg-cream border border-border"
                   }`}
                 >
@@ -1940,7 +2004,7 @@ export default function DashboardPage() {
             <button
               onClick={handleStopTimer}
               disabled={isStoppingTimer}
-              className="min-h-8 w-full rounded-lg bg-success py-3 text-sm font-medium text-white transition-colors hover:bg-warm-brown disabled:opacity-60"
+              className="min-h-8 w-full rounded-lg bg-success py-3 text-sm font-medium text-on-accent transition-colors hover:bg-warm-brown disabled:opacity-60"
             >
               {isStoppingTimer ? "Stopping & logging…" : "Stop & log"}
             </button>
@@ -2038,7 +2102,7 @@ export default function DashboardPage() {
               >
                 <ListFilter aria-hidden="true" className="h-4 w-4" />
                 {activityTypeFilters.length > 0 && (
-                  <span aria-hidden="true" className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-terracotta-dark px-1 text-[10px] font-semibold leading-none text-white">
+                  <span aria-hidden="true" className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-terracotta-dark px-1 text-[10px] font-semibold leading-none text-on-accent">
                     {activityTypeFilters.length}
                   </span>
                 )}
@@ -2071,7 +2135,7 @@ export default function DashboardPage() {
           {activityTypeFilters.length > 0 && (
             <p className="-mt-1 mb-2 truncate px-1 text-[11px] text-muted">Showing {activityTypeFilterLabel}</p>
           )}
-          <div className="space-y-1.5">
+          <div>
             {(() => {
               const dateFilter = activityDateFilter || (!showHistory ? todayDateKey : "");
               const visible: TimelineActivity[] = filteredActivities.flatMap((activity) => {
@@ -2169,12 +2233,6 @@ export default function DashboardPage() {
                         setLogType(record.type);
                         setShowLogModal(true);
                       }}
-                      onDelete={() => {
-                        // Defence in depth: a marker has no stored activity row,
-                        // so there is nothing it could safely delete.
-                        if (activity.careBoundary) return;
-                        setDeleteActivity(activity.sourceActivity ?? activity);
-                      }}
                     />
                   </div>
                 );
@@ -2191,66 +2249,10 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Settings */}
-        <section className="pt-4 border-t border-border space-y-4">
-          <h2 className="text-sm font-medium text-warm-brown-light">Settings</h2>
-
-          <SettingsField
-            label="Your name"
-            value={userName || ""}
-            onSave={async (name) => {
-              const res = await fetch("/api/users", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name }),
-              });
-              const data = await res.json().catch(() => ({}));
-              if (!res.ok) throw new Error(data.error || "Failed to save user name");
-              setUserId(data.user?.id || userId, data.user?.name || name);
-              router.refresh();
-            }}
-          />
-
-          <SettingsField
-            label="Baby name"
-            value={baby?.name || ""}
-            onSave={async (name) => {
-              if (!baby?.id) return;
-              await fetch("/api/babies", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: baby.id, name }),
-              });
-              setBaby({ ...baby, name });
-            }}
-          />
-
-          {pushSupported && (
-            <button
-              onClick={togglePush}
-              disabled={pushLoading}
-              className={`inline-flex min-h-8 w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium transition-colors ${
-                pushEnabled
-                  ? "bg-success text-white"
-                  : "bg-surface border border-border text-warm-brown"
-              } disabled:opacity-50`}
-            >
-              {pushEnabled ? <Bell aria-hidden="true" className="h-4 w-4" /> : <BellOff aria-hidden="true" className="h-4 w-4" />}
-              <span>{pushLoading ? "Updating…" : pushEnabled ? "Notifications on" : "Enable notifications"}</span>
-            </button>
-          )}
-          <button
-            onClick={() => setShowLeaveConfirm(true)}
-            className="inline-flex min-h-8 items-center justify-center gap-2 w-full py-3 text-sm text-muted hover:text-danger transition-colors"
-          >
-            <LogOut aria-hidden="true" className="h-4 w-4" />
-            Leave household
-          </button>
-        </section>
       </div>
 
       {/* Floating Add Activity Menu */}
-      <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
+      <div className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] right-5 z-40 flex flex-col items-end gap-3">
         {showActivityMenu && (
           <div className="activity-picker flex max-h-[calc(100dvh-7rem)] w-[min(320px,calc(100vw-2.5rem))] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
             <button
@@ -2286,14 +2288,14 @@ export default function DashboardPage() {
                   key={type}
                   onClick={() => handleActivityAction(type)}
                   disabled={(isBreastfeed && isStartingTimer) || (type === "medication" && sickModeIsStale)}
-                  className={"flex min-h-9 w-full shrink-0 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors " + (overdue ? "bg-terracotta-dark text-white" : "hover:bg-cream text-warm-brown") + (childcareMode.activeSession ? " opacity-55" : "") + " disabled:opacity-60"}
+                  className={"flex min-h-9 w-full shrink-0 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors " + (overdue ? "bg-terracotta-dark text-on-accent" : "hover:bg-cream text-warm-brown") + (childcareMode.activeSession ? " opacity-55" : "") + " disabled:opacity-60"}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <ActivityIcon aria-hidden="true" className="h-5 w-5 shrink-0" />
                     <span className="text-sm font-medium">{label}</span>
                   </span>
                   {statusMeta ? (
-                    <span className={"shrink-0 text-xs tabular-nums " + (overdue ? "text-white" : "text-muted")}>{statusMeta}</span>
+                    <span className={"shrink-0 text-xs tabular-nums " + (overdue ? "text-on-accent" : "text-muted")}>{statusMeta}</span>
                   ) : last ? (
                     <ActivityRecency startedAt={last.started_at} overdue={overdue} />
                   ) : null}
@@ -2306,7 +2308,7 @@ export default function DashboardPage() {
           onClick={() => setShowActivityMenu((value) => !value)}
           aria-label={showActivityMenu ? "Close activity menu" : "Add activity"}
           aria-expanded={showActivityMenu}
-          className={"flex h-12 w-12 items-center justify-center rounded-full bg-terracotta-dark text-white shadow-lg transition-colors hover:bg-warm-brown " + (childcareMode.activeSession ? "opacity-55" : "")}
+          className={"flex h-12 w-12 items-center justify-center rounded-full bg-terracotta-dark text-on-accent shadow-lg transition-colors hover:bg-warm-brown " + (childcareMode.activeSession ? "opacity-55" : "")}
         >
           {showActivityMenu ? <X aria-hidden="true" className="h-6 w-6" /> : <Plus aria-hidden="true" className="h-6 w-6" />}
         </button>
@@ -2381,7 +2383,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={handleLeave}
                 disabled={isLeaving}
-                className="min-h-11 rounded-lg bg-danger px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-warm-brown disabled:opacity-50"
+                className="min-h-11 rounded-lg bg-danger px-4 py-3 text-sm font-semibold text-on-accent transition-colors hover:bg-warm-brown disabled:opacity-50"
               >
                 {isLeaving ? "Leaving…" : "Leave"}
               </button>
@@ -2437,7 +2439,7 @@ export default function DashboardPage() {
               <button
                 onClick={handleDelete}
                 disabled={isDeletingActivity}
-                className="min-h-11 flex-1 rounded-lg bg-danger py-3 text-sm font-medium text-white disabled:opacity-50"
+                className="min-h-11 flex-1 rounded-lg bg-danger py-3 text-sm font-medium text-on-accent disabled:opacity-50"
               >
                 {isDeletingActivity ? "Deleting…" : "Delete"}
               </button>
@@ -2476,6 +2478,11 @@ export default function DashboardPage() {
             ...(editingDose.historicalMedication ? { historicalMedication: editingDose.historicalMedication } : {}),
           }}
           onClose={() => setEditingDose(null)}
+          onDelete={() => {
+            const target = editingDose;
+            setEditingDose(null);
+            setDeleteActivity(target);
+          }}
           onRefresh={async () => {
             await fetchSickMode(baby.id);
             await fetchData();
@@ -2514,6 +2521,13 @@ export default function DashboardPage() {
             setEditingActivity(null);
             setChildcareOverride(false);
           }}
+          onDelete={editingActivity ? () => {
+            const target = editingActivity;
+            setShowLogModal(false);
+            setEditingActivity(null);
+            setChildcareOverride(false);
+            setDeleteActivity(target);
+          } : undefined}
           onSuccess={(saved) => {
             const previous = editingActivity
               ? {
@@ -2579,7 +2593,7 @@ export default function DashboardPage() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-5 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-between gap-3 rounded-2xl bg-warm-brown px-4 py-3 text-sm text-white shadow-xl"
+          className="fixed bottom-5 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center justify-between gap-3 rounded-2xl bg-warm-brown px-4 py-3 text-sm text-on-accent shadow-xl"
         >
           <span>{sleepUndo?.message ?? sleepNotice}</span>
           {sleepUndo && (
@@ -2587,7 +2601,7 @@ export default function DashboardPage() {
               type="button"
               onClick={handleUndoSleep}
               disabled={isChangingSleepState}
-              className="min-h-11 shrink-0 rounded-xl bg-white/15 px-4 font-semibold text-white transition-colors hover:bg-white/25 disabled:opacity-50"
+              className="min-h-11 shrink-0 rounded-xl bg-surface/15 px-4 font-semibold text-on-accent transition-colors hover:bg-surface/25 disabled:opacity-50"
             >
               Undo
             </button>
@@ -2597,7 +2611,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setSleepNotice(null)}
               aria-label="Dismiss sleep message"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white/80 hover:bg-white/10"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-on-accent/80 hover:bg-surface/10"
             >
               <X aria-hidden="true" className="h-4 w-4" />
             </button>
@@ -2620,6 +2634,7 @@ function LogModal({
   lastPumpedAt,
   childcareOverride,
   onClose,
+  onDelete,
   onSuccess,
 }: {
   type: string;
@@ -2632,6 +2647,8 @@ function LogModal({
   lastPumpedAt: number | null;
   childcareOverride: boolean;
   onClose: () => void;
+  /** Present when editing: hands the entry to the shared delete confirmation. */
+  onDelete?: () => void;
   onSuccess: (saved: { id: string; type: string; startedAt: number; details: Record<string, unknown> }) => void;
 }) {
   const isEditing = !!activity;
@@ -2985,7 +3002,7 @@ function LogModal({
                   onClick={() => setWhen(opt.value)}
                   className={`min-h-11 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     when === opt.value
-                      ? "bg-terracotta-dark text-white"
+                      ? "bg-terracotta-dark text-on-accent"
                       : "bg-surface border border-border"
                   }`}
                 >
@@ -3108,7 +3125,7 @@ function LogModal({
                         className={
                           "py-3 rounded-lg text-sm font-medium transition-colors " +
                           (feed.milkType === option.value
-                            ? "bg-terracotta-dark text-white"
+                            ? "bg-terracotta-dark text-on-accent"
                             : "bg-surface border border-border")
                         }
                       >
@@ -3130,7 +3147,7 @@ function LogModal({
                           className={
                             "min-h-11 px-4 py-2 rounded-lg text-sm font-medium transition-colors " +
                             (feed.amount === String(ml)
-                              ? "bg-terracotta-dark text-white"
+                              ? "bg-terracotta-dark text-on-accent"
                               : "bg-surface border border-border")
                           }
                         >
@@ -3213,7 +3230,7 @@ function LogModal({
                       onClick={() => setSide(s)}
                       className={`flex-1 py-3 rounded-lg text-sm font-medium transition-colors ${
                         side === s
-                          ? "bg-terracotta-dark text-white"
+                          ? "bg-terracotta-dark text-on-accent"
                           : "bg-surface border border-border"
                       }`}
                     >
@@ -3237,7 +3254,7 @@ function LogModal({
                     onClick={() => setDiaperPoop("no")}
                     className={`flex-[3] py-3 rounded-lg text-sm font-medium capitalize transition-colors ${
                       diaperPoop === "no"
-                        ? "bg-terracotta-dark text-white"
+                        ? "bg-terracotta-dark text-on-accent"
                         : "bg-surface border border-border"
                     }`}
                   >
@@ -3251,7 +3268,7 @@ function LogModal({
                       }}
                       className={`flex-1 py-3 rounded-lg text-sm font-medium capitalize transition-colors ${
                         diaperPoop === s
-                          ? "bg-terracotta-dark text-white"
+                          ? "bg-terracotta-dark text-on-accent"
                           : "bg-surface border border-border"
                       }`}
                     >
@@ -3271,7 +3288,7 @@ function LogModal({
                     onClick={() => setDiaperPeeUnits("no")}
                     className={`flex-[2] py-3 rounded-lg text-sm font-medium capitalize transition-colors ${
                       diaperPeeUnits === "no"
-                        ? "bg-terracotta-dark text-white"
+                        ? "bg-terracotta-dark text-on-accent"
                         : "bg-surface border border-border"
                     }`}
                   >
@@ -3283,7 +3300,7 @@ function LogModal({
                       onClick={() => setDiaperPeeUnits(units)}
                       className={`flex-1 py-3 rounded-lg text-sm font-medium transition-colors ${
                         diaperPeeUnits === units
-                          ? "bg-terracotta-dark text-white"
+                          ? "bg-terracotta-dark text-on-accent"
                           : "bg-surface border border-border"
                       }`}
                     >
@@ -3307,7 +3324,7 @@ function LogModal({
                     onClick={() => setSide(s)}
                     className={`flex-1 py-3 rounded-lg text-sm font-medium transition-colors ${
                       side === s
-                        ? "bg-terracotta-dark text-white"
+                        ? "bg-terracotta-dark text-on-accent"
                         : "bg-surface border border-border"
                     }`}
                   >
@@ -3334,7 +3351,7 @@ function LogModal({
                     onClick={() => setVomitType(opt.value)}
                     className={`py-3 rounded-lg text-sm font-medium transition-colors ${
                       vomitType === opt.value
-                        ? "bg-terracotta-dark text-white"
+                        ? "bg-terracotta-dark text-on-accent"
                         : "bg-surface border border-border"
                     }`}
                   >
@@ -3407,10 +3424,21 @@ function LogModal({
           <button
             onClick={handleSubmit}
             disabled={isLoading || bottlefeedBreastmilkOverLimit || bottlefeedHasInvalidAmount || pumpHasInvalidAmount || noteIsInvalid || temperatureIsInvalid}
-            className="w-full py-4 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
+            className="w-full py-4 bg-terracotta-dark text-on-accent font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
           >
             {isLoading ? "Saving…" : isEditing ? "Save changes" : "Log activity"}
           </button>
+          {isEditing && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={isLoading}
+              className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+            >
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
+              Delete activity
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -3482,7 +3510,7 @@ function SettingsField({
             }
           }}
           disabled={!draft.trim() || saving}
-          className="min-h-11 flex-1 py-2 rounded-lg text-sm bg-terracotta-dark text-white font-medium disabled:opacity-50"
+          className="min-h-11 flex-1 py-2 rounded-lg text-sm bg-terracotta-dark text-on-accent font-medium disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
         </button>

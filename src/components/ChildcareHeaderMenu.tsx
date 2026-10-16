@@ -45,15 +45,15 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         aria-label={statusLabel}
         title={statusLabel}
         onClick={() => dialogRef.current?.showModal()}
-        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-red-100 hover:bg-red-200/70" : "hover:bg-surface-muted"}`}
+        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-danger/15 hover:bg-danger/25" : "hover:bg-surface-muted"}`}
       >
         <Balloon
           aria-hidden="true"
           strokeWidth={1.75}
-          className={`h-6 w-6 text-red-600 [&>path:first-child]:stroke-stone-500 ${isActive ? "[&>path:last-child]:fill-red-500" : "[&>path:last-child]:fill-stone-100"}`}
+          className={`h-6 w-6 text-danger [&>path:first-child]:stroke-muted ${isActive ? "[&>path:last-child]:fill-danger" : "[&>path:last-child]:fill-surface-muted"}`}
         />
         {isActive && (
-          <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-600" />
+          <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />
         )}
       </button>
 

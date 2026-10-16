@@ -139,7 +139,7 @@ export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt
         </>}
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         {needsReview && <button type="button" disabled={isStale || busy || !currentMedication} onClick={() => { setSelected(currentMedication ?? null); attempt.current = null; setNeedsReview(false); setError(null); }} className="min-h-11 w-full rounded-lg border border-border px-3 text-sm font-semibold">Review latest history</button>}
-        <button type="submit" disabled={busy || isStale || needsReview || !currentMedication || invalidTime || !doseText.trim()} className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : "Save dose"}</button>
+        <button type="submit" disabled={busy || isStale || needsReview || !currentMedication || invalidTime || !doseText.trim()} className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent disabled:opacity-50">{busy ? "Saving…" : "Save dose"}</button>
       </form>
     </dialog>
   );

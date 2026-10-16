@@ -132,11 +132,11 @@ export default function WelcomePage() {
                 className="w-full px-4 py-3 rounded-lg border border-border focus:border-accent-strong outline-none text-lg bg-surface"
               />
             </div>
-            {error && <p className="text-red-600 text-sm">{error}</p>}
+            {error && <p className="text-danger text-sm">{error}</p>}
             <button
               type="submit"
               disabled={isLoading || !yourName.trim()}
-              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
+              className="w-full py-4 px-6 bg-terracotta-dark text-on-accent font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
             >
               {isLoading ? "Saving…" : "Continue"}
             </button>
@@ -158,7 +158,7 @@ export default function WelcomePage() {
           <div className="space-y-4">
             <button
               onClick={() => setMode("create")}
-              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors"
+              className="w-full py-4 px-6 bg-terracotta-dark text-on-accent font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors"
             >
               Create a household
             </button>
@@ -198,11 +198,11 @@ export default function WelcomePage() {
                 className="w-full px-4 py-3 rounded-lg border border-border focus:border-accent-strong outline-none text-lg bg-surface"
               />
             </div>
-            {error && <p className="text-red-600 text-sm">{error}</p>}
+            {error && <p className="text-danger text-sm">{error}</p>}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
+              className="w-full py-4 px-6 bg-terracotta-dark text-on-accent font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
             >
               {isLoading ? "Creating…" : "Create household"}
             </button>
@@ -232,11 +232,11 @@ export default function WelcomePage() {
                 className="w-full px-4 py-3 rounded-lg border border-border focus:border-accent-strong outline-none text-lg bg-surface text-center font-mono"
               />
             </div>
-            {error && <p className="text-red-600 text-sm">{error}</p>}
+            {error && <p className="text-danger text-sm">{error}</p>}
             <button
               type="submit"
               disabled={isLoading || inviteCode.length !== 6}
-              className="w-full py-4 px-6 bg-terracotta-dark text-white font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
+              className="w-full py-4 px-6 bg-terracotta-dark text-on-accent font-medium rounded-lg text-lg hover:bg-warm-brown transition-colors disabled:opacity-50"
             >
               {isLoading ? "Joining…" : "Join household"}
             </button>

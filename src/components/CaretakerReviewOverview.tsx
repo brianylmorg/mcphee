@@ -28,7 +28,7 @@ export default function CaretakerReviewOverview({
         <>
           {entrySummary}
           {attentionCount > 0 && (
-            <span className="text-amber-600"> · {attentionCount} need checking</span>
+            <span className="text-warning"> · {attentionCount} need checking</span>
           )}
         </>
       ),

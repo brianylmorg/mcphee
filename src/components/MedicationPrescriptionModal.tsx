@@ -111,7 +111,7 @@ function MedicationFields({
           />
         </label>
         {removable && onRemove && (
-          <button type="button" disabled={disabled} onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50">
+          <button type="button" disabled={disabled} onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50">
             <X aria-hidden="true" className="h-4 w-4" />
           </button>
         )}
@@ -254,7 +254,7 @@ export default function MedicationPrescriptionModal({
         ))}
         <button type="button" disabled={busy || isStale} onClick={() => setDrafts((items) => [...items, emptyMedication()])} className="inline-flex min-h-9 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button>
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-        <button type="submit" disabled={busy || isStale || !valid} className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : `Save medication${drafts.length === 1 ? "" : "s"}`}</button>
+        <button type="submit" disabled={busy || isStale || !valid} className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent disabled:opacity-50">{busy ? "Saving…" : `Save medication${drafts.length === 1 ? "" : "s"}`}</button>
       </form>
     </dialog>
   );

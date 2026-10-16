@@ -17,6 +17,16 @@
   --rgb-danger: 180 35 24;
   --rgb-warning: 138 90 20;
   --rgb-info: 47 107 103;
+  /* Text and icons drawn on a strong accent/success/danger/frozen fill. */
+  --rgb-on-accent: 255 255 255;
+  --rgb-frozen: 92 150 184;
+  --rgb-frozen-strong: 30 86 116;
+  --rgb-awake-surface: 253 241 204;
+  --rgb-awake-border: 237 211 146;
+  --rgb-sleep-surface: 226 238 246;
+  --rgb-sleep-border: 176 205 222;
+
+  color-scheme: light;
 
   --color-canvas: rgb(var(--rgb-canvas));
   --color-surface: rgb(var(--rgb-surface));
@@ -56,22 +66,219 @@ html[data-care-mode="sick"] {
   --rgb-text-muted: 71 99 107;
   --rgb-border: 187 211 216;
   --rgb-info: 53 107 118;
+  --rgb-awake-surface: 250 232 178;
+  --rgb-awake-border: 227 197 120;
+  --rgb-sleep-surface: 204 225 232;
+  --rgb-sleep-border: 150 191 203;
 }
 
-.sleep-status-card[data-sleep-state="awake"] {
-  background-color: rgb(253 241 204);
-  border-color: rgb(237 211 146);
-}
+/* Dark mode: deep warm brown, never pure black, so 3am checks stay gentle.
+   Strong fills get lighter, so text on them flips to dark (on-accent). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rgb-canvas: 27 21 18;
+    --rgb-surface: 38 30 25;
+    --rgb-surface-muted: 52 41 35;
+    --rgb-accent: 205 133 101;
+    --rgb-accent-strong: 232 163 131;
+    --rgb-text: 242 230 219;
+    --rgb-text-muted: 192 172 158;
+    --rgb-border: 78 63 54;
+    --rgb-success: 128 200 160;
+    --rgb-danger: 244 134 118;
+    --rgb-warning: 232 184 104;
+    --rgb-info: 124 194 188;
+    --rgb-on-accent: 33 22 16;
+    --rgb-frozen: 120 176 208;
+    --rgb-frozen-strong: 164 206 230;
+    --rgb-awake-surface: 66 50 26;
+    --rgb-awake-border: 112 86 40;
+    --rgb-sleep-surface: 30 38 56;
+    --rgb-sleep-border: 58 72 102;
 
-html[data-care-mode="sick"] .sleep-status-card[data-sleep-state="awake"] {
-  background-color: rgb(250 232 178);
-  border-color: rgb(227 197 120);
+    color-scheme: dark;
+  }
+
+  html[data-care-mode="sick"] {
+    --rgb-canvas: 17 28 31;
+    --rgb-surface: 24 38 42;
+    --rgb-surface-muted: 34 51 56;
+    --rgb-accent: 112 172 184;
+    --rgb-accent-strong: 146 200 210;
+    --rgb-text: 226 239 241;
+    --rgb-text-muted: 160 187 193;
+    --rgb-border: 52 76 82;
+    --rgb-info: 146 200 210;
+    --rgb-awake-surface: 62 52 26;
+    --rgb-awake-border: 108 90 42;
+    --rgb-sleep-surface: 26 44 54;
+    --rgb-sleep-border: 54 84 98;
+  }
 }
 
 /* Sleep/awake colors indicate state, never clinical severity. */
-html[data-care-mode="sick"] .sleep-status-card[data-sleep-state="sleeping"] {
-  background-color: rgb(204 225 232);
-  border-color: rgb(150 191 203);
+.sleep-status-card[data-sleep-state="awake"] {
+  background-color: rgb(var(--rgb-awake-surface));
+  border-color: rgb(var(--rgb-awake-border));
+}
+.sleep-status-card[data-sleep-state="sleeping"] {
+  background-color: rgb(var(--rgb-sleep-surface));
+  border-color: rgb(var(--rgb-sleep-border));
+}
+
+/* Awake/sleep toggle: the sliding thumb carries a small day or night scene.
+   Scenes are decorative (aria-hidden) and hold still with reduced motion. */
+:root {
+  --scene-day-from: 255 246 214;
+  --scene-day-to: 255 226 168;
+  --scene-day-text: 92 56 18;
+  --scene-sun: 255 186 64;
+  --scene-cloud: 255 255 255;
+  --scene-cloud-alpha: 0.85;
+  --scene-night-from: 34 44 82;
+  --scene-night-to: 54 64 112;
+  --scene-night-text: 238 241 255;
+  --scene-moon: 255 238 196;
+  --scene-star: 255 250 230;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --scene-day-from: 92 70 32;
+    --scene-day-to: 120 88 38;
+    --scene-day-text: 255 240 214;
+    --scene-sun: 255 196 92;
+    --scene-cloud: 255 236 204;
+    --scene-cloud-alpha: 0.35;
+    --scene-night-from: 24 30 58;
+    --scene-night-to: 40 48 88;
+  }
+}
+.sleep-thumb {
+  isolation: isolate;
+}
+.sleep-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transition: opacity 600ms ease;
+}
+.sleep-scene-day {
+  background: linear-gradient(135deg, rgb(var(--scene-day-from)), rgb(var(--scene-day-to)));
+}
+.sleep-scene-night {
+  background: linear-gradient(135deg, rgb(var(--scene-night-from)), rgb(var(--scene-night-to)));
+  opacity: 0;
+}
+.sleep-thumb[data-state="sleeping"] .sleep-scene-day {
+  opacity: 0;
+}
+.sleep-thumb[data-state="sleeping"] .sleep-scene-night {
+  opacity: 1;
+}
+.sleep-toggle[data-state="awake"] .sleep-option-active {
+  color: rgb(var(--scene-day-text));
+}
+.sleep-toggle[data-state="sleeping"] .sleep-option-active {
+  color: rgb(var(--scene-night-text));
+}
+.sleep-option-active .sleep-elapsed {
+  opacity: 0.9;
+}
+
+.sleep-sun {
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgb(var(--scene-sun)) 0 55%, rgb(var(--scene-sun) / 0) 72%);
+  box-shadow: 0 0 18px 6px rgb(var(--scene-sun) / 0.35);
+  animation: sleep-sun-glow 5s ease-in-out infinite;
+}
+.sleep-cloud {
+  position: absolute;
+  height: 9px;
+  border-radius: 9999px;
+  background: rgb(var(--scene-cloud) / var(--scene-cloud-alpha));
+  animation: sleep-cloud-drift linear infinite;
+}
+.sleep-cloud::before,
+.sleep-cloud::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  border-radius: 9999px;
+  background: inherit;
+}
+.sleep-cloud::before {
+  left: 18%;
+  width: 45%;
+  height: 11px;
+}
+.sleep-cloud::after {
+  left: 48%;
+  width: 34%;
+  height: 8px;
+}
+.sleep-cloud-1 { top: 3px; left: 0; width: 30px; animation-duration: 22s; animation-delay: -6s; }
+.sleep-cloud-2 { bottom: 2px; left: 0; width: 24px; opacity: 0.75; animation-duration: 30s; animation-delay: -21s; }
+.sleep-cloud-3 { bottom: 4px; left: 0; width: 16px; opacity: 0.6; animation-duration: 26s; animation-delay: -14s; }
+
+.sleep-moon {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  box-shadow: inset -5px -2px 0 0 rgb(var(--scene-moon));
+  filter: drop-shadow(0 0 5px rgb(var(--scene-moon) / 0.45));
+  transform: rotate(-12deg);
+  animation: sleep-moon-float 6s ease-in-out infinite;
+}
+.sleep-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: rgb(var(--scene-star));
+  box-shadow: 0 0 4px 1px rgb(var(--scene-star) / 0.6);
+  animation: sleep-star-twinkle 3.2s ease-in-out infinite;
+}
+.sleep-star-1 { top: 8px; left: 12%; animation-delay: -0.4s; }
+.sleep-star-2 { top: 28px; left: 22%; width: 2px; height: 2px; animation-delay: -1.6s; }
+.sleep-star-3 { bottom: 8px; left: 40%; animation-delay: -2.4s; }
+.sleep-star-4 { top: 12px; left: 62%; width: 2px; height: 2px; animation-delay: -0.9s; }
+.sleep-star-5 { bottom: 10px; right: 14%; animation-delay: -2s; }
+.sleep-star-6 { top: 30px; right: 34%; width: 2px; height: 2px; animation-delay: -2.9s; }
+
+@keyframes sleep-cloud-drift {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(var(--cloud-travel, 220px)); }
+}
+@keyframes sleep-sun-glow {
+  0%, 100% { transform: scale(1); opacity: 0.95; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+@keyframes sleep-moon-float {
+  0%, 100% { transform: rotate(-12deg) translateY(0); }
+  50% { transform: rotate(-6deg) translateY(1.5px); }
+}
+@keyframes sleep-star-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.7); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sleep-cloud-1 { transform: translateX(28px); }
+  .sleep-cloud-2 { transform: translateX(96px); }
+  .sleep-cloud-3 { transform: translateX(132px); }
+  .sleep-sun,
+  .sleep-cloud,
+  .sleep-moon,
+  .sleep-star {
+    animation: none;
+  }
 }
 
 body,

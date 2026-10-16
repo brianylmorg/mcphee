@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Pill, X } from "lucide-react";
+import { Pill, Trash2, X } from "lucide-react";
 import type { MedicationDoseReference } from "@/lib/activity-timeline";
 import type { HistoricalMedicationReference } from "@/lib/historical-medication";
 import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
@@ -46,11 +46,13 @@ async function putHistoricalMedication(payload: {
   }
 }
 
-export default function MedicationDoseEditModal({ babyId, activity, onClose, onRefresh }: {
+export default function MedicationDoseEditModal({ babyId, activity, onClose, onRefresh, onDelete }: {
   babyId: string;
   activity: MedicationDoseEditActivity;
   onClose: () => void;
   onRefresh: () => Promise<void>;
+  /** Hands the dose to the shared delete confirmation. */
+  onDelete?: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
@@ -183,7 +185,10 @@ export default function MedicationDoseEditModal({ babyId, activity, onClose, onR
           </div>
         )}
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-        <button type="submit" disabled={busy || stale || invalidTime || (doseRequired && !doseText.trim())} className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : saveLabel}</button>
+        <button type="submit" disabled={busy || stale || invalidTime || (doseRequired && !doseText.trim())} className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent disabled:opacity-50">{busy ? "Saving…" : saveLabel}</button>
+        {onDelete && (
+          <button type="button" disabled={busy} onClick={onDelete} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold text-danger hover:bg-danger/10 disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" />Delete dose</button>
+        )}
       </form>
     </dialog>
   );

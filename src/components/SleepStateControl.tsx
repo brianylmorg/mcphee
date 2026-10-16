@@ -27,6 +27,30 @@ function formatElapsed(ms: number): string {
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+/** Decorative day scene: a glowing sun with clouds drifting behind the label. */
+function DayScene() {
+  return (
+    <span aria-hidden="true" className="sleep-scene sleep-scene-day">
+      <span className="sleep-sun" />
+      <span className="sleep-cloud sleep-cloud-1" />
+      <span className="sleep-cloud sleep-cloud-2" />
+      <span className="sleep-cloud sleep-cloud-3" />
+    </span>
+  );
+}
+
+/** Decorative night scene: a crescent moon with twinkling stars. */
+function NightScene() {
+  return (
+    <span aria-hidden="true" className="sleep-scene sleep-scene-night">
+      <span className="sleep-moon" />
+      {[1, 2, 3, 4, 5, 6].map((star) => (
+        <span key={star} className={`sleep-star sleep-star-${star}`} />
+      ))}
+    </span>
+  );
+}
+
 export function SleepStateControl({ state, since = null, elapsedLabel, disabled, compact = false, onSelect }: SleepStateControlProps) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -35,58 +59,53 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
   }, []);
   const displayedElapsed = elapsedLabel ?? (since == null ? "Not timed yet" : formatElapsed(Math.max(0, now - since)));
   return (
-    <div data-compact={compact} className={compact ? "sleep-control-compact flex items-center gap-3" : undefined}>
-      <div
-        data-state={state}
-        className={"relative min-w-0 flex-1 overflow-hidden rounded-xl border p-1 shadow-inner transition-[background-color,border-color,box-shadow] duration-700 motion-reduce:transition-none " + (state === "awake"
-          ? "border-amber-200/90 bg-gradient-to-br from-amber-50 via-orange-50/80 to-rose-50/70 shadow-amber-100/70"
-          : "border-sky-300/70 bg-gradient-to-br from-slate-100 via-sky-50 to-indigo-100/70 shadow-sky-200/60")}
-        aria-label="Sleep state"
-      >
-        <div className="relative grid grid-cols-2 gap-1">
-          <span
-            aria-hidden="true"
-            className={"pointer-events-none absolute inset-y-0 left-0 w-[calc(50%_-_0.125rem)] rounded-xl border shadow-sm transition-[transform,background-color,border-color,box-shadow] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none " + (state === "awake"
-              ? "border-amber-300/80 bg-white/90 shadow-amber-200/70"
-              : "border-sky-300/80 bg-slate-900 shadow-sky-300/30")}
-            style={{ transform: state === "sleeping" ? "translateX(calc(100% + 0.25rem))" : "translateX(0)" }}
-          />
-          {options.map(({ state: optionState, label, Icon }) => {
-            const active = state === optionState;
-            const awake = optionState === "awake";
-            return (
-              <button
-                key={optionState}
-                type="button"
-                aria-label={"Set state to " + label}
-                aria-pressed={active}
-                disabled={disabled}
-                onClick={() => {
-                  if (!active) onSelect(optionState);
-                }}
-                className={"relative z-10 flex items-center justify-center gap-1.5 rounded-lg font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none " + (compact ? "min-h-8 px-2 py-1 text-xs " : "min-h-10 px-3 py-1.5 text-sm ") + (active
-                  ? awake ? "text-amber-950" : "text-sky-50"
-                  : state === "awake" ? "text-amber-950/55 hover:text-amber-950" : "text-slate-600 hover:text-slate-900") + " disabled:opacity-50"}
-              >
+    <div
+      data-compact={compact}
+      data-state={state}
+      className="sleep-toggle relative min-w-0 overflow-hidden rounded-xl border border-border bg-surface/60 p-1 shadow-inner"
+      aria-label="Sleep state"
+    >
+      <div className="relative grid grid-cols-2 gap-1">
+        <span
+          aria-hidden="true"
+          data-state={state}
+          className="sleep-thumb pointer-events-none absolute inset-y-0 left-0 w-[calc(50%_-_0.125rem)] overflow-hidden rounded-lg shadow-sm transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+          style={{ transform: state === "sleeping" ? "translateX(calc(100% + 0.25rem))" : "translateX(0)" }}
+        >
+          <DayScene />
+          <NightScene />
+        </span>
+        {options.map(({ state: optionState, label, Icon }) => {
+          const active = state === optionState;
+          return (
+            <button
+              key={optionState}
+              type="button"
+              aria-label={"Set state to " + label}
+              aria-pressed={active}
+              disabled={disabled}
+              onClick={() => {
+                if (!active) onSelect(optionState);
+              }}
+              className={"sleep-option relative z-10 flex min-w-0 items-center justify-center rounded-lg font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none disabled:opacity-50 "
+                + (compact ? "min-h-9 gap-1.5 px-2 py-1 text-xs " : "min-h-14 flex-col gap-0 px-3 py-1.5 text-sm ")
+                + (active ? "sleep-option-active" : "text-muted hover:text-warm-brown")}
+            >
+              <span className="flex items-center gap-1.5">
                 <Icon
                   aria-hidden="true"
-                  className={"h-4 w-4 transition-[color,transform,filter] duration-500 ease-out motion-reduce:transition-none " + (active
-                    ? awake ? "rotate-12 scale-110 text-amber-500 drop-shadow-sm" : "-rotate-12 scale-110 text-sky-200 drop-shadow-sm"
-                    : "scale-90 opacity-60")}
+                  className={"h-4 w-4 shrink-0 transition-transform duration-500 ease-out motion-reduce:transition-none " + (active ? "scale-110" : "scale-90 opacity-60")}
                 />
                 <span>{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className={compact ? "shrink-0 text-right" : "mt-2 flex items-baseline justify-between gap-4"} aria-live="polite">
-        <p className={(compact ? "text-[11px] " : "font-display text-xl ") + "font-semibold transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
-          {state === "awake" ? "Awake" : "Sleeping"}
-        </p>
-        <p className={"font-display " + (compact ? "text-lg " : "text-xl ") + "font-semibold tabular-nums transition-colors duration-500 motion-reduce:transition-none " + (state === "awake" ? "text-amber-800" : "text-sky-900")}>
-          {displayedElapsed}
-        </p>
+              </span>
+              {active && (
+                <span className={"sleep-elapsed font-display font-semibold tabular-nums " + (compact || since == null && elapsedLabel == null ? "text-xs" : "text-lg leading-6")}>
+                  {displayedElapsed}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

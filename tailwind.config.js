@@ -22,6 +22,9 @@ module.exports = {
         danger: "rgb(var(--rgb-danger) / <alpha-value>)",
         warning: "rgb(var(--rgb-warning) / <alpha-value>)",
         info: "rgb(var(--rgb-info) / <alpha-value>)",
+        "on-accent": "rgb(var(--rgb-on-accent) / <alpha-value>)",
+        frozen: "rgb(var(--rgb-frozen) / <alpha-value>)",
+        "frozen-strong": "rgb(var(--rgb-frozen-strong) / <alpha-value>)",
       },
       fontFamily: {
         display: ["Manrope", "sans-serif"],

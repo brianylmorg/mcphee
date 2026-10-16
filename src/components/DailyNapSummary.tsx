@@ -43,7 +43,7 @@ export function DailyNapSummary({
   const summary = calculateDailyNaps(sessions, now, confirmedCoverage);
 
   return (
-    <div className="daily-nap-summary mt-1 border-t border-current/10 pt-1">
+    <div className="daily-nap-summary mt-1 border-t border-border/70 pt-1">
       <div className="flex min-h-8 items-center justify-between gap-3" aria-live="polite">
         <div className="flex min-w-0 items-center">
           <div className="min-w-0">
@@ -58,7 +58,7 @@ export function DailyNapSummary({
             aria-expanded={showInfo}
             aria-controls={infoId}
             onClick={() => setShowInfo((current) => !current)}
-            className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-white/60 hover:text-warm-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong/60"
+            className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface/60 hover:text-warm-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong/60"
           >
             <Info aria-hidden="true" className="h-3.5 w-3.5" />
           </button>
@@ -71,7 +71,7 @@ export function DailyNapSummary({
       <p
         id={infoId}
         hidden={!showInfo}
-        className="rounded-lg bg-white/55 px-3 py-2 text-xs leading-relaxed text-muted"
+        className="rounded-lg bg-surface/55 px-3 py-2 text-xs leading-relaxed text-muted"
       >
           Singapore time: counting starts at the first recorded wake at or after 5am, or an earlier confirmed infant-care period, and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight.
       </p>

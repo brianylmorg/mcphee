@@ -18,7 +18,6 @@ test("activity card consolidates into a compact two-line summary", () => {
       comment: "A complete feed comment must stay visible.",
       createdBy: "Preview tester",
       onEdit: () => {},
-      onDelete: () => {},
     }),
   );
 
@@ -32,9 +31,10 @@ test("activity card consolidates into a compact two-line summary", () => {
   assert.match(html, />Formula</);
   assert.match(html, /A complete feed comment must stay visible\./);
   assert.match(html, /Entered by Preview tester/);
-  // Edit + delete are separate actions; delete keeps its derived label.
-  assert.equal((html.match(/<button/g) ?? []).length, 2);
-  assert.match(html, /aria-label="Delete bottlefeed activity"/);
+  // The whole row opens the editor; delete lives inside the editor.
+  assert.equal((html.match(/<button/g) ?? []).length, 1);
+  assert.match(html, /aria-label="Edit bottlefeed activity"/);
+  assert.doesNotMatch(html, /Delete/);
 });
 
 test("activity card keeps full note text and comments without clamping", () => {
@@ -49,7 +49,6 @@ test("activity card keeps full note text and comments without clamping", () => {
       multiline: true,
       comment: "Trailing comment stays visible.",
       onEdit: () => {},
-      onDelete: () => {},
     }),
   );
 
@@ -72,7 +71,6 @@ test("read-only care markers keep the layout but drop every action control", () 
       createdBy: "childcare",
       readOnly: true,
       onEdit: () => {},
-      onDelete: () => {},
     }),
   );
 

@@ -47,13 +47,13 @@ export default function ActivityRecency({
       {timestamp && (
         <time
           dateTime={new Date(startedAt).toISOString()}
-          className={"text-[11px] tabular-nums " + (overdue ? "text-white/80" : "text-muted")}
+          className={"text-[11px] tabular-nums " + (overdue ? "text-on-accent/80" : "text-muted")}
         >
           {timestamp}
         </time>
       )}
       {elapsed && (
-        <span className={"text-xs font-medium tabular-nums " + (overdue ? "text-white" : "text-warm-brown-light")}>
+        <span className={"text-xs font-medium tabular-nums " + (overdue ? "text-on-accent" : "text-warm-brown-light")}>
           {elapsed}
         </span>
       )}

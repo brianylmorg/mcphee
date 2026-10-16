@@ -281,7 +281,7 @@ export function MedicationFields({
           />
         </label>
         {removable && onRemove && (
-          <button type="button" onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger">
+          <button type="button" onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger">
             <X aria-hidden="true" className="h-4 w-4" />
           </button>
         )}
@@ -454,7 +454,7 @@ function DoseHistory({
       {editingMedication && (
         <div className="mt-2 rounded-lg bg-cream/60 p-2">
           <MedicationFields draft={medicationDraft} onChange={setMedicationDraft} suggestions={[]} />
-          <button type="button" onClick={updateMedication} disabled={busy || !medicationDraft.name.trim() || !medicationDraft.doseText.trim() || medicationScheduleValidationError(medicationDraft) != null} className="mt-2 min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">Save medication</button>
+          <button type="button" onClick={updateMedication} disabled={busy || !medicationDraft.name.trim() || !medicationDraft.doseText.trim() || medicationScheduleValidationError(medicationDraft) != null} className="mt-2 min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-on-accent disabled:opacity-50">Save medication</button>
         </div>
       )}
       {medication.latestDose && medication.minIntervalHours != null && (
@@ -498,7 +498,7 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
     return (
       <div className="rounded-lg bg-cream/70 p-2">
         <div className="grid gap-2 sm:grid-cols-2"><input aria-label="Edit dose time" type="datetime-local" value={time} onChange={(event) => setTime(event.target.value)} className="min-h-11 rounded-lg border border-border bg-surface px-2 py-2 text-sm" /><input aria-label="Edit dose amount" value={text} onChange={(event) => setText(event.target.value)} className="min-h-11 rounded-lg border border-border bg-surface px-3 py-2 text-sm" /></div>
-        <div className="mt-2 flex gap-2"><button type="button" disabled={disabled} onClick={() => onSave(time, text, editRevision)} className="min-h-9 rounded-lg bg-terracotta-dark px-3 text-sm font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="min-h-9 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Cancel</button></div>
+        <div className="mt-2 flex gap-2"><button type="button" disabled={disabled} onClick={() => onSave(time, text, editRevision)} className="min-h-9 rounded-lg bg-terracotta-dark px-3 text-sm font-semibold text-on-accent">Save</button><button type="button" onClick={onCancel} className="min-h-9 rounded-lg border border-border px-3 text-sm font-semibold text-warm-brown">Cancel</button></div>
       </div>
     );
   }
@@ -507,7 +507,7 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
     <div className="medication-history-row flex items-center gap-2 border-b border-border/60 py-1 last:border-b-0">
       <p className="min-w-0 flex-1 text-warm-brown"><span className="medication-history-meta font-semibold tabular-nums">{formatDate(dose.givenAt)} · {formatTime(dose.givenAt)}</span> · {dose.doseText}{dose.givenBy && <span className="medication-history-meta block break-words text-muted">Given by {dose.givenBy}</span>}</p>
       <button type="button" disabled={disabled} onClick={beginEdit} className="min-h-8 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
-      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-red-50 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
     </div>
   );
 }
@@ -899,7 +899,7 @@ function SickModeStartEditor({
         ) : null}
       </div>
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={save} disabled={!canSave} className="min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : "Save start time"}</button>
+        <button type="button" onClick={save} disabled={!canSave} className="min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-on-accent disabled:opacity-50">{busy ? "Saving…" : "Save start time"}</button>
         <button type="button" onClick={onClose} disabled={busy} className="min-h-9 rounded-lg border border-border px-4 text-sm font-semibold text-warm-brown disabled:opacity-50">Cancel</button>
       </div>
     </div>
@@ -1077,7 +1077,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
   if (!activeEpisode) {
     return (
       <section className="rounded-lg border border-border bg-surface p-4 shadow-sm" aria-labelledby="sick-mode-heading">
-        {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-amber-50 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
+        {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
         <div className="flex items-center justify-between gap-3">
           <div><h2 id="sick-mode-heading" className="text-base font-semibold text-warm-brown">Sick mode</h2><p className="mt-0.5 text-xs text-muted">Track fever, medication, feeds and pee in one place.</p></div>
           <button type="button" disabled={busy || isStale} onClick={() => { if (!showStart) { setStartedAtInput(sgtDateTimeInput()); setPreview(data.baselinePreview); setConfirmIncomplete(false); setManualBaseline(""); } setShowStart(value => !value); }} aria-expanded={showStart} className="min-h-9 shrink-0 rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-sm font-semibold text-accent-strong disabled:opacity-50">{showStart ? "Cancel" : "Start"}</button>
@@ -1099,7 +1099,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
               <div className="flex items-center justify-between"><p className="text-sm font-semibold text-warm-brown">Medications</p><button type="button" onClick={() => setMedicationDrafts((items) => [...items, EMPTY_MEDICATION()])} className="inline-flex min-h-9 items-center gap-1 px-2 text-xs font-semibold text-accent-strong"><Plus aria-hidden="true" className="h-4 w-4" />Add another</button></div>
               {medicationDrafts.map((draft, index) => <MedicationFields key={draft.key} draft={draft} suggestions={suggestions} removable={medicationDrafts.length > 1} onChange={(next) => setMedicationDrafts((items) => items.map((item, itemIndex) => itemIndex === index ? next : item))} onRemove={() => setMedicationDrafts((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}
             </div>
-            <button type="button" onClick={startSickMode} disabled={busy} className="mt-4 min-h-9 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Starting…" : "Start sick mode"}</button>
+            <button type="button" onClick={startSickMode} disabled={busy} className="mt-4 min-h-9 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent disabled:opacity-50">{busy ? "Starting…" : "Start sick mode"}</button>
           </div>
         )}
         <EpisodeArchive babyId={babyId} data={data} busy={busy} isStale={isStale} startFlowOpen={showStart} onResume={resumeEpisode} onRefresh={onRefresh} />
@@ -1149,7 +1149,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
 
   return (
     <section className="health-check-in rounded-lg border border-terracotta/30 bg-surface p-2 shadow-sm" aria-labelledby="sick-mode-heading">
-      {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-amber-50 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
+      {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
       <div className="flex items-start justify-between gap-3">
         <h2 id="sick-mode-heading" className="glance-card-title text-warm-brown">Health check-in</h2>
       </div>
@@ -1209,7 +1209,7 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
         {data.medications.length > 0 ? <div>{data.medications.map((medication) => <MedicationRow key={medication.id} babyId={babyId} episodeId={activeEpisode.id} medication={medication} now={now} busy={busy || isStale} onBusy={setBusy} onChanged={onRefresh} onLog={onLogMedication} />)}</div> : <p className="mt-1 text-xs text-muted">No medications added.</p>}
       </div>
 
-      {summary?.lastCompletedDayConcern && <p className="mt-4 rounded-lg border border-danger/20 bg-red-50 px-3 py-2 text-xs leading-relaxed text-danger">On {summary.lastCompletedDayConcern.date}, {summary.lastCompletedDayConcern.totalMl} ml was logged—below the episode’s {summary.lastCompletedDayConcern.thresholdMl} ml 50% full-day intake threshold.</p>}
+      {summary?.lastCompletedDayConcern && <p className="mt-4 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs leading-relaxed text-danger">On {summary.lastCompletedDayConcern.date}, {summary.lastCompletedDayConcern.totalMl} ml was logged—below the episode’s {summary.lastCompletedDayConcern.thresholdMl} ml 50% full-day intake threshold.</p>}
     </section>
   );
 }

@@ -111,6 +111,20 @@ export default function WeightPage() {
     fetchData();
   }, [fetchData, householdId, router]);
 
+  // The plot is drawn at its real pixel size (never scaled), so the y-axis
+  // column and the plotted points always share one vertical scale.
+  const [plotWidth, setPlotWidth] = useState(0);
+  const hasMeasurements = measurements.length > 0;
+  useLayoutEffect(() => {
+    const container = chartScrollRef.current;
+    if (!container) return;
+    const update = () => setPlotWidth(container.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [hasMeasurements]);
+
   const chart = useMemo(() => {
     const values = measurements
       .filter((item) => item.weight_g != null)
@@ -123,9 +137,9 @@ export default function WeightPage() {
     const height = 220;
     const leftPad = 28;
     const rightPad = 28;
-    const pointGap = 72;
     const visiblePointCount = 6;
-    const viewportWidth = leftPad + rightPad + (visiblePointCount - 1) * pointGap;
+    const viewportWidth = plotWidth > 0 ? plotWidth : leftPad + rightPad + (visiblePointCount - 1) * 72;
+    const pointGap = Math.max(44, (viewportWidth - leftPad - rightPad) / (visiblePointCount - 1));
     const width = Math.max(viewportWidth, leftPad + rightPad + Math.max(1, measurements.length - 1) * pointGap);
 
     // Horizontal grid lines at "nice" weights. Their y is in SVG units, which
@@ -161,7 +175,7 @@ export default function WeightPage() {
       bottom,
       gridLines,
     };
-  }, [baby?.birth_date, measurements]);
+  }, [baby?.birth_date, measurements, plotWidth]);
 
   const selectedPoint = chart.points.find((point) => point.id === selectedId) ?? chart.points[chart.points.length - 1] ?? null;
   const latestWeight = measurements[measurements.length - 1]?.weight_g ?? null;
@@ -287,7 +301,7 @@ export default function WeightPage() {
           <button
             type="submit"
             disabled={isSaving || !baby?.id}
-            className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 disabled:opacity-50"
+            className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 disabled:opacity-50"
           >
             {isSaving ? "Saving…" : "Save weight"}
           </button>
@@ -318,7 +332,7 @@ export default function WeightPage() {
                 <div ref={chartScrollRef} className="flex-1 overflow-x-auto overscroll-x-contain touch-pan-x">
                   <svg
                     className="block max-w-none"
-                    style={{ width: `${Math.max(100, chart.width / chart.viewportWidth * 100)}%` }}
+                    width={chart.width}
                     height={chart.height}
                     viewBox={`0 0 ${chart.width} ${chart.height}`}
                     role="img"
@@ -387,7 +401,7 @@ export default function WeightPage() {
                     <button
                       type="button"
                       onClick={() => setDeleteMeasurement(selectedPoint)}
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-danger transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-danger transition-colors hover:bg-danger/10 focus:outline-none focus:ring-2 focus:ring-danger/30"
                     >
                       <Trash2 aria-hidden="true" className="h-4 w-4" />
                       Delete measurement
@@ -428,7 +442,7 @@ export default function WeightPage() {
                 type="button"
                 onClick={confirmDeleteMeasurement}
                 disabled={isDeleting}
-                className="min-h-11 rounded-lg bg-danger px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-warm-brown disabled:opacity-50"
+                className="min-h-11 rounded-lg bg-danger px-4 py-3 text-sm font-semibold text-on-accent transition-colors hover:bg-warm-brown disabled:opacity-50"
               >
                 {isDeleting ? "Deleting…" : "Delete"}
               </button>

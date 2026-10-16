@@ -1,5 +1,4 @@
 import type { LucideIcon } from "lucide-react";
-import { Trash2 } from "lucide-react";
 
 export interface ActivityTimelineCardProps {
   title: string;
@@ -21,8 +20,8 @@ export interface ActivityTimelineCardProps {
    * dropped.
    */
   readOnly?: boolean;
+  /** Opens the entry's editor, which also holds its delete action. */
   onEdit: () => void;
-  onDelete: () => void;
 }
 
 /**
@@ -42,7 +41,6 @@ export default function ActivityTimelineCard({
   multiline = false,
   readOnly = false,
   onEdit,
-  onDelete,
 }: ActivityTimelineCardProps) {
   // Shared row content. Read-only markers render it without any action chrome.
   const body = (
@@ -76,32 +74,17 @@ export default function ActivityTimelineCard({
   );
 
   return (
-    <div
-      data-activity-card
-      className={`flex items-start gap-1.5 rounded-lg border border-border bg-surface p-1${
-        readOnly ? "" : " transition-colors hover:border-terracotta/30"
-      }`}
-    >
+    <div data-activity-card className="border-b border-border/70">
       {readOnly ? (
-        <div className="min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-left">{body}</div>
+        <div className="min-w-0 px-1 py-2 text-left">{body}</div>
       ) : (
         <button
           type="button"
           onClick={onEdit}
-          className="min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          aria-label={`Edit ${title.toLowerCase()} activity`}
+          className="block w-full min-w-0 rounded-md px-1 py-2 text-left transition-colors hover:bg-surface-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40"
         >
           {body}
-        </button>
-      )}
-      {!readOnly && (
-        <button
-          type="button"
-          aria-label={`Delete ${title.toLowerCase()} activity`}
-          onClick={onDelete}
-          className="flex min-h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-red-200 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-          title="Delete"
-        >
-          <Trash2 aria-hidden="true" className="h-4 w-4" />
         </button>
       )}
     </div>

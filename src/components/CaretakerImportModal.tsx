@@ -358,9 +358,9 @@ function ReviewRowCard({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-sm font-semibold text-warm-brown">{rowLabel(draft.type)}</span>
             {duplicate && <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-muted">Already logged — excluded</span>}
-            {conflict && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-warning">Conflict</span>}
-            {missingOrOverlap && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-warning">Needs correction</span>}
-            {isLowConfidence(row) && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-warning">Check carefully</span>}
+            {conflict && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">Conflict</span>}
+            {missingOrOverlap && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">Needs correction</span>}
+            {isLowConfidence(row) && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">Check carefully</span>}
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
             {summaryParts.map((part, index) => (
@@ -446,8 +446,8 @@ function ReviewRowCard({
           </label>
 
           {row.origin === "uncertain" && included && (
-            <label className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs font-medium text-warning">Who entered this source row?
-              <select value={draft.resolvedOrigin} disabled={disabled} onChange={event => onChange({ resolvedOrigin: event.target.value as ReviewDraft["resolvedOrigin"] })} className="mt-2 min-h-11 w-full rounded-lg border border-amber-300 bg-surface px-3 text-sm text-warm-brown">
+            <label className="rounded-lg border border-warning/35 bg-warning/10 p-2.5 text-xs font-medium text-warning">Who entered this source row?
+              <select value={draft.resolvedOrigin} disabled={disabled} onChange={event => onChange({ resolvedOrigin: event.target.value as ReviewDraft["resolvedOrigin"] })} className="mt-2 min-h-11 w-full rounded-lg border border-warning/35 bg-surface px-3 text-sm text-warm-brown">
                 <option value="">Choose one</option>
                 <option value="caretaker">Infant care</option>
                 <option value="household">Household member — exclude</option>
@@ -459,7 +459,7 @@ function ReviewRowCard({
       </details>
 
       {included && (row.issues.length > 0 || localIssues.length > 0) && (
-        <div className="mt-3 space-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-warning" role="status">
+        <div className="mt-3 space-y-1 rounded-lg bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning" role="status">
           {row.issues.map((issue, index) => <p key={`${issue.code}:${index}`}>{issue.message}</p>)}
           {localIssues.map((issue, index) => <p key={`local:${index}`}>{issue}</p>)}
         </div>
@@ -1110,7 +1110,7 @@ export default function CaretakerImportModal({
           <div>
             <label htmlFor="caretaker-screenshot" className="block text-sm font-semibold">Screenshot</label>
             <p className="mt-1 text-xs text-muted">PNG, JPEG, or WebP · maximum 3 MiB · one image</p>
-            <input ref={fileInputRef} id="caretaker-screenshot" type="file" accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={chooseFile} className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-terracotta/45 bg-terracotta/5 p-3 text-sm file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-terracotta-dark file:px-3 file:text-sm file:font-semibold file:text-white" />
+            <input ref={fileInputRef} id="caretaker-screenshot" type="file" accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={chooseFile} className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-terracotta/45 bg-terracotta/5 p-3 text-sm file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-terracotta-dark file:px-3 file:text-sm file:font-semibold file:text-on-accent" />
           </div>
 
           {previewUrl && (
@@ -1123,9 +1123,9 @@ export default function CaretakerImportModal({
             </details>
           )}
 
-          {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
           {resumeBatchId && <button type="button" disabled={Boolean(busy)} onClick={() => { void resumePreviousReview(); }} className="min-h-12 w-full rounded-xl border border-terracotta px-4 py-3 text-sm font-semibold text-accent-strong disabled:opacity-45">{busy === "refresh" ? "Opening review…" : "Resume previous review"}</button>}
-          <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || !selectedDate || (needsCareEnd && !careEndedAt)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
+          <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || !selectedDate || (needsCareEnd && !careEndedAt)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
             <ImageUp aria-hidden="true" className="h-5 w-5" />{needsCareEnd ? "End care & read screenshot" : (stageAttemptRef.current?.lines ? "Retry preparing review" : "Read screenshot")}
           </button>
         </div>
@@ -1219,26 +1219,26 @@ export default function CaretakerImportModal({
             )}
 
             {!snapshot.batch.napSectionDetected && (
-              <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+              <p role="alert" className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/10 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                 Full nap history was not detected. Check the screenshot covers every nap.
               </p>
             )}
             {snapshot.batch.napSectionDetected && sourceNapRows.length === 0 && (
-              <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+              <p role="alert" className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/10 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                 No naps detected. Confirm only if baby was awake throughout care.
               </p>
             )}
             {sourceNapRows.length > 0 && selectedNaps.length === 0 && (
-              <p role="status" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+              <p role="status" className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/10 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                 No naps included: the whole care period will be recorded as awake.
               </p>
             )}
 
             {sleepPlanErrors.length > 0 && (
-              <div role="status" className="space-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-warning">
+              <div role="status" className="space-y-1 rounded-lg bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning">
                 {sleepPlanErrors.map(message => <p key={message}>{message}</p>)}
               </div>
             )}
@@ -1246,13 +1246,13 @@ export default function CaretakerImportModal({
           </section>
 
           {householdRows.length > 0 && (
-            <details className="rounded-xl border border-sky-200 bg-sky-50/70">
-              <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-3 py-2 text-sm font-semibold text-sky-900">
+            <details className="rounded-xl border border-frozen/30 bg-frozen/10">
+              <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-3 py-2 text-sm font-semibold text-frozen-strong">
                 <ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0" />
                 {householdRows.length} household {householdRows.length === 1 ? "entry" : "entries"} (blue) — excluded
               </summary>
-              <div className="border-t border-sky-200 px-3 py-2 text-xs text-sky-900">
-                {householdRows.map(row => <p key={row.id} className="border-b border-sky-200/70 py-2 last:border-0">{row.sourceText || rowLabel(row.draft.type)}</p>)}
+              <div className="border-t border-frozen/30 px-3 py-2 text-xs text-frozen-strong">
+                {householdRows.map(row => <p key={row.id} className="border-b border-frozen/30 py-2 last:border-0">{row.sourceText || rowLabel(row.draft.type)}</p>)}
               </div>
             </details>
           )}
@@ -1268,9 +1268,9 @@ export default function CaretakerImportModal({
             </section>
           ))}
 
-          {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm leading-relaxed text-danger">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm leading-relaxed text-danger">{error}</p>}
           {stale && (
-            <button type="button" disabled={Boolean(busy)} onClick={() => { void loadLatest(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-warning/40 bg-amber-50 px-4 text-sm font-semibold text-warning disabled:opacity-50">
+            <button type="button" disabled={Boolean(busy)} onClick={() => { void loadLatest(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 text-sm font-semibold text-warning disabled:opacity-50">
               <RotateCcw aria-hidden="true" className={`h-4 w-4 ${busy === "refresh" ? "animate-spin motion-reduce:animate-none" : ""}`} />{busy === "refresh" ? "Loading latest…" : "Load latest copy and review again"}
             </button>
           )}
@@ -1287,11 +1287,11 @@ export default function CaretakerImportModal({
                 <li>Deduct {selectedBreastmilk} ml from breastmilk bank</li>
               </ul>
             )}
-            <button type="button" disabled={Boolean(busy) || !reviewConfirmed || (hasSavedReview && !reviewDirty)} onClick={() => { void saveReview(); }} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold ${hasSavedReview && !reviewDirty ? "border-border bg-surface-muted text-muted" : "border-terracotta-dark bg-terracotta-dark text-white hover:bg-warm-brown"} disabled:border-border disabled:bg-surface-muted disabled:text-muted`}>
+            <button type="button" disabled={Boolean(busy) || !reviewConfirmed || (hasSavedReview && !reviewDirty)} onClick={() => { void saveReview(); }} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold ${hasSavedReview && !reviewDirty ? "border-border bg-surface-muted text-muted" : "border-terracotta-dark bg-terracotta-dark text-on-accent hover:bg-warm-brown"} disabled:border-border disabled:bg-surface-muted disabled:text-muted`}>
               {busy === "save" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-4 w-4" />}
               {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Care review saved" : "Save care review"}
             </button>
-            <div role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${canCommit ? "bg-emerald-50 text-success" : "bg-amber-50 text-warning"}`}>
+            <div role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${canCommit ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
               {canCommit ? (
                 <p>Ready to apply.</p>
               ) : (
@@ -1304,7 +1304,7 @@ export default function CaretakerImportModal({
                 </>
               )}
             </div>
-            <button type="button" disabled={!canCommit} onClick={() => { void commit(); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
+            <button type="button" disabled={!canCommit} onClick={() => { void commit(); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
               {busy === "commit" ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin motion-reduce:animate-none" /> : <ImageUp aria-hidden="true" className="h-5 w-5" />}
               {busy === "commit" ? "Applying…" : selectedRows.length === 0 ? "Apply sleep schedule" : "Apply reviewed care log"}
             </button>
@@ -1314,7 +1314,7 @@ export default function CaretakerImportModal({
 
       {view === "success" && success && (
         <div className="flex min-h-[440px] flex-col items-center justify-center p-6 text-center">
-          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-success"><CheckCircle2 aria-hidden="true" className="h-11 w-11" /></span>
+          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-success/10 text-success"><CheckCircle2 aria-hidden="true" className="h-11 w-11" /></span>
           <h3 className="mt-5 font-display text-2xl font-semibold">{success.sleepReconciliation ? "Care log applied" : "Import complete"}</h3>
           {success.sleepReconciliation ? (
             <div className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
@@ -1335,10 +1335,10 @@ export default function CaretakerImportModal({
                 : `${success.committedCount} ${success.committedCount === 1 ? "activity was" : "activities were"} added to ${babyName}'s diary.`}
             </p>
           )}
-          {refreshWarning && <p role="alert" className="mt-4 max-w-sm rounded-lg bg-amber-50 px-3 py-2 text-sm text-warning">{refreshWarning}</p>}
+          {refreshWarning && <p role="alert" className="mt-4 max-w-sm rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">{refreshWarning}</p>}
           <div className="mt-7 grid w-full max-w-sm gap-2 sm:grid-cols-2">
             <button type="button" onClick={() => { setError(null); resetImport(true); }} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border px-4 text-sm font-semibold"><ImageUp aria-hidden="true" className="h-4 w-4" />Import another</button>
-            <button type="button" onClick={onClose} autoFocus className="min-h-11 rounded-xl bg-terracotta-dark px-4 text-sm font-semibold text-white">Done</button>
+            <button type="button" onClick={onClose} autoFocus className="min-h-11 rounded-xl bg-terracotta-dark px-4 text-sm font-semibold text-on-accent">Done</button>
           </div>
         </div>
       )}
