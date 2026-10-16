@@ -24,16 +24,16 @@ export default function BabyCareMenu({ name, active, accessory, subtitle, childr
   };
   return (
     <>
-      <div className="baby-identity-row flex min-w-0 items-center gap-3">
+      <div className="baby-identity-row flex min-w-0 items-center justify-center gap-3">
         {/* The face is a second, pointer-only way into the same menu as the name. */}
         <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face shrink-0 rounded-2xl transition-transform active:scale-95">
           <Image src="/icon.svg" alt="" width={72} height={80} priority className="h-16 w-14 object-contain" />
         </button>
-        <div className="min-w-0 flex-1 text-left">
+        <div className="min-w-0 text-left">
           <div className="flex min-w-0 items-center gap-1">
-            <h1 className="flex min-w-0 font-display text-2xl font-semibold leading-8 text-accent-strong">
-              <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-label={`Baby settings for ${name}`} onClick={open} className="-ml-1 inline-flex min-h-9 min-w-0 items-center gap-1.5 rounded-lg px-1 transition-colors hover:bg-surface-muted">
-                <span className="min-w-0 truncate">{name}</span>
+            <h1 className="flex shrink-0 font-display text-2xl font-semibold leading-8 text-accent-strong">
+              <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-label={`Baby settings for ${name}`} onClick={open} className="-ml-1 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-1 transition-colors hover:bg-surface-muted">
+                <span className="max-w-[9.5rem] truncate">{name}</span>
                 <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted" />
               </button>
             </h1>

@@ -812,3 +812,19 @@ body {
 [data-care-overview="true"] .baby-identity-row {
   gap: 8px;
 }
+[data-care-overview="true"] .baby-identity-row {
+  justify-content: flex-start;
+}
+/* Narrow phones: a slightly smaller face and name keep the full name visible. */
+@media (max-width: 359px) {
+  :root:not([data-care-overview]) .baby-face img {
+    height: 52px;
+    width: 46px;
+  }
+  .baby-identity-row {
+    gap: 8px;
+  }
+  .baby-identity-row h1 {
+    font-size: 21px;
+  }
+}
