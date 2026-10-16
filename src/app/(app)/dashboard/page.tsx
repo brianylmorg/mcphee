@@ -1568,9 +1568,20 @@ export default function DashboardPage() {
       className="min-h-dvh bg-cream pb-24"
     >
       <header className="dashboard-header bg-surface border-b border-border px-4 py-2 sm:px-5 sm:py-3">
-        <div className="dashboard-header-inner mx-auto max-w-lg">
+        <div className="dashboard-header-inner relative mx-auto max-w-lg">
+          <button
+            type="button"
+            onClick={() => { void refreshDashboard(); }}
+            disabled={refreshBlocked}
+            aria-label="Refresh dashboard"
+            aria-busy={refreshFeedback?.kind === "refreshing"}
+            title={refreshBlocked && refreshFeedback?.kind !== "refreshing" ? "Close the active editor or dialog to refresh" : "Refresh dashboard"}
+            className="dashboard-header-refresh absolute right-0 top-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-accent-strong shadow-sm transition-colors hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent-strong/60 disabled:opacity-45"
+          >
+            <RotateCw aria-hidden="true" className={`h-4 w-4 ${refreshFeedback?.kind === "refreshing" ? "animate-spin motion-reduce:animate-none" : ""}`} />
+          </button>
           <div className="dashboard-baby-identity text-center">
-            <div className="flex min-w-0 items-center justify-center gap-1">
+            <div className="dashboard-baby-name flex min-w-0 items-center justify-center gap-1 px-10">
               <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
                 {(closeCareMenu) => baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}
               </BabyCareMenu>
@@ -1603,7 +1614,7 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
-          <div className="dashboard-header-tools mt-2 flex items-center justify-between gap-3">
+          <div className="dashboard-header-tools mt-2 flex items-stretch justify-between gap-3">
             <Link
               href="/weight"
               className="inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-xs font-semibold text-accent-strong shadow-sm transition-colors hover:bg-terracotta/15"
@@ -1615,17 +1626,6 @@ export default function DashboardPage() {
               <span className="whitespace-nowrap text-xs text-muted">Invite code</span>
               <span className="truncate font-mono text-sm font-semibold text-accent-strong">{inviteCode}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => { void refreshDashboard(); }}
-              disabled={refreshBlocked}
-              aria-label="Refresh dashboard"
-              aria-busy={refreshFeedback?.kind === "refreshing"}
-              title={refreshBlocked && refreshFeedback?.kind !== "refreshing" ? "Close the active editor or dialog to refresh" : "Refresh dashboard"}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-accent-strong shadow-sm transition-colors hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent-strong/60 disabled:opacity-45"
-            >
-              <RotateCw aria-hidden="true" className={`h-4 w-4 ${refreshFeedback?.kind === "refreshing" ? "animate-spin motion-reduce:animate-none" : ""}`} />
-            </button>
           </div>
         </div>
       </header>

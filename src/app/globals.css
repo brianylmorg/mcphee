@@ -97,9 +97,18 @@ body header,
 }
 [data-care-overview="true"] .dashboard-header-inner {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   column-gap: 4px;
+}
+[data-care-overview="true"] .dashboard-header-refresh {
+  position: static;
+  grid-column: 3;
+  grid-row: 1;
+}
+[data-care-overview="true"] .dashboard-baby-name {
+  padding-left: 0;
+  padding-right: 0;
 }
 [data-care-overview="true"] .dashboard-baby-identity {
   display: contents;
