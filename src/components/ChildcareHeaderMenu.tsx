@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
-import { X } from "lucide-react";
+import { Balloon, X } from "lucide-react";
 import ChildcareModePanel, { type ChildcareModePanelProps } from "@/components/ChildcareModePanel";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
@@ -48,16 +48,15 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         aria-label={statusLabel}
         title={statusLabel}
         onClick={() => dialogRef.current?.showModal()}
-        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-terracotta/10 text-accent-strong hover:bg-terracotta/20" : "text-muted hover:bg-surface-muted"}`}
+        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-red-100 hover:bg-red-200/70" : "hover:bg-surface-muted"}`}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6" fill="none">
-          <path d="M21 21C16 10 11 1.5 5 5.5" stroke="#A9713F" strokeWidth="2" strokeLinecap="round" />
-          <path d="M5 5.5v3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          <path d="M4 8.5C2.6 10.4 1.1 12.2 1.5 15.2c.6 5.3 10 5.3 10.5 0 .3-3-2.2-4.8-4-6.7Z" fill="#F6C6CC" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-          <path d="m3.6 8.4 4.7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
+        <Balloon
+          aria-hidden="true"
+          strokeWidth={1.75}
+          className={`h-6 w-6 text-red-600 [&>path:first-child]:stroke-muted ${isActive ? "[&>path:last-child]:fill-red-500" : "[&>path:last-child]:fill-surface-muted"}`}
+        />
         {(isActive || hasPending) && (
-          <span aria-hidden="true" className={`absolute right-1 top-1 h-2 w-2 rounded-full ${isActive ? "bg-terracotta" : "bg-terracotta/50"}`} />
+          <span aria-hidden="true" className={`absolute right-1 top-1 h-2 w-2 rounded-full ${isActive ? "bg-red-600" : "bg-muted/50"}`} />
         )}
       </button>
 
