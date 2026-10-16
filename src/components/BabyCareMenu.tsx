@@ -4,13 +4,15 @@ import { useRef, type ReactNode } from "react";
 import Image from "next/image";
 import { ChevronDown, X } from "lucide-react";
 
-export default function BabyCareMenu({ name, active, accessory, subtitle, children }: {
+export default function BabyCareMenu({ name, active, accessory, subtitle, faceTone, children }: {
   name: string;
   active: boolean;
   /** Tucked against the top-left of the baby's face, e.g. the childcare balloon. */
   accessory?: ReactNode;
   /** Second line under the name: age, weight and who is logging. */
   subtitle?: ReactNode;
+  /** Colours the watercolour wash behind the face: at home or at childcare. */
+  faceTone?: "home" | "away";
   children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -26,8 +28,9 @@ export default function BabyCareMenu({ name, active, accessory, subtitle, childr
     <>
       <div className="baby-identity-row flex min-w-0 items-center justify-center gap-3">
         <span className="relative shrink-0">
+          {faceTone && <span aria-hidden="true" data-tone={faceTone} className="baby-face-halo" />}
           {/* The face is a second, pointer-only way into the same menu as the name. */}
-          <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face block rounded-2xl transition-transform active:scale-95">
+          <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face relative block rounded-2xl transition-transform active:scale-95">
             <Image src="/icon.svg" alt="" width={72} height={80} priority className="h-16 w-14 object-contain" />
           </button>
           {/* Held at the face's top-left like a balloon on a string. */}

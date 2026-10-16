@@ -192,6 +192,17 @@ html[data-care-mode="sick"][data-theme="dark"] {
   --sb-balloon-idle: 222 210 200;
   --sb-balloon-idle-light: 244 238 232;
   --sb-balloon-idle-rim: 170 150 136;
+  --sb-roof: 214 132 118;
+  --sb-roof-deep: 176 96 86;
+  --sb-wall: 250 238 214;
+  --sb-wall-rim: 196 160 120;
+  --sb-door: 136 166 120;
+  --sb-window: 255 220 140;
+  /* Soft wash behind the baby face: butter and sage at home, rose at childcare. */
+  --sb-halo-home-inner: 250 226 160;
+  --sb-halo-home-outer: 190 214 170;
+  --sb-halo-away-inner: 244 190 182;
+  --sb-halo-away-outer: 236 206 214;
   --scene-day-text: 88 56 26;
   --scene-night-text: 246 242 255;
 }
@@ -209,6 +220,12 @@ html[data-care-mode="sick"][data-theme="dark"] {
     --sb-balloon-idle: 112 98 88;
     --sb-balloon-idle-light: 150 136 124;
     --sb-balloon-idle-rim: 92 80 72;
+    --sb-wall: 222 204 176;
+    --sb-wall-rim: 150 120 90;
+    --sb-halo-home-inner: 150 120 60;
+    --sb-halo-home-outer: 90 112 76;
+    --sb-halo-away-inner: 160 92 92;
+    --sb-halo-away-outer: 120 80 96;
     --scene-day-text: 255 244 224;
   }
 }
@@ -225,6 +242,12 @@ html[data-care-mode="sick"][data-theme="dark"] {
   --sb-balloon-idle: 112 98 88;
   --sb-balloon-idle-light: 150 136 124;
   --sb-balloon-idle-rim: 92 80 72;
+  --sb-wall: 222 204 176;
+  --sb-wall-rim: 150 120 90;
+  --sb-halo-home-inner: 150 120 60;
+  --sb-halo-home-outer: 90 112 76;
+  --sb-halo-away-inner: 160 92 92;
+  --sb-halo-away-outer: 120 80 96;
   --scene-day-text: 255 244 224;
 }
 
@@ -706,5 +729,49 @@ body {
   }
   .baby-identity-row h1 {
     font-size: 21px;
+  }
+}
+
+/* Home cottage: smoke drifts up from the chimney, the window glows softly. */
+.sb-smoke-puff {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sb-smoke-rise 3.6s ease-out infinite;
+}
+.sb-smoke-2 { animation-delay: -1.8s; }
+.sb-window-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sb-window-glow 4s ease-in-out infinite;
+}
+@keyframes sb-smoke-rise {
+  0% { opacity: 0; transform: translate(0, 3px) scale(0.6); }
+  30% { opacity: 0.85; }
+  100% { opacity: 0; transform: translate(2px, -5px) scale(1.4); }
+}
+@keyframes sb-window-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+/* Watercolour wash fading out around the baby face. */
+.baby-face-halo {
+  position: absolute;
+  inset: -14px -16px -10px;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(6px);
+  opacity: 0.85;
+  transition: background 700ms ease;
+}
+.baby-face-halo[data-tone="home"] {
+  background: radial-gradient(closest-side, rgb(var(--sb-halo-home-inner) / 0.95), rgb(var(--sb-halo-home-outer) / 0.5) 62%, transparent);
+}
+.baby-face-halo[data-tone="away"] {
+  background: radial-gradient(closest-side, rgb(var(--sb-halo-away-inner) / 0.95), rgb(var(--sb-halo-away-outer) / 0.5) 62%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-smoke-puff,
+  .sb-window-glow {
+    animation: none;
   }
 }

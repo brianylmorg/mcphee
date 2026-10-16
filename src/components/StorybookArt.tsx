@@ -200,3 +200,43 @@ export function StorybookBalloon({ active, className = "" }: { active: boolean; 
     </svg>
   );
 }
+
+/** At home: a little watercolour cottage with a glowing window and chimney smoke. */
+export function StorybookHome({ className = "" }: { className?: string }) {
+  const id = useSvgId("sbhome");
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 40 40" className={`sb-home ${className}`}>
+      <WatercolourDefs id={id} />
+      <radialGradient id={`${id}-glow`} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="rgb(var(--sb-sun))" stopOpacity="0.95" />
+        <stop offset="1" stopColor="rgb(var(--sb-sun))" stopOpacity="0" />
+      </radialGradient>
+      {/* chimney smoke */}
+      <g className="sb-smoke" fill="rgb(var(--sb-cloud-shade))" opacity="0.8">
+        <circle className="sb-smoke-puff sb-smoke-1" cx="27.5" cy="7" r="2" />
+        <circle className="sb-smoke-puff sb-smoke-2" cx="29" cy="4" r="1.5" />
+      </g>
+      <g filter={`url(#${id}-edge)`}>
+        {/* chimney */}
+        <rect x="25.5" y="9" width="4" height="7" rx="0.8" fill="rgb(var(--sb-roof-deep))" />
+        {/* walls */}
+        <path d="M9 19.5 h22 v13.5 a1.5 1.5 0 0 1 -1.5 1.5 h-19 a1.5 1.5 0 0 1 -1.5 -1.5z" fill="rgb(var(--sb-wall))" />
+        <path d="M9 19.5 h22 v13.5 a1.5 1.5 0 0 1 -1.5 1.5 h-19 a1.5 1.5 0 0 1 -1.5 -1.5z" fill="none" stroke="rgb(var(--sb-wall-rim))" strokeWidth="1" opacity="0.6" />
+        {/* roof */}
+        <path d="M5.5 21 L20 8.5 L34.5 21 q-1 1.4 -2.6 0.6 L20 11.6 L8.1 21.6 q-1.6 0.8 -2.6 -0.6z" fill="rgb(var(--sb-roof-deep))" />
+        <path d="M7 20.6 L20 9.6 L33 20.6 L20 13.4z" fill="rgb(var(--sb-roof))" />
+        {/* door */}
+        <path d="M17 34.5 v-7 a3 3 0 0 1 6 0 v7z" fill="rgb(var(--sb-door))" />
+        <circle cx="21.6" cy="31" r="0.55" fill="rgb(var(--sb-sun))" />
+        {/* round window */}
+        <circle cx="13.6" cy="25.4" r="2.8" fill="rgb(var(--sb-window))" />
+        <path d="M13.6 22.6 v5.6 M10.8 25.4 h5.6" stroke="rgb(var(--sb-wall-rim))" strokeWidth="0.7" opacity="0.7" />
+        {/* bush */}
+        <path d="M27 34.5 a3 3 0 0 1 2 -4.6 a2.6 2.6 0 0 1 4.6 1.2 a2.2 2.2 0 0 1 0.4 3.4z" fill="rgb(var(--sb-meadow-deep))" />
+        {/* ground wash */}
+        <path d="M4 35 q16 -2.2 32 0 v1.2 q-16 1.6 -32 0z" fill="rgb(var(--sb-meadow))" opacity="0.8" />
+      </g>
+      <circle className="sb-window-glow" cx="13.6" cy="25.4" r="4.4" fill={`url(#${id}-glow)`} />
+    </svg>
+  );
+}

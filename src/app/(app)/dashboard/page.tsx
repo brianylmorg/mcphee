@@ -1659,6 +1659,7 @@ export default function DashboardPage() {
               <BabyCareMenu
                 name={baby?.name || "Baby"}
                 active={Boolean(sickMode?.activeEpisode)}
+                faceTone={childcareMode.schemaReady ? (childcareMode.activeSession ? "away" : "home") : undefined}
                 accessory={baby?.id && childcareMode.schemaReady && (
                 <ChildcareHeaderMenu
                   key={baby.id}

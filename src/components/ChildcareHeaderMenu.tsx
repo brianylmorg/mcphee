@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import { X } from "lucide-react";
-import { StorybookBalloon } from "@/components/StorybookArt";
+import { StorybookBalloon, StorybookHome } from "@/components/StorybookArt";
 import ChildcareModePanel, { type ChildcareModePanelProps } from "@/components/ChildcareModePanel";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
@@ -19,7 +19,7 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
   const isActive = panelProps.activeSession !== null;
   const statusLabel = isActive
     ? "Childcare status: in childcare"
-    : "Childcare status: not in childcare";
+    : "Childcare status: at home";
 
   const close = () => dialogRef.current?.close();
 
@@ -48,7 +48,9 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         onClick={() => dialogRef.current?.showModal()}
         className="relative flex h-14 w-11 shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40"
       >
-        <StorybookBalloon active={isActive} className="h-12 w-10 -rotate-12" />
+        {isActive
+          ? <StorybookBalloon active className="h-12 w-10 -rotate-12" />
+          : <StorybookHome className="h-11 w-11" />}
       </button>
 
       <dialog
