@@ -76,13 +76,12 @@ export function StorybookDay({ className = "" }: { className?: string }) {
       <span className="sb-pos sb-cloud-drift sb-cloud-b" style={{ left: "28%", top: "-6%", width: "15%" }}><Layer src="cloud-2.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-c" style={{ left: "76%", top: "0%", width: "18%" }}><Layer src="cloud-3.webp" /></span>
       {/* The bee drifts left and right over the meadow, turning to face where it
-          flies, with a slight rock. The two painted poses face opposite ways,
-          so one is mirrored and they alternate only to flap the wings. */}
+          flies, with a gentle rock. One painted pose only: swapping the two
+          poses (different sizes) made it jitter. */}
       <span className="sb-pos sb-bee-path" style={{ left: "50%", top: "56%", width: "5.6%" }}>
         <span className="sb-bee-face">
           <span className="sb-bee-rock">
-            <Layer src="bee-up.webp" className="sb-bee-frame sb-bee-frame-a" />
-            <Layer src="bee-down.webp" className="sb-bee-frame sb-bee-frame-b sb-bee-mirror" />
+            <Layer src="bee-up.webp" className="sb-bee-frame" />
           </span>
         </span>
       </span>

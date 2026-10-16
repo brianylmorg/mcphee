@@ -877,11 +877,8 @@ body {
 .sb-bee-face, .sb-bee-rock { display: block; position: relative; }
 /* Base pose faces left: face right while flying right, then turn at the end. */
 .sb-bee-face { animation: sb-bee-turn 12s steps(1) infinite; }
-.sb-bee-rock { animation: sb-bee-rock 1.6s ease-in-out infinite alternate; }
-.sb-bee-mirror { transform: scaleX(-1); }
-.sb-bee-frame { position: absolute; top: 0; left: 0; }
-.sb-bee-frame-a { position: relative; animation: sb-flap-a 0.32s steps(1) infinite; }
-.sb-bee-frame-b { animation: sb-flap-b 0.32s steps(1) infinite; }
+.sb-bee-rock { animation: sb-bee-rock 2.6s ease-in-out infinite alternate; }
+.sb-bee-frame { position: relative; }
 
 .sb-moon-rock { transform-origin: 60% 40%; animation: sb-moon-sway 7s ease-in-out infinite; filter: drop-shadow(0 0 8px rgb(255 236 190 / 0.45)); }
 .sb-star-twinkle { animation: sb-star-glint 3.2s ease-in-out infinite; }
@@ -918,11 +915,9 @@ body {
   50% { transform: scaleX(1); }
 }
 @keyframes sb-bee-rock {
-  from { transform: translateY(-1.5px) rotate(-4deg); }
-  to { transform: translateY(1.5px) rotate(4deg); }
+  from { transform: translateY(-1px) rotate(-3deg); }
+  to { transform: translateY(1px) rotate(3deg); }
 }
-@keyframes sb-flap-a { 0% { opacity: 1; } 50% { opacity: 0; } }
-@keyframes sb-flap-b { 0% { opacity: 0; } 50% { opacity: 1; } }
 @keyframes sb-moon-sway {
   0%, 100% { transform: rotate(-6deg); }
   50% { transform: rotate(6deg) translateY(1.5px); }
@@ -943,8 +938,6 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-bee-face, .sb-bee-rock, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise { animation: none; }
-  .sb-bee-frame-a { animation: none; opacity: 1; }
-  .sb-bee-frame-b { animation: none; opacity: 0; }
   .sb-zz { animation: none; opacity: 0.7; }
   .sb-smoke-rise { opacity: 0.7; }
 }

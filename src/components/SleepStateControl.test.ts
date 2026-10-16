@@ -44,7 +44,7 @@ test("both scenes stay mounted (for the carousel) and are hidden from assistive 
   assert.match(html, /class="sb-sun-arc sb-pos"/);
   assert.match(html, /class="sb-moon-arc sb-pos"/);
   assert.match(html, /sb-bee-path/);
-  assert.equal((html.match(/sb-bee-frame /g) ?? []).length, 2);
+  assert.equal((html.match(/sb-bee-frame/g) ?? []).length, 1);
   assert.equal((html.match(/sb-star-twinkle/g) ?? []).length, 6);
   // Painted layers are decorative: empty alt text.
   assert.ok((html.match(/<img /g) ?? []).length > 10);
