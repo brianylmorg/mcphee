@@ -84,3 +84,25 @@ export function sg2000BoysWeightForAgePercentile(
 
   return clamp(percentile, 0.1, 99.9);
 }
+
+/** Percentile curves available in the SG 2000 reference. */
+export const SG2000_PERCENTILES = [3, 10, 25, 50, 75, 90, 97] as const;
+
+/**
+ * Weight (grams) on a percentile curve at an age, for drawing reference bands.
+ * Returns null outside the table's age range.
+ */
+export function sg2000BoysWeightAtPercentile(
+  percentile: number,
+  ageMonths: number,
+  table: Sg2000WeightPoint[] = SG2000_BOYS_WEIGHT_FOR_AGE,
+): number | null {
+  const grid = gridAtAge(ageMonths, table);
+  const point = grid?.find((entry) => entry.p === percentile);
+  return point ? Math.round(point.kg * 1000) : null;
+}
+
+/** Oldest age (months) the reference table covers. */
+export function sg2000MaxAgeMonths(table: Sg2000WeightPoint[] = SG2000_BOYS_WEIGHT_FOR_AGE): number {
+  return table.reduce((max, row) => (row.weights.length > 0 ? Math.max(max, row.month) : max), 0);
+}

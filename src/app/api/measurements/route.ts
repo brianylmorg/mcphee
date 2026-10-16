@@ -107,3 +107,40 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export async function PUT(request: NextRequest) {
+  const householdId = request.cookies.get("mcphee_hh")?.value;
+  if (!householdId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const measurementId = typeof body.id === "string" ? body.id : "";
+    const measuredAt = Number(body.measuredAt);
+    const weightG = Math.round(Number(body.weightG));
+    if (!measurementId) {
+      return NextResponse.json({ error: "Measurement id is required" }, { status: 400 });
+    }
+    if (!Number.isFinite(measuredAt) || measuredAt <= 0 || !Number.isFinite(weightG) || weightG <= 0) {
+      return NextResponse.json({ error: "Invalid measurement" }, { status: 400 });
+    }
+
+    const db = createDB();
+    const result = await db.execute({
+      sql: `UPDATE measurements SET measured_at = ?, weight_g = ?
+            WHERE id = ?
+              AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+      args: [measuredAt, weightG, measurementId, householdId],
+    });
+
+    if (result.rowsAffected === 0) {
+      return NextResponse.json({ error: "Measurement not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Update measurement error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

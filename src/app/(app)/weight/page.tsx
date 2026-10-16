@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useHousehold } from "@/lib/context/household-context";
-import { ageMonthsAt, sg2000BoysWeightForAgePercentile } from "@/lib/growth/percentile";
-import { formatDate, formatWeight } from "@/lib/utils";
+import { sg2000MaxAgeMonths } from "@/lib/growth/percentile";
+import { buildWeightChart, weighInRows, type WeighInRow } from "@/lib/growth/weight-chart";
+import { formatAge, formatDate, formatWeight } from "@/lib/utils";
 
 type Baby = { id: string; name: string; birth_date: number | null };
 type Measurement = {
@@ -16,12 +17,8 @@ type Measurement = {
   weight_g: number | null;
 };
 
-type ChartPoint = Measurement & {
-  x: number;
-  y: number;
-  percentile: number | null;
-  ageMonths: number | null;
-};
+/** The add / edit sheet: a new weigh-in, or an existing one being corrected. */
+type Editor = { mode: "add" } | { mode: "edit"; row: WeighInRow };
 
 function sgtDateInput(timestamp: number) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -38,44 +35,52 @@ function parseSgtDate(date: string) {
   return Date.parse(date + "T12:00:00+08:00");
 }
 
-// Pick a "nice" weight step (grams) so the chart shows roughly 4-7 grid lines.
-function niceGridStep(rangeG: number): number {
-  const candidates = [250, 500, 1000, 2000, 5000];
-  return candidates.find((step) => rangeG / step <= 7) ?? 5000;
-}
-
-function yAxisLabel(weightG: number): string {
-  if (weightG >= 1000) {
-    const kg = weightG / 1000;
-    return Number.isInteger(kg) ? String(kg) : kg.toFixed(1);
-  }
-  return String(weightG);
+function ordinal(value: number) {
+  const n = Math.round(value);
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  return `${n}${({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"}`;
 }
 
 function percentileLabel(value: number | null) {
-  if (value == null) return "Percentile unavailable";
-  if (value < 1) return "<1st percentile";
-  if (value > 99) return ">99th percentile";
-  return `${Math.round(value)}th percentile`;
+  if (value == null) return null;
+  if (value < 1) return "below 1st percentile";
+  if (value > 99) return "above 99th percentile";
+  return `${ordinal(value)} percentile`;
 }
+
+function deltaLabel(row: WeighInRow) {
+  if (row.deltaG == null || row.deltaDays == null) return null;
+  const sign = row.deltaG > 0 ? "+" : row.deltaG < 0 ? "−" : "±";
+  const days = row.deltaDays === 1 ? "1 day" : `${row.deltaDays} days`;
+  return `${sign}${Math.abs(row.deltaG)} g in ${days}`;
+}
+
+function axisKg(weightG: number) {
+  const kg = weightG / 1000;
+  return Number.isInteger(kg) ? String(kg) : kg.toFixed(1);
+}
+
+const fieldClass = "min-h-11 w-full rounded-lg border border-border bg-cream px-3 py-2 text-warm-brown outline-none focus:border-accent-strong focus-visible:ring-2 focus-visible:ring-terracotta/40";
 
 export default function WeightPage() {
   const { householdId } = useHousehold();
   const router = useRouter();
   const [baby, setBaby] = useState<Baby | null>(null);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [editor, setEditor] = useState<Editor | null>(null);
   const [weightKg, setWeightKg] = useState("");
   const [measuredDate, setMeasuredDate] = useState(() => sgtDateInput(Date.now()));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [deleteMeasurement, setDeleteMeasurement] = useState<Measurement | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<WeighInRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const chartScrollRef = useRef<HTMLDivElement>(null);
+  const [plotWidth, setPlotWidth] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!householdId) return;
-    setIsLoading(true);
     try {
       const babyRes = await fetch("/api/babies", { cache: "no-store" });
       if (!babyRes.ok) throw new Error("Failed to load baby");
@@ -86,16 +91,10 @@ export default function WeightPage() {
         setMeasurements([]);
         return;
       }
-
-      const measurementRes = await fetch(`/api/measurements?babyId=${encodeURIComponent(firstBaby.id)}&history=1`, {
-        cache: "no-store",
-      });
+      const measurementRes = await fetch(`/api/measurements?babyId=${encodeURIComponent(firstBaby.id)}&history=1`, { cache: "no-store" });
       if (!measurementRes.ok) throw new Error("Failed to load weights");
       const measurementData = await measurementRes.json();
-      const history = ((measurementData.measurements || []) as Measurement[])
-        .filter((item) => item.weight_g != null);
-      setMeasurements(history);
-      setSelectedId((current) => current ?? history[history.length - 1]?.id ?? null);
+      setMeasurements(((measurementData.measurements || []) as Measurement[]).filter((item) => item.weight_g != null));
     } catch (error) {
       console.error("Weight page fetch error:", error);
     } finally {
@@ -108,13 +107,17 @@ export default function WeightPage() {
       router.push("/");
       return;
     }
-    fetchData();
+    void fetchData();
   }, [fetchData, householdId, router]);
 
-  // The plot is drawn at its real pixel size (never scaled), so the y-axis
-  // column and the plotted points always share one vertical scale.
-  const [plotWidth, setPlotWidth] = useState(0);
-  const hasMeasurements = measurements.length > 0;
+  const birthDate = baby?.birth_date ? Number(baby.birth_date) : null;
+  const rows = useMemo(() => weighInRows(
+    measurements.map((item) => ({ id: item.id, measuredAt: Number(item.measured_at), weightG: Number(item.weight_g) })),
+    birthDate,
+  ), [measurements, birthDate]);
+  const latest = rows[rows.length - 1] ?? null;
+  const hasRows = rows.length > 0;
+
   useLayoutEffect(() => {
     const container = chartScrollRef.current;
     if (!container) return;
@@ -123,126 +126,79 @@ export default function WeightPage() {
     const observer = new ResizeObserver(update);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [hasMeasurements]);
+  }, [hasRows]);
 
-  const chart = useMemo(() => {
-    const values = measurements
-      .filter((item) => item.weight_g != null)
-      .map((item) => Number(item.weight_g));
-    const minWeight = Math.min(...values);
-    const maxWeight = Math.max(...values);
-    const range = Math.max(400, maxWeight - minWeight || 400);
-    const top = maxWeight + range * 0.18;
-    const bottom = Math.max(0, minWeight - range * 0.18);
-    const height = 220;
-    const leftPad = 28;
-    const rightPad = 28;
-    const visiblePointCount = 6;
-    const viewportWidth = plotWidth > 0 ? plotWidth : leftPad + rightPad + (visiblePointCount - 1) * 72;
-    const pointGap = Math.max(44, (viewportWidth - leftPad - rightPad) / (visiblePointCount - 1));
-    const width = Math.max(viewportWidth, leftPad + rightPad + Math.max(1, measurements.length - 1) * pointGap);
+  const chart = useMemo(() => buildWeightChart(rows, birthDate, plotWidth || 300), [rows, birthDate, plotWidth]);
 
-    // Horizontal grid lines at "nice" weights. Their y is in SVG units, which
-    // match the fixed-height y-axis column 1:1, so the axis labels stay put
-    // while the plot scrolls horizontally.
-    const gridStep = niceGridStep(range);
-    const gridLines: { weight: number; y: number }[] = [];
-    for (let w = Math.ceil(bottom / gridStep) * gridStep; w <= top + 1e-9; w += gridStep) {
-      const y = 24 + ((top - w) / Math.max(1, top - bottom)) * (height - 48);
-      gridLines.push({ weight: w, y });
-    }
-
-    const points: ChartPoint[] = measurements.map((item, index) => {
-      const weight = Number(item.weight_g ?? 0);
-      const ageMonths = baby?.birth_date ? ageMonthsAt(Number(item.measured_at), Number(baby.birth_date)) : null;
-      const percentile = ageMonths == null ? null : sg2000BoysWeightForAgePercentile(weight, ageMonths);
-      return {
-        ...item,
-        x: leftPad + index * pointGap,
-        y: 24 + ((top - weight) / Math.max(1, top - bottom)) * (height - 48),
-        percentile,
-        ageMonths,
-      };
-    });
-
-    return {
-      points,
-      width,
-      height,
-      viewportWidth,
-      path: points.map((point) => `${point.x},${point.y}`).join(" "),
-      top,
-      bottom,
-      gridLines,
-    };
-  }, [baby?.birth_date, measurements, plotWidth]);
-
-  const selectedPoint = chart.points.find((point) => point.id === selectedId) ?? chart.points[chart.points.length - 1] ?? null;
-  const latestWeight = measurements[measurements.length - 1]?.weight_g ?? null;
-
-  // Start scrolled to the latest measurement: apply before first paint, then
-  // re-apply after paint in case the scrollable layout settles late (iOS
-  // Safari can ignore scrollLeft set in a post-paint effect).
+  // Open on the latest weigh-in, at the right; older history scrolls left.
   useLayoutEffect(() => {
     const container = chartScrollRef.current;
-    if (!container || measurements.length <= 6) return;
-    container.scrollLeft = container.scrollWidth;
-    const frame = window.requestAnimationFrame(() => {
-      container.scrollLeft = container.scrollWidth;
-    });
+    if (!container) return;
+    const align = () => { container.scrollLeft = container.scrollWidth; };
+    align();
+    const frame = window.requestAnimationFrame(align);
     return () => window.cancelAnimationFrame(frame);
-  }, [measurements.length]);
+  }, [chart.width]);
+
+  const openAdd = () => {
+    setEditor({ mode: "add" });
+    setWeightKg("");
+    setMeasuredDate(sgtDateInput(Date.now()));
+    setFormError(null);
+  };
+  const openEdit = (row: WeighInRow) => {
+    setEditor({ mode: "edit", row });
+    setWeightKg((row.weightG / 1000).toFixed(3).replace(/0+$/, "").replace(/\.$/, ""));
+    setMeasuredDate(sgtDateInput(row.measuredAt));
+    setFormError(null);
+  };
 
   async function saveWeight(event: React.FormEvent) {
     event.preventDefault();
-    if (!baby?.id) return;
-    const parsedWeightKg = Number(weightKg);
+    if (!baby?.id || !editor) return;
+    const kg = Number(weightKg);
     const measuredAt = parseSgtDate(measuredDate);
-    if (!Number.isFinite(parsedWeightKg) || parsedWeightKg <= 0 || !Number.isFinite(measuredAt)) {
-      alert("Enter a valid weight and date.");
+    if (!Number.isFinite(kg) || kg <= 0 || kg > 40 || !Number.isFinite(measuredAt)) {
+      setFormError("Enter a weight in kg and a date.");
       return;
     }
-
     setIsSaving(true);
+    setFormError(null);
     try {
-      const res = await fetch("/api/measurements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          babyId: baby.id,
-          measuredAt,
-          weightG: Math.round(parsedWeightKg * 1000),
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save weight");
-      setWeightKg("");
+      const weightG = Math.round(kg * 1000);
+      const res = editor.mode === "add"
+        ? await fetch("/api/measurements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ babyId: baby.id, measuredAt, weightG }),
+        })
+        : await fetch("/api/measurements", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editor.row.id, measuredAt, weightG }),
+        });
+      if (!res.ok) throw new Error("save failed");
+      setEditor(null);
       await fetchData();
-    } catch (error) {
-      console.error("Save weight error:", error);
-      alert("Could not save weight. Try again.");
+    } catch {
+      setFormError("Could not save this weight. Try again.");
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function confirmDeleteMeasurement() {
-    if (!deleteMeasurement) return;
-
+  async function deleteWeighIn() {
+    if (!confirmDelete) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/measurements?id=${encodeURIComponent(deleteMeasurement.id)}`, {
-        method: "DELETE",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to delete weight");
-
-      const remaining = measurements.filter((item) => item.id !== deleteMeasurement.id);
-      setMeasurements(remaining);
-      setSelectedId(remaining[remaining.length - 1]?.id ?? null);
-      setDeleteMeasurement(null);
-    } catch (error) {
-      console.error("Delete weight error:", error);
-      alert(error instanceof Error ? error.message : "Could not delete weight. Try again.");
+      const res = await fetch(`/api/measurements?id=${encodeURIComponent(confirmDelete.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      setMeasurements((current) => current.filter((item) => item.id !== confirmDelete.id));
+      setConfirmDelete(null);
+      setEditor(null);
+    } catch {
+      setFormError("Could not delete this weight. Try again.");
+      setConfirmDelete(null);
     } finally {
       setIsDeleting(false);
     }
@@ -250,202 +206,233 @@ export default function WeightPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-dvh bg-cream flex items-center justify-center">
+      <main className="flex min-h-dvh items-center justify-center bg-cream">
         <p className="text-warm-brown-light">Loading weight history…</p>
       </main>
     );
   }
 
+  const latestPercentile = latest ? percentileLabel(latest.percentile) : null;
+  const latestDelta = latest ? deltaLabel(latest) : null;
+  const beyondReference = latest?.ageMonths != null && latest.ageMonths > sg2000MaxAgeMonths();
+
   return (
-    <main className="min-h-dvh bg-cream pb-24">
-      <header className="bg-surface border-b border-border px-4 py-3 sm:px-5 sm:py-4">
-        <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
-          <div>
-            <Link href="/dashboard" className="inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-accent-strong"><ArrowLeft aria-hidden="true" className="h-4 w-4" />Dashboard</Link>
-            <h1 className="font-display text-2xl text-accent-strong mt-1">Weight details</h1>
-            <p className="text-sm text-warm-brown-light">
-              {baby?.name || "Baby"}{latestWeight ? ` · ${formatWeight(Number(latestWeight))}` : ""}
-            </p>
-          </div>
+    <main className="min-h-dvh bg-cream pb-[calc(6rem+env(safe-area-inset-bottom))]">
+      <header className="border-b border-border bg-surface px-4 py-2">
+        <div className="mx-auto flex max-w-lg items-center gap-2">
+          <Link href="/dashboard" aria-label="Back to dashboard" className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted">
+            <ArrowLeft aria-hidden="true" className="h-5 w-5" />
+          </Link>
+          <h1 className="font-display text-xl font-semibold text-accent-strong">{baby?.name ? `${baby.name}’s weight` : "Weight"}</h1>
         </div>
       </header>
 
-      <div className="max-w-lg mx-auto px-4 py-4 sm:px-5 sm:py-5 space-y-3">
-        <form onSubmit={saveWeight} className="bg-surface rounded-lg border border-terracotta/20 p-4 shadow-sm space-y-4">
-          <div>
-            <h2 className="font-display text-lg text-accent-strong mt-1">Add dated measurement</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs text-warm-brown-light">Weight, kg</span>
-              <input
-                type="number"
-                step="0.001"
-                min="0"
-                value={weightKg}
-                onChange={(event) => setWeightKg(event.target.value)}
-                placeholder="6.300"
-                className="min-h-11 w-full rounded-lg border border-border bg-cream px-3 py-2 text-warm-brown outline-none focus:border-accent-strong focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs text-warm-brown-light">As of date</span>
-              <input
-                type="date"
-                value={measuredDate}
-                onChange={(event) => setMeasuredDate(event.target.value)}
-                className="min-h-11 w-full rounded-lg border border-border bg-cream px-3 py-2 text-warm-brown outline-none focus:border-accent-strong focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2"
-              />
-            </label>
-          </div>
-          <button
-            type="submit"
-            disabled={isSaving || !baby?.id}
-            className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 disabled:opacity-50"
-          >
-            {isSaving ? "Saving…" : "Save weight"}
-          </button>
-        </form>
-
-        <section className="bg-surface rounded-lg border border-terracotta/20 p-4 shadow-sm">
-          <div>
-            <h2 className="font-display text-lg text-accent-strong">Weight history</h2>
-            <p className="mt-1 text-xs text-muted">Singapore growth charts · NHG Polyclinics 2000</p>
-          </div>
-
-          {chart.points.length === 0 ? (
-            <p className="mt-4 text-sm text-warm-brown-light">No weights logged yet.</p>
-          ) : (
+      <div className="mx-auto max-w-lg space-y-3 px-3 py-3 sm:px-5">
+        {/* Summary: the answer first */}
+        <section aria-label="Latest weight" className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+          {latest ? (
             <>
-              <div className="mt-4 flex border-y border-border py-3">
-                <div className="relative w-11 shrink-0" style={{ height: chart.height }} aria-hidden="true">
-                  {chart.gridLines.map((line) => (
-                    <span
-                      key={line.weight}
-                      className="absolute right-0 -translate-y-1/2 text-[10px] leading-none tabular-nums text-muted"
-                      style={{ top: line.y }}
-                    >
-                      {yAxisLabel(line.weight)}
-                    </span>
-                  ))}
-                </div>
-                <div ref={chartScrollRef} className="flex-1 overflow-x-auto overscroll-x-contain touch-pan-x">
-                  <svg
-                    className="block max-w-none"
-                    width={chart.width}
-                    height={chart.height}
-                    viewBox={`0 0 ${chart.width} ${chart.height}`}
-                    role="img"
-                    aria-label="Baby weight history line chart"
-                  >
-                    <line x1="0" y1="196" x2={chart.width} y2="196" stroke="var(--color-warm-brown)" strokeOpacity="0.18" />
-                    {chart.gridLines.map((line) => (
-                      <line key={line.weight} x1="0" y1={line.y} x2={chart.width} y2={line.y} stroke="var(--color-warm-brown)" strokeOpacity="0.10" />
-                    ))}
-                    <polyline fill="none" stroke="var(--color-terracotta)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={chart.path} />
-                    {chart.points.map((point) => (
-                      <g key={point.id}>
-                        <circle
-                          cx={point.x}
-                          cy={point.y}
-                          r="16"
-                          fill="transparent"
-                          role="button"
-                          tabIndex={0}
-                          className="cursor-pointer"
-                          onClick={() => setSelectedId(point.id)}
-                          onFocus={() => setSelectedId(point.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              setSelectedId(point.id);
-                            }
-                          }}
-                          aria-label={`${formatWeight(Number(point.weight_g))} on ${formatDate(Number(point.measured_at))}`}
-                        />
-                        <circle
-                          cx={point.x}
-                          cy={point.y}
-                          r={point.id === selectedPoint?.id ? "6" : "4"}
-                          fill={point.id === selectedPoint?.id ? "var(--color-warm-brown)" : "var(--color-terracotta)"}
-                          pointerEvents="none"
-                        />
-                        <text x={point.x} y="214" textAnchor="middle" fontSize="12" fill="var(--color-text-muted)">
-                          {sgtDateInput(Number(point.measured_at)).slice(5)}
-                        </text>
-                      </g>
-                    ))}
-                  </svg>
-                </div>
+              <p className="text-xs text-muted">Latest · {formatDate(latest.measuredAt)}{birthDate ? ` · ${formatAge(birthDate)}` : ""}</p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <p className="font-display text-4xl font-semibold tabular-nums text-warm-brown">{formatWeight(latest.weightG)}</p>
+                {latestPercentile && (
+                  <span className="rounded-full bg-terracotta/10 px-2.5 py-0.5 text-sm font-semibold text-accent-strong">{latestPercentile}</span>
+                )}
               </div>
-
-              {selectedPoint && (
-                <div className="mt-4 border-t border-border pt-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs text-muted">Selected</p>
-                      <p className="font-display text-2xl text-warm-brown tabular-nums">
-                        {formatWeight(Number(selectedPoint.weight_g))}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted">{formatDate(Number(selectedPoint.measured_at))}</p>
-                      <p className="font-medium text-accent-strong">{percentileLabel(selectedPoint.percentile)}</p>
-                    </div>
-                  </div>
-                  <p className="mt-2 text-xs text-muted">
-                    Percentile uses the Singapore 2000 reference (NHG Polyclinics) — the same weight-for-age charts as the Child Health Booklet.
-                    {!baby?.birth_date ? " Add birth date to calculate percentile." : ""}
-                  </p>
-                  <div className="mt-3 flex justify-end border-t border-border pt-3">
-                    <button
-                      type="button"
-                      onClick={() => setDeleteMeasurement(selectedPoint)}
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-danger transition-colors hover:bg-danger/10 focus:outline-none focus:ring-2 focus:ring-danger/30"
-                    >
-                      <Trash2 aria-hidden="true" className="h-4 w-4" />
-                      Delete measurement
-                    </button>
-                  </div>
-                </div>
-              )}
+              {latestDelta && <p className="mt-1 text-sm tabular-nums text-warm-brown-light">{latestDelta} since the last weigh-in</p>}
             </>
+          ) : (
+            <p className="text-sm text-warm-brown-light">No weights yet. Add the first weigh-in to start the growth chart.</p>
           )}
+          <button
+            type="button"
+            onClick={openAdd}
+            disabled={!baby?.id}
+            className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-on-accent transition-colors hover:bg-warm-brown disabled:opacity-50"
+          >
+            <Plus aria-hidden="true" className="h-4 w-4" />
+            Add weight
+          </button>
         </section>
+
+        {/* Growth chart on a true time axis with SG 2000 bands */}
+        {hasRows && (
+          <section aria-labelledby="growth-title" className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 id="growth-title" className="glance-card-title text-accent-strong">Growth</h2>
+              {chart.bands.length > 0 && (
+                <span className="flex items-center gap-3 text-[11px] text-muted">
+                  <span className="inline-flex items-center gap-1"><span className="h-2.5 w-3 rounded-sm bg-success/20" />3rd–97th</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-px w-3 border-t border-dashed border-muted" />50th</span>
+                </span>
+              )}
+            </div>
+            <div className="mt-3 flex">
+              <div className="relative w-8 shrink-0" style={{ height: chart.height }} aria-hidden="true">
+                {chart.gridLines.map((line) => (
+                  <span key={line.weightG} className="absolute right-1 -translate-y-1/2 text-[10px] leading-none tabular-nums text-muted" style={{ top: line.y }}>
+                    {axisKg(line.weightG)}
+                  </span>
+                ))}
+              </div>
+              <div ref={chartScrollRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain touch-pan-x">
+                <svg
+                  className="block max-w-none"
+                  width={chart.width}
+                  height={chart.height}
+                  viewBox={`0 0 ${chart.width} ${chart.height}`}
+                  role="img"
+                  aria-label={`Weight over time${chart.bands.length ? " against Singapore 2000 percentile bands" : ""}`}
+                >
+                  {chart.gridLines.map((line) => (
+                    <line key={line.weightG} x1="0" y1={line.y} x2={chart.width} y2={line.y} stroke="rgb(var(--rgb-text))" strokeOpacity="0.07" />
+                  ))}
+                  {chart.bands.map((band, index) => (
+                    <path key={`${band.lower}-${band.upper}`} d={band.d} fill="rgb(var(--rgb-success))" fillOpacity={0.07 + index * 0.05} />
+                  ))}
+                  {chart.median && (
+                    <polyline points={chart.median} fill="none" stroke="rgb(var(--rgb-text-muted))" strokeOpacity="0.55" strokeWidth="1.2" strokeDasharray="4 4" />
+                  )}
+                  {chart.monthTicks.map((tick) => (
+                    <g key={tick.x}>
+                      <line x1={tick.x} y1={chart.plotTop} x2={tick.x} y2={chart.plotBottom} stroke="rgb(var(--rgb-text))" strokeOpacity="0.06" />
+                      <text x={tick.x + 3} y={chart.height - 8} fontSize="11" fill="rgb(var(--rgb-text-muted))">{tick.label}</text>
+                    </g>
+                  ))}
+                  <line x1="0" y1={chart.plotBottom} x2={chart.width} y2={chart.plotBottom} stroke="rgb(var(--rgb-text))" strokeOpacity="0.15" />
+                  <polyline points={chart.line} fill="none" stroke="rgb(var(--rgb-accent))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  {chart.points.map((point, index) => (
+                    <g key={point.id}>
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r="14"
+                        fill="transparent"
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer outline-none"
+                        aria-label={`Edit ${formatWeight(point.weightG)} on ${formatDate(point.measuredAt)}`}
+                        onClick={() => openEdit(point)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openEdit(point);
+                          }
+                        }}
+                      />
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r={index === chart.points.length - 1 ? 5.5 : 4}
+                        fill={index === chart.points.length - 1 ? "rgb(var(--rgb-accent-strong))" : "rgb(var(--rgb-accent))"}
+                        stroke="rgb(var(--rgb-surface))"
+                        strokeWidth="1.5"
+                        pointerEvents="none"
+                      />
+                    </g>
+                  ))}
+                </svg>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              {birthDate
+                ? beyondReference
+                  ? "Percentile bands cover birth to 24 months (Singapore 2000 reference)."
+                  : "Bands use the Singapore 2000 reference (NHG Polyclinics), the same charts as the Child Health Booklet."
+                : "Add a birth date in baby settings to see percentiles and bands."}
+            </p>
+          </section>
+        )}
+
+        {/* Every weigh-in; tap to correct or delete */}
+        {hasRows && (
+          <section aria-labelledby="weighins-title" className="rounded-xl border border-border bg-surface px-4 pb-1 pt-4 shadow-sm">
+            <h2 id="weighins-title" className="glance-card-title text-accent-strong">Weigh-ins</h2>
+            <ul className="mt-1">
+              {[...rows].reverse().map((row) => {
+                const percentile = percentileLabel(row.percentile);
+                const delta = deltaLabel(row);
+                return (
+                  <li key={row.id} className="border-b border-border/70 last:border-b-0">
+                    <button type="button" onClick={() => openEdit(row)} aria-label={`Edit ${formatWeight(row.weightG)} on ${formatDate(row.measuredAt)}`} className="flex w-full items-center gap-3 rounded-md px-1 py-2.5 text-left transition-colors hover:bg-surface-muted/60">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-warm-brown">{formatDate(row.measuredAt)}</span>
+                        <span className="block text-xs text-muted">
+                          {[delta, percentile].filter(Boolean).join(" · ") || "First weigh-in"}
+                        </span>
+                      </span>
+                      <span className="font-display text-lg font-semibold tabular-nums text-warm-brown">{formatWeight(row.weightG)}</span>
+                      <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
       </div>
 
-      {deleteMeasurement && (
+      {/* Add / edit sheet */}
+      {editor && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-warm-brown/55 px-4 pb-4 sm:items-center sm:pb-0"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="delete-weight-title"
+          aria-labelledby="weight-editor-title"
+          onClick={(event) => { if (event.target === event.currentTarget && !isSaving) setEditor(null); }}
+          onKeyDown={(event) => { if (event.key === "Escape" && !isSaving) setEditor(null); }}
         >
-          <div className="w-full max-w-sm rounded-lg bg-surface p-5 shadow-xl">
-            <h2 id="delete-weight-title" className="font-display text-xl text-warm-brown">
-              Delete this weight?
-            </h2>
+          <form onSubmit={saveWeight} className="w-full max-w-sm rounded-xl bg-surface p-5 shadow-xl">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="weight-editor-title" className="font-display text-xl text-warm-brown">{editor.mode === "add" ? "Add weight" : "Edit weigh-in"}</h2>
+              <button type="button" aria-label="Close" onClick={() => setEditor(null)} disabled={isSaving} className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-surface-muted">
+                <X aria-hidden="true" className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-xs text-warm-brown-light">Weight (kg)</span>
+                <input
+                  autoFocus
+                  type="number"
+                  inputMode="decimal"
+                  step="0.001"
+                  min="0"
+                  value={weightKg}
+                  onChange={(event) => setWeightKg(event.target.value)}
+                  placeholder={latest ? (latest.weightG / 1000).toFixed(2) : "6.30"}
+                  className={`${fieldClass} text-lg tabular-nums`}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-warm-brown-light">Date</span>
+                <input type="date" value={measuredDate} max={sgtDateInput(Date.now())} onChange={(event) => setMeasuredDate(event.target.value)} className={fieldClass} />
+              </label>
+            </div>
+            {formError && <p role="alert" className="mt-2 text-sm text-danger">{formError}</p>}
+            <button type="submit" disabled={isSaving} className="mt-4 min-h-11 w-full rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-on-accent transition-colors hover:bg-warm-brown disabled:opacity-50">
+              {isSaving ? "Saving…" : editor.mode === "add" ? "Save weight" : "Save changes"}
+            </button>
+            {editor.mode === "edit" && (
+              <button type="button" onClick={() => setConfirmDelete(editor.row)} disabled={isSaving} className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold text-danger transition-colors hover:bg-danger/10 disabled:opacity-50">
+                <Trash2 aria-hidden="true" className="h-4 w-4" />
+                Delete weigh-in
+              </button>
+            )}
+          </form>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-warm-brown/55 px-4 pb-4 sm:items-center sm:pb-0" role="dialog" aria-modal="true" aria-labelledby="delete-weight-title">
+          <div className="w-full max-w-sm rounded-xl bg-surface p-5 shadow-xl">
+            <h2 id="delete-weight-title" className="font-display text-xl text-warm-brown">Delete this weigh-in?</h2>
             <p className="mt-2 text-sm leading-relaxed text-warm-brown-light">
-              {formatWeight(Number(deleteMeasurement.weight_g))} from {formatDate(Number(deleteMeasurement.measured_at))} will be permanently removed.
+              {formatWeight(confirmDelete.weightG)} from {formatDate(confirmDelete.measuredAt)} will be permanently removed.
             </p>
             <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteMeasurement(null)}
-                autoFocus
-                disabled={isDeleting}
-                className="min-h-11 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-semibold text-warm-brown disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteMeasurement}
-                disabled={isDeleting}
-                className="min-h-11 rounded-lg bg-danger px-4 py-3 text-sm font-semibold text-on-accent transition-colors hover:bg-warm-brown disabled:opacity-50"
-              >
-                {isDeleting ? "Deleting…" : "Delete"}
-              </button>
+              <button type="button" onClick={() => setConfirmDelete(null)} autoFocus disabled={isDeleting} className="min-h-11 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-warm-brown disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={() => { void deleteWeighIn(); }} disabled={isDeleting} className="min-h-11 rounded-lg bg-danger px-4 text-sm font-semibold text-on-accent disabled:opacity-50">{isDeleting ? "Deleting…" : "Delete"}</button>
             </div>
           </div>
         </div>
