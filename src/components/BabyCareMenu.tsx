@@ -7,7 +7,7 @@ import { ChevronDown, X } from "lucide-react";
 export default function BabyCareMenu({ name, active, accessory, subtitle, children }: {
   name: string;
   active: boolean;
-  /** Shown beside the name, e.g. the childcare balloon. */
+  /** Shown just left of the baby's face, e.g. the childcare balloon. */
   accessory?: ReactNode;
   /** Second line under the name: age, weight and who is logging. */
   subtitle?: ReactNode;
@@ -25,6 +25,7 @@ export default function BabyCareMenu({ name, active, accessory, subtitle, childr
   return (
     <>
       <div className="baby-identity-row flex min-w-0 items-center justify-center gap-3">
+        {accessory}
         {/* The face is a second, pointer-only way into the same menu as the name. */}
         <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face shrink-0 rounded-2xl transition-transform active:scale-95">
           <Image src="/icon.svg" alt="" width={72} height={80} priority className="h-16 w-14 object-contain" />
@@ -37,7 +38,6 @@ export default function BabyCareMenu({ name, active, accessory, subtitle, childr
                 <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted" />
               </button>
             </h1>
-            {accessory}
           </div>
           {subtitle}
         </div>

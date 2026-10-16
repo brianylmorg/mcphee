@@ -707,4 +707,7 @@ body {
   .baby-identity-row h1 {
     font-size: 21px;
   }
+  .dashboard-baby-identity {
+    padding-left: 0;
+  }
 }
