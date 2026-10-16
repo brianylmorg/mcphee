@@ -75,7 +75,7 @@ html[data-care-mode="sick"] {
 /* Dark mode: deep warm brown, never pure black, so 3am checks stay gentle.
    Strong fills get lighter, so text on them flips to dark (on-accent). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --rgb-canvas: 27 21 18;
     --rgb-surface: 38 30 25;
     --rgb-surface-muted: 52 41 35;
@@ -98,8 +98,7 @@ html[data-care-mode="sick"] {
 
     color-scheme: dark;
   }
-
-  html[data-care-mode="sick"] {
+  html[data-care-mode="sick"]:not([data-theme="light"]) {
     --rgb-canvas: 17 28 31;
     --rgb-surface: 24 38 42;
     --rgb-surface-muted: 34 51 56;
@@ -114,6 +113,44 @@ html[data-care-mode="sick"] {
     --rgb-sleep-surface: 26 44 54;
     --rgb-sleep-border: 54 84 98;
   }
+}
+:root[data-theme="dark"] {
+  --rgb-canvas: 27 21 18;
+  --rgb-surface: 38 30 25;
+  --rgb-surface-muted: 52 41 35;
+  --rgb-accent: 205 133 101;
+  --rgb-accent-strong: 232 163 131;
+  --rgb-text: 242 230 219;
+  --rgb-text-muted: 192 172 158;
+  --rgb-border: 78 63 54;
+  --rgb-success: 128 200 160;
+  --rgb-danger: 244 134 118;
+  --rgb-warning: 232 184 104;
+  --rgb-info: 124 194 188;
+  --rgb-on-accent: 33 22 16;
+  --rgb-frozen: 120 176 208;
+  --rgb-frozen-strong: 164 206 230;
+  --rgb-awake-surface: 66 50 26;
+  --rgb-awake-border: 112 86 40;
+  --rgb-sleep-surface: 30 38 56;
+  --rgb-sleep-border: 58 72 102;
+
+  color-scheme: dark;
+}
+html[data-care-mode="sick"][data-theme="dark"] {
+  --rgb-canvas: 17 28 31;
+  --rgb-surface: 24 38 42;
+  --rgb-surface-muted: 34 51 56;
+  --rgb-accent: 112 172 184;
+  --rgb-accent-strong: 146 200 210;
+  --rgb-text: 226 239 241;
+  --rgb-text-muted: 160 187 193;
+  --rgb-border: 52 76 82;
+  --rgb-info: 146 200 210;
+  --rgb-awake-surface: 62 52 26;
+  --rgb-awake-border: 108 90 42;
+  --rgb-sleep-surface: 26 44 54;
+  --rgb-sleep-border: 54 84 98;
 }
 
 /* Sleep/awake colors indicate state, never clinical severity. */
@@ -159,7 +196,7 @@ html[data-care-mode="sick"] {
   --scene-night-text: 246 242 255;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --sb-day-sky-top: 104 84 50;
     --sb-day-sky-bottom: 122 96 54;
     --sb-day-bloom: 150 108 64;
@@ -174,6 +211,21 @@ html[data-care-mode="sick"] {
     --sb-balloon-idle-rim: 92 80 72;
     --scene-day-text: 255 244 224;
   }
+}
+:root[data-theme="dark"] {
+  --sb-day-sky-top: 104 84 50;
+  --sb-day-sky-bottom: 122 96 54;
+  --sb-day-bloom: 150 108 64;
+  --sb-cloud: 236 224 204;
+  --sb-cloud-shade: 140 140 150;
+  --sb-meadow: 112 132 86;
+  --sb-meadow-deep: 88 108 70;
+  --sb-night-top: 30 36 66;
+  --sb-night-bottom: 46 52 92;
+  --sb-balloon-idle: 112 98 88;
+  --sb-balloon-idle-light: 150 136 124;
+  --sb-balloon-idle-rim: 92 80 72;
+  --scene-day-text: 255 244 224;
 }
 
 .sleep-thumb {

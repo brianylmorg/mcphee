@@ -16,6 +16,7 @@ import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
 import ActivityRecency from "@/components/ActivityRecency";
 import ActivityTimelineCard from "@/components/ActivityTimelineCard";
+import ThemePreferenceControl from "@/components/ThemePreferenceControl";
 import SickModePanel from "@/components/SickModePanel";
 import MedicationLogModal from "@/components/MedicationLogModal";
 import CaretakerImportModal from "@/components/CaretakerImportModal";
@@ -1568,6 +1569,7 @@ export default function DashboardPage() {
   const renderHouseholdSettings = (closeMenu: () => void) => (
     <section aria-labelledby="household-settings-title" className="mt-5 space-y-3 border-t border-border pt-4">
       <h3 id="household-settings-title" className="text-sm font-semibold text-warm-brown">Household & settings</h3>
+      <ThemePreferenceControl />
           <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border bg-surface-muted px-3 py-2">
             <span className="min-w-0">
               <span className="block text-xs text-muted">Invite code</span>

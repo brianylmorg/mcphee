@@ -5,6 +5,7 @@ import { HouseholdProvider } from "@/lib/context/household-context";
 import { createDB } from "@/db";
 import CareModeTheme from "@/components/CareModeTheme";
 import { cache } from "react";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme-preference";
 
 export const metadata: Metadata = {
   title: "mcphee — Baby Activity Tracker",
@@ -79,6 +80,7 @@ export default async function RootLayout({
     <html lang="en" data-care-mode={initialCareMode ? "sick" : undefined} suppressHydrationWarning>
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="bg-cream text-warm-brown antialiased">
         <HouseholdProvider
