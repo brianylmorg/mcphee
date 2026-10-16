@@ -20,7 +20,8 @@ import ThemePreferenceControl from "@/components/ThemePreferenceControl";
 import SickModePanel from "@/components/SickModePanel";
 import MedicationLogModal from "@/components/MedicationLogModal";
 import CaretakerImportModal from "@/components/CaretakerImportModal";
-import ChildcareHeaderMenu from "@/components/ChildcareHeaderMenu";
+import ChildcareStatusTrigger from "@/components/ChildcareStatusTrigger";
+import ChildcareModePanel from "@/components/ChildcareModePanel";
 import MedicationDoseEditModal from "@/components/MedicationDoseEditModal";
 import MedicationPrescriptionModal from "@/components/MedicationPrescriptionModal";
 import SickMilkProgress from "@/components/SickMilkProgress";
@@ -1575,7 +1576,7 @@ export default function DashboardPage() {
   }
 
   const renderHouseholdSettings = (closeMenu: () => void) => (
-    <section aria-labelledby="household-settings-title" className="mt-5 space-y-3 border-t border-border pt-4">
+    <section aria-labelledby="household-settings-title" className="space-y-3 border-t border-border pt-4">
       <h3 id="household-settings-title" className="text-sm font-semibold text-warm-brown">Household & settings</h3>
       <ThemePreferenceControl />
           <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border bg-surface-muted px-3 py-2">
@@ -1669,25 +1670,14 @@ export default function DashboardPage() {
                 name={baby?.name || "Baby"}
                 active={Boolean(sickMode?.activeEpisode)}
                 accessoryPlacement={childcareMode.activeSession ? "tuck" : "behind"}
-                accessory={baby?.id && childcareMode.schemaReady && (
-                <ChildcareHeaderMenu
-                  key={baby.id}
-                  babyName={baby.name || "Baby"}
-                  activeSession={childcareMode.activeSession}
-                  pendingSessions={childcareMode.pendingSessions}
-                  historySessions={childcareMode.historySessions ?? []}
-                  onEditSession={(session, times) => updateChildcareHistory("editSession", session, times)}
-                  onDismissImport={(session) => updateChildcareHistory("dismissImport", session)}
-                  onRemoveSession={(session) => updateChildcareHistory("removeSession", session)}
-                  busy={childcareBusy}
-                  error={childcareError}
-                  onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}
-                  onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
-                  onEditCheckIn={async (at) => Boolean(await mutateChildcareMode("editCheckIn", at))}
-                  onImport={(session) => openCaretakerImport(session)}
-                  importOpen={showCaretakerImport}
-                />
-              )}
+                accessory={baby?.id && childcareMode.schemaReady
+                  ? (openTo) => <ChildcareStatusTrigger active={Boolean(childcareMode.activeSession)} onOpen={() => openTo("childcare")} />
+                  : undefined}
+                statusLine={[
+                  childcareMode.schemaReady ? (childcareMode.activeSession ? "At childcare" : "At home") : null,
+                  sickMode?.activeEpisode ? "Sick mode on" : "Sick mode off",
+                ].filter(Boolean).join(" · ")}
+                handoffOpen={showCaretakerImport}
                 subtitle={
             <p className="baby-meta flex items-center gap-x-2 whitespace-nowrap text-sm text-warm-brown-light">
               {baby?.birth_date && <span>{formatAge(baby.birth_date)}</span>}
@@ -1703,7 +1693,26 @@ export default function DashboardPage() {
             </p>
                 }
               >
-                {(closeCareMenu) => <>{baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}{renderHouseholdSettings(closeCareMenu)}</>}
+                {(closeCareMenu) => <>{baby?.id && childcareMode.schemaReady && (
+                  <div data-care-section="childcare" className="scroll-mt-20">
+                    <ChildcareModePanel
+                      key={baby.id}
+                      babyName={baby.name || "Baby"}
+                      activeSession={childcareMode.activeSession}
+                      pendingSessions={childcareMode.pendingSessions}
+                      historySessions={childcareMode.historySessions ?? []}
+                      onEditSession={(session, times) => updateChildcareHistory("editSession", session, times)}
+                      onDismissImport={(session) => updateChildcareHistory("dismissImport", session)}
+                      onRemoveSession={(session) => updateChildcareHistory("removeSession", session)}
+                      busy={childcareBusy}
+                      error={childcareError}
+                      onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}
+                      onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
+                      onEditCheckIn={async (at) => Boolean(await mutateChildcareMode("editCheckIn", at))}
+                      onImport={(session) => { closeCareMenu(); openCaretakerImport(session); }}
+                    />
+                  </div>
+                )}{baby?.id && <div data-care-section="sick"><SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} /></div>}{renderHouseholdSettings(closeCareMenu)}</>}
               </BabyCareMenu>
           </div>
         </div>
