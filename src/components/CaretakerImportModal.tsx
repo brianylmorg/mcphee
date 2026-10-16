@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
   ImageUp,
   LoaderCircle,
   Milk,
@@ -29,6 +30,8 @@ import {
   CARETAKER_IMPORT_IMAGE_TYPES,
   CARETAKER_IMPORT_LOW_CONFIDENCE,
   CARETAKER_IMPORT_MAX_IMAGE_BYTES,
+  CARETAKER_IMPORT_MAX_SCREENSHOTS,
+  CARETAKER_IMPORT_MAX_SOURCE_BYTES,
   type CaretakerCommitResponse,
   type CaretakerImportError,
   type CaretakerImportRow,
@@ -37,6 +40,7 @@ import {
   type CaretakerReviewRowInput,
   type CaretakerStageResponse,
 } from "@/lib/caretaker-import-contract";
+import { stitchScreenshots } from "@/lib/screenshot-stitch";
 import {
   recognizeCaretakerScreenshot,
   type CaretakerOcrProgress,
@@ -313,6 +317,44 @@ function SectionHeading({ icon, children }: { icon: ReactNode; children: ReactNo
   );
 }
 
+/**
+ * Separate date and time inputs. When the screenshot had no time, the date
+ * still fills in from the import date the rest of the form uses, so only the
+ * time is left to enter.
+ */
+function SgDateTimeFields({ label, value, fallbackDate, disabled, onChange }: {
+  label: string;
+  value: string;
+  fallbackDate: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [date, setDate] = useState(value.slice(0, 10) || fallbackDate);
+  const [time, setTime] = useState(value.slice(11, 16));
+  useEffect(() => {
+    if (value) {
+      setDate(value.slice(0, 10));
+      setTime(value.slice(11, 16));
+    } else {
+      setTime("");
+    }
+  }, [value]);
+  const update = (nextDate: string, nextTime: string) => {
+    setDate(nextDate);
+    setTime(nextTime);
+    onChange(nextDate && nextTime ? `${nextDate}T${nextTime}` : "");
+  };
+  return (
+    <fieldset className="min-w-0">
+      <legend className="text-xs font-medium text-warm-brown">{label} (Singapore)</legend>
+      <div className="mt-1 grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-2">
+        <input type="date" aria-label={`${label} date`} value={date} disabled={disabled} onChange={event => update(event.target.value, time)} className="min-h-11 w-full min-w-0 rounded-lg border border-border bg-surface px-3 text-sm tabular-nums" />
+        <input type="time" aria-label={`${label} time`} value={time} disabled={disabled} onChange={event => update(date, event.target.value)} className={`min-h-11 w-full min-w-0 rounded-lg border bg-surface px-3 text-sm tabular-nums ${time ? "border-border" : "border-warning/60"}`} />
+      </div>
+    </fieldset>
+  );
+}
+
 function ReviewRowCard({
   row,
   draft,
@@ -396,14 +438,22 @@ function ReviewRowCard({
             </select>
           </label>
 
-          <label className="text-xs font-medium text-warm-brown">{draft.type === "sleep" ? "Start time" : "Time"} (Singapore)
-            <input type="datetime-local" value={draft.startedAt} disabled={disabled || !included} onChange={event => onChange({ startedAt: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums" />
-          </label>
+          <SgDateTimeFields
+            label={draft.type === "sleep" ? "Start time" : "Time"}
+            value={draft.startedAt}
+            fallbackDate={selectedDate}
+            disabled={disabled || !included}
+            onChange={startedAt => onChange({ startedAt })}
+          />
 
           {draft.type === "sleep" && (
-            <label className="text-xs font-medium text-warm-brown">End time (Singapore)
-              <input type="datetime-local" value={draft.endedAt} disabled={disabled || !included} onChange={event => onChange({ endedAt: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums" />
-            </label>
+            <SgDateTimeFields
+              label="End time"
+              value={draft.endedAt}
+              fallbackDate={draft.startedAt.slice(0, 10) || selectedDate}
+              disabled={disabled || !included}
+              onChange={endedAt => onChange({ endedAt })}
+            />
           )}
 
           {draft.type === "bottlefeed" && (
@@ -490,6 +540,10 @@ export default function CaretakerImportModal({
   const commitAttemptRef = useRef<CommitAttempt | null>(null);
   const [view, setView] = useState<View>("select");
   const [file, setFile] = useState<File | null>(null);
+  // Several overlapping screenshots of one page, joined into `file` on pick.
+  const [sources, setSources] = useState<File[]>([]);
+  const [joinNote, setJoinNote] = useState<{ duplicates: number; unaligned: number[]; count: number } | null>(null);
+  const [joining, setJoining] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [linkedSession, setLinkedSession] = useState<ChildcareSessionSummary | null>(childcareSession);
   const [selectedDate, setSelectedDate] = useState(() => childcareSession
@@ -647,6 +701,8 @@ export default function CaretakerImportModal({
     stageAttemptRef.current = null;
     commitAttemptRef.current = null;
     setFile(null);
+    setSources([]);
+    setJoinNote(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (!keepDate) setSelectedDate(linkedSession ? singaporeDate(new Date(linkedSession.checkedInAt)) : singaporeDate());
     setSnapshot(null);
@@ -679,25 +735,69 @@ export default function CaretakerImportModal({
     onClose();
   };
 
+  const joinSources = async (list: File[]) => {
+    setSources(list);
+    setJoinNote(null);
+    stageAttemptRef.current = null;
+    if (list.length === 1) {
+      setFile(list[0]);
+      return;
+    }
+    setFile(null);
+    setJoining(true);
+    try {
+      const joined = await stitchScreenshots(list, CARETAKER_IMPORT_MAX_IMAGE_BYTES);
+      setFile(joined.file);
+      setJoinNote({ duplicates: joined.duplicates, unaligned: joined.unaligned, count: joined.imageCount });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "These screenshots could not be joined.");
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const moveSource = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= sources.length || joining) return;
+    const next = [...sources];
+    [next[index], next[target]] = [next[target], next[index]];
+    void joinSources(next);
+  };
+
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const next = event.target.files?.[0] ?? null;
+    const picked = Array.from(event.target.files ?? []);
     setError(null);
     setResumeBatchId(null);
     stageAttemptRef.current = null;
-    if (!next) return setFile(null);
-    if (!CARETAKER_IMPORT_IMAGE_TYPES.includes(next.type as (typeof CARETAKER_IMPORT_IMAGE_TYPES)[number])) {
-      event.target.value = "";
-      setFile(null);
-      setError("Choose a PNG, JPEG, or WebP image.");
-      return;
+    if (picked.length === 0) {
+      setSources([]);
+      setJoinNote(null);
+      return setFile(null);
     }
-    if (next.size > CARETAKER_IMPORT_MAX_IMAGE_BYTES) {
+    const reject = (message: string) => {
       event.target.value = "";
+      setSources([]);
+      setJoinNote(null);
       setFile(null);
-      setError("This image is larger than 3 MiB. Choose a smaller screenshot.");
-      return;
+      setError(message);
+    };
+    if (picked.length > CARETAKER_IMPORT_MAX_SCREENSHOTS) {
+      return reject(`Choose up to ${CARETAKER_IMPORT_MAX_SCREENSHOTS} screenshots of the same page.`);
     }
-    setFile(next);
+    if (picked.some((next) => !CARETAKER_IMPORT_IMAGE_TYPES.includes(next.type as (typeof CARETAKER_IMPORT_IMAGE_TYPES)[number]))) {
+      return reject("Choose PNG, JPEG, or WebP images.");
+    }
+    // A single screenshot is uploaded as-is; joined ones are re-encoded under the limit.
+    const perFileLimit = picked.length === 1 ? CARETAKER_IMPORT_MAX_IMAGE_BYTES : CARETAKER_IMPORT_MAX_SOURCE_BYTES;
+    if (picked.some((next) => next.size > perFileLimit)) {
+      return reject(picked.length === 1
+        ? "This image is larger than 3 MiB. Choose a smaller screenshot."
+        : "One of these images is larger than 12 MiB. Choose smaller screenshots.");
+    }
+    // Capture order when the files carry distinct times, otherwise pick order.
+    const times = new Set(picked.map((next) => next.lastModified));
+    const ordered = times.size === picked.length ? [...picked].sort((a, b) => a.lastModified - b.lastModified) : picked;
+    void joinSources(ordered);
   };
 
   const finishCommittedSnapshot = async (committed: CaretakerImportSnapshot) => {
@@ -1109,9 +1209,37 @@ export default function CaretakerImportModal({
 
           <div>
             <label htmlFor="caretaker-screenshot" className="block text-sm font-semibold">Screenshot</label>
-            <p className="mt-1 text-xs text-muted">PNG, JPEG, or WebP · maximum 3 MiB · one image</p>
-            <input ref={fileInputRef} id="caretaker-screenshot" type="file" accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={chooseFile} className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-terracotta/45 bg-terracotta/5 p-3 text-sm file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-terracotta-dark file:px-3 file:text-sm file:font-semibold file:text-on-accent" />
+            <p className="mt-1 text-xs text-muted">One long screenshot, or several overlapping screenshots of the same page (up to {CARETAKER_IMPORT_MAX_SCREENSHOTS}). Repeated parts are removed before reading.</p>
+            <input ref={fileInputRef} id="caretaker-screenshot" type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy) || joining} onChange={chooseFile} className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-terracotta/45 bg-terracotta/5 p-3 text-sm file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-terracotta-dark file:px-3 file:text-sm file:font-semibold file:text-on-accent" />
           </div>
+
+          {sources.length > 1 && (
+            <div className="rounded-xl border border-border bg-surface-muted p-3">
+              <p className="text-xs font-semibold text-warm-brown">Screenshots, top of the page first</p>
+              <ol className="mt-2 space-y-1">
+                {sources.map((source, index) => (
+                  <li key={`${source.name}-${source.lastModified}-${index}`} className="flex min-h-9 items-center gap-2 rounded-lg bg-surface px-2 text-xs">
+                    <span className="w-4 shrink-0 text-center font-semibold tabular-nums text-muted">{index + 1}</span>
+                    <span className="min-w-0 flex-1 truncate">{source.name}</span>
+                    <button type="button" aria-label={`Move screenshot ${index + 1} up`} disabled={index === 0 || joining} onClick={() => moveSource(index, -1)} className="flex h-8 w-8 items-center justify-center rounded-md text-accent-strong hover:bg-surface-muted disabled:opacity-30"><ChevronUp aria-hidden="true" className="h-4 w-4" /></button>
+                    <button type="button" aria-label={`Move screenshot ${index + 1} down`} disabled={index === sources.length - 1 || joining} onClick={() => moveSource(index, 1)} className="flex h-8 w-8 items-center justify-center rounded-md text-accent-strong hover:bg-surface-muted disabled:opacity-30"><ChevronDown aria-hidden="true" className="h-4 w-4" /></button>
+                  </li>
+                ))}
+              </ol>
+              <p role="status" className="mt-2 text-xs text-muted">
+                {joining
+                  ? "Joining screenshots…"
+                  : joinNote
+                    ? `Joined ${joinNote.count - joinNote.duplicates} screenshots into one page${joinNote.duplicates ? `, skipping ${joinNote.duplicates} repeated ${joinNote.duplicates === 1 ? "copy" : "copies"}` : ""}. Check the preview below.`
+                    : ""}
+              </p>
+              {joinNote && joinNote.unaligned.length > 0 && (
+                <p className="mt-1 rounded-lg bg-warning/10 px-2 py-1.5 text-xs text-warning">
+                  {joinNote.unaligned.length === 1 ? `Screenshot ${joinNote.unaligned[0]} didn’t` : `Screenshots ${joinNote.unaligned.join(", ")} didn’t`} line up with the one before, so both were kept whole. Check the order, or look for repeated entries in the review.
+                </p>
+              )}
+            </div>
+          )}
 
           {previewUrl && (
             <details className="overflow-hidden rounded-xl border border-border bg-surface-muted">
@@ -1125,7 +1253,7 @@ export default function CaretakerImportModal({
 
           {error && <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
           {resumeBatchId && <button type="button" disabled={Boolean(busy)} onClick={() => { void resumePreviousReview(); }} className="min-h-12 w-full rounded-xl border border-terracotta px-4 py-3 text-sm font-semibold text-accent-strong disabled:opacity-45">{busy === "refresh" ? "Opening review…" : "Resume previous review"}</button>}
-          <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || !selectedDate || (needsCareEnd && !careEndedAt)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
+          <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || joining || !selectedDate || (needsCareEnd && !careEndedAt)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
             <ImageUp aria-hidden="true" className="h-5 w-5" />{needsCareEnd ? "End care & read screenshot" : (stageAttemptRef.current?.lines ? "Retry preparing review" : "Read screenshot")}
           </button>
         </div>

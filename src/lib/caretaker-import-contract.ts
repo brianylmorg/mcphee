@@ -1,4 +1,7 @@
 export const CARETAKER_IMPORT_MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+/** Each screenshot picked for joining; the joined image must still fit MAX_IMAGE_BYTES. */
+export const CARETAKER_IMPORT_MAX_SOURCE_BYTES = 12 * 1024 * 1024;
+export const CARETAKER_IMPORT_MAX_SCREENSHOTS = 8;
 export const CARETAKER_IMPORT_MAX_REQUEST_BYTES = 4_400_000;
 export const CARETAKER_IMPORT_MAX_JSON_BYTES = 128 * 1024;
 export const CARETAKER_IMPORT_MAX_OCR_LINES = 250;

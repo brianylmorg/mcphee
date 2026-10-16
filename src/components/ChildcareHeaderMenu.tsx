@@ -46,7 +46,7 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         aria-label={statusLabel}
         title={statusLabel}
         onClick={() => dialogRef.current?.showModal()}
-        className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-danger/10 hover:bg-danger/15" : "hover:bg-surface-muted"}`}
+        className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40"
       >
         <StorybookBalloon active={isActive} className="h-9 w-8" />
       </button>

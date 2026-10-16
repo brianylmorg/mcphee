@@ -786,3 +786,29 @@ body {
   user-select: none;
   transition: opacity 200ms ease, filter 200ms ease;
 }
+
+/* Milk card reads at a glance: a large day total and comfortable secondary lines. */
+.milk-consumption-card .glance-primary-value {
+  font-size: 40px;
+  line-height: 44px;
+}
+.milk-consumption-card .glance-value-unit {
+  font-size: 15px;
+  line-height: 20px;
+}
+.milk-consumption-card .latest-entries-title {
+  font-size: 14px;
+  line-height: 22px;
+}
+.milk-consumption-card .latest-entries-newest,
+.milk-consumption-card .latest-feed-row {
+  font-size: clamp(14px, 4.2vw, 16px);
+  line-height: 22px;
+}
+[data-care-overview="true"] .baby-face img {
+  height: 44px;
+  width: 40px;
+}
+[data-care-overview="true"] .baby-identity-row {
+  gap: 8px;
+}

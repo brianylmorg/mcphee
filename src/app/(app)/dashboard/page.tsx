@@ -1656,12 +1656,11 @@ export default function DashboardPage() {
           >
             <RotateCw aria-hidden="true" className={`h-4 w-4 ${refreshFeedback?.kind === "refreshing" ? "animate-spin motion-reduce:animate-none" : ""}`} />
           </button>
-          <div className="dashboard-baby-identity text-center">
-            <div className="dashboard-baby-name flex min-w-0 items-center justify-center gap-1 px-10">
-              <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
-                {(closeCareMenu) => <>{baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}{renderHouseholdSettings(closeCareMenu)}</>}
-              </BabyCareMenu>
-              {baby?.id && childcareMode.schemaReady && (
+          <div className="dashboard-baby-identity pr-10">
+              <BabyCareMenu
+                name={baby?.name || "Baby"}
+                active={Boolean(sickMode?.activeEpisode)}
+                accessory={baby?.id && childcareMode.schemaReady && (
                 <ChildcareHeaderMenu
                   key={baby.id}
                   babyName={baby.name || "Baby"}
@@ -1680,20 +1679,24 @@ export default function DashboardPage() {
                   importOpen={showCaretakerImport}
                 />
               )}
-            </div>
-            <p className="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-center text-sm text-warm-brown-light">
+                subtitle={
+            <p className="baby-meta flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-warm-brown-light">
               {baby?.birth_date && <span>{formatAge(baby.birth_date)}</span>}
               {baby?.birth_date && <span aria-hidden="true" className="text-border">·</span>}
               <Link
                 href="/weight"
                 aria-label={latestWeight ? `Weight ${formatWeight(latestWeight)}, open weight details` : "Add a weight, open weight details"}
-                className="inline-flex min-h-8 items-center gap-1 rounded-md px-1 font-semibold tabular-nums text-accent-strong underline decoration-terracotta/35 decoration-dotted underline-offset-4 transition-colors hover:bg-terracotta/10"
+                className="-mx-1 inline-flex min-h-8 items-center gap-1 rounded-md px-1 font-semibold tabular-nums text-accent-strong underline decoration-terracotta/35 decoration-dotted underline-offset-4 transition-colors hover:bg-terracotta/10"
               >
                 {latestWeight ? formatWeight(latestWeight) : "Add weight"}
                 <LineChart aria-hidden="true" className="h-3.5 w-3.5" />
               </Link>
               {userName && <span aria-label={`Logging as ${userName}`} className="ml-1 border-l border-border pl-2 text-xs">{userName}</span>}
             </p>
+                }
+              >
+                {(closeCareMenu) => <>{baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}{renderHouseholdSettings(closeCareMenu)}</>}
+              </BabyCareMenu>
           </div>
         </div>
       </header>
@@ -1868,14 +1871,14 @@ export default function DashboardPage() {
               <span className="glance-value-unit text-warm-brown-light">ml</span>
             </div>
             <div className="border-l border-border pl-4 text-right">
-              <p className="text-xs text-muted">{activeSickSummary && isSelectedMilkToday ? "Usual daily" : "Expected"}</p>
-              <p className="font-display text-base tabular-nums text-warm-brown">
+              <p className="text-sm text-muted">{activeSickSummary && isSelectedMilkToday ? "Usual daily" : "Expected"}</p>
+              <p className="font-display text-xl tabular-nums text-warm-brown">
                 {selectedExpectedMilkMl ? selectedExpectedMilkMl + " ml" : "-- ml"}
               </p>
             </div>
           </div>}
 
-          <p className="milk-breakdown mt-1 text-xs leading-snug text-muted">
+          <p className="milk-breakdown mt-1 text-sm leading-snug text-muted">
             {selectedMilkSummary.breastmilkMl}ml breastmilk ({breastmilkPercent}%) + {selectedMilkSummary.formulaMl}ml formula ({formulaPercent}%){activeSickSummary && isSelectedMilkToday ? "" : " consumed"}
           </p>
           {activeSickSummary && isSelectedMilkToday && !activeSickSummary.todayFeedDataAvailable && (
@@ -1888,16 +1891,16 @@ export default function DashboardPage() {
             <div className="milk-progress relative mt-3 h-2 rounded-full bg-cream">
               <div className="h-full rounded-full bg-terracotta transition-[width]" style={{ width: selectedExpectedMilkMl ? milkProgress + "%" : "0%" }} />
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs text-muted"><span>Total for day</span><span>{selectedExpectedMilkMl ? milkProgress + "%" : "Target pending"}</span></div>
+            <div className="mt-2 flex items-center justify-between text-sm text-muted"><span>Total for day</span><span>{selectedExpectedMilkMl ? milkProgress + "%" : "Target pending"}</span></div>
           </>}
 
           <div className="milk-comparison mt-2 flex items-center justify-between gap-3">
-            <p className="min-w-0 text-left text-xs text-muted">
-              <span className="font-semibold tabular-nums text-warm-brown">{comparisonMilkSummary?.asOfNowMl ?? 0}ml</span>
+            <p className="min-w-0 text-left text-sm text-muted">
+              <span className="text-base font-semibold tabular-nums text-warm-brown">{comparisonMilkSummary?.asOfNowMl ?? 0}ml</span>
               {comparisonDelta && (
                 <span
                   title="Today vs this reference: volume and percent difference"
-                  className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(comparisonDelta.pct)}`}
+                  className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 align-middle text-xs font-semibold tabular-nums ${deltaBadgeClass(comparisonDelta.pct)}`}
                 >
                   {comparisonDelta.ml} · {comparisonDelta.pct}
                 </span>
@@ -1930,12 +1933,12 @@ export default function DashboardPage() {
 
           <div className="milk-median mt-1 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center">
-              <p className="min-w-0 text-left text-xs text-muted">
-                <span className="font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>
+              <p className="min-w-0 text-left text-sm text-muted">
+                <span className="text-base font-semibold tabular-nums text-warm-brown">{asOfMedianMl == null ? "--" : asOfMedianMl}ml</span>
                 {medianDelta && (
                   <span
                     title="Today vs this reference: volume and percent difference"
-                    className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 align-middle text-[10px] font-semibold tabular-nums ${deltaBadgeClass(medianDelta.pct)}`}
+                    className={`ml-1.5 inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 align-middle text-xs font-semibold tabular-nums ${deltaBadgeClass(medianDelta.pct)}`}
                   >
                     {medianDelta.ml} · {medianDelta.pct}
                   </span>
