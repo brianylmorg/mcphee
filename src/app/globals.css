@@ -198,6 +198,9 @@ html[data-care-mode="sick"][data-theme="dark"] {
   --sb-wall-rim: 196 160 120;
   --sb-door: 136 166 120;
   --sb-window: 255 220 140;
+  --sb-lemon: 250 220 80;
+  --sb-lemon-rim: 214 172 40;
+  --sb-trunk: 140 104 74;
   /* Soft wash behind the baby face: butter and sage at home, rose at childcare. */
   --sb-halo-home-inner: 250 226 160;
   --sb-halo-home-outer: 190 214 170;
@@ -730,6 +733,12 @@ body {
   .baby-identity-row h1 {
     font-size: 21px;
   }
+  .baby-meta {
+    font-size: 13px;
+  }
+  .dashboard-baby-identity {
+    padding-left: 0;
+  }
 }
 
 /* Home cottage: smoke drifts up from the chimney, the window glows softly. */
@@ -753,6 +762,20 @@ body {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 0.95; }
 }
+/* The cottage sits behind the face: its right side fades out under it. */
+.sb-home {
+  -webkit-mask-image: linear-gradient(to right, #000 38%, rgb(0 0 0 / 0.55) 58%, transparent 80%);
+  mask-image: linear-gradient(to right, #000 38%, rgb(0 0 0 / 0.55) 58%, transparent 80%);
+}
+.sb-tree-sway {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: sb-tree-sway 5s ease-in-out infinite;
+}
+@keyframes sb-tree-sway {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2.5deg); }
+}
 /* Watercolour wash fading out around the baby face. */
 .baby-face-halo {
   position: absolute;
@@ -771,7 +794,8 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-smoke-puff,
-  .sb-window-glow {
+  .sb-window-glow,
+  .sb-tree-sway {
     animation: none;
   }
 }

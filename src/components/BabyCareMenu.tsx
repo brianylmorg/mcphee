@@ -4,11 +4,13 @@ import { useRef, type ReactNode } from "react";
 import Image from "next/image";
 import { ChevronDown, X } from "lucide-react";
 
-export default function BabyCareMenu({ name, active, accessory, subtitle, faceTone, children }: {
+export default function BabyCareMenu({ name, active, accessory, accessoryPlacement = "tuck", subtitle, faceTone, children }: {
   name: string;
   active: boolean;
-  /** Tucked against the top-left of the baby's face, e.g. the childcare balloon. */
+  /** Childcare control drawn with the face: the home cottage or the balloon. */
   accessory?: ReactNode;
+  /** "behind": in the row, partly covered by the face (cottage); "tuck": held at its top-left (balloon). */
+  accessoryPlacement?: "tuck" | "behind";
   /** Second line under the name: age, weight and who is logging. */
   subtitle?: ReactNode;
   /** Colours the watercolour wash behind the face: at home or at childcare. */
@@ -27,14 +29,17 @@ export default function BabyCareMenu({ name, active, accessory, subtitle, faceTo
   return (
     <>
       <div className="baby-identity-row flex min-w-0 items-center justify-center gap-3">
-        <span className="relative shrink-0">
+        {accessory && accessoryPlacement === "behind" && (
+          <span className="baby-home-backdrop relative z-0 -mr-12 shrink-0">{accessory}</span>
+        )}
+        <span className="relative z-10 shrink-0">
           {faceTone && <span aria-hidden="true" data-tone={faceTone} className="baby-face-halo" />}
           {/* The face is a second, pointer-only way into the same menu as the name. */}
           <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face relative block rounded-2xl transition-transform active:scale-95">
             <Image src="/icon.svg" alt="" width={72} height={80} priority className="h-16 w-14 object-contain" />
           </button>
           {/* Held at the face's top-left like a balloon on a string. */}
-          {accessory && <span className="absolute -left-8 -top-2 z-10">{accessory}</span>}
+          {accessory && accessoryPlacement === "tuck" && <span className="absolute -left-8 -top-2 z-10">{accessory}</span>}
         </span>
         <div className="min-w-0 text-left">
           <div className="flex min-w-0 items-center gap-1">

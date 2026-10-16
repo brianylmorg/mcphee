@@ -201,42 +201,78 @@ export function StorybookBalloon({ active, className = "" }: { active: boolean; 
   );
 }
 
-/** At home: a little watercolour cottage with a glowing window and chimney smoke. */
+/**
+ * At home: a lemon cottage drawn wide enough to sit behind the baby face. The
+ * left side (lemon tree, window, door) shows; the right side fades out under
+ * the face via a CSS mask on `.sb-home`.
+ */
 export function StorybookHome({ className = "" }: { className?: string }) {
   const id = useSvgId("sbhome");
+  const lemon = (x: number, y: number, r = 0) => (
+    <g key={`${x}-${y}`} transform={`translate(${x} ${y}) rotate(${r})`}>
+      <ellipse rx="2.6" ry="1.9" fill="rgb(var(--sb-lemon))" />
+      <ellipse rx="2.6" ry="1.9" fill="none" stroke="rgb(var(--sb-lemon-rim))" strokeWidth="0.5" opacity="0.7" />
+      <circle cx="-0.9" cy="-0.6" r="0.6" fill="rgb(255 255 255 / 0.7)" />
+    </g>
+  );
   return (
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 40 40" className={`sb-home ${className}`}>
+    <svg aria-hidden="true" focusable="false" viewBox="-5 -2 93 66" className={`sb-home ${className}`}>
       <WatercolourDefs id={id} />
       <radialGradient id={`${id}-glow`} cx="0.5" cy="0.5" r="0.5">
-        <stop offset="0" stopColor="rgb(var(--sb-sun))" stopOpacity="0.95" />
-        <stop offset="1" stopColor="rgb(var(--sb-sun))" stopOpacity="0" />
+        <stop offset="0" stopColor="rgb(var(--sb-window))" stopOpacity="0.95" />
+        <stop offset="1" stopColor="rgb(var(--sb-window))" stopOpacity="0" />
       </radialGradient>
-      {/* chimney smoke */}
-      <g className="sb-smoke" fill="rgb(var(--sb-cloud-shade))" opacity="0.8">
-        <circle className="sb-smoke-puff sb-smoke-1" cx="27.5" cy="7" r="2" />
-        <circle className="sb-smoke-puff sb-smoke-2" cx="29" cy="4" r="1.5" />
+
+      {/* ground wash */}
+      <g filter={`url(#${id}-edge)`}>
+        <path d="M0 60 q22 -4 44 -1 t44 0 V64 H0z" fill="rgb(var(--sb-meadow))" opacity="0.85" />
       </g>
+
+      {/* chimney smoke */}
+      <g fill="rgb(var(--sb-cloud-shade))" opacity="0.85">
+        <circle className="sb-smoke-puff sb-smoke-1" cx="59" cy="9" r="2.6" />
+        <circle className="sb-smoke-puff sb-smoke-2" cx="61" cy="5" r="2" />
+      </g>
+
       <g filter={`url(#${id}-edge)`}>
         {/* chimney */}
-        <rect x="25.5" y="9" width="4" height="7" rx="0.8" fill="rgb(var(--sb-roof-deep))" />
+        <rect x="55.5" y="12" width="6" height="11" rx="1" fill="rgb(var(--sb-roof-deep))" />
         {/* walls */}
-        <path d="M9 19.5 h22 v13.5 a1.5 1.5 0 0 1 -1.5 1.5 h-19 a1.5 1.5 0 0 1 -1.5 -1.5z" fill="rgb(var(--sb-wall))" />
-        <path d="M9 19.5 h22 v13.5 a1.5 1.5 0 0 1 -1.5 1.5 h-19 a1.5 1.5 0 0 1 -1.5 -1.5z" fill="none" stroke="rgb(var(--sb-wall-rim))" strokeWidth="1" opacity="0.6" />
+        <path d="M24 30 h46 v26 a2 2 0 0 1 -2 2 h-42 a2 2 0 0 1 -2 -2z" fill="rgb(var(--sb-wall))" />
+        <path d="M24 30 h46 v26 a2 2 0 0 1 -2 2 h-42 a2 2 0 0 1 -2 -2z" fill="none" stroke="rgb(var(--sb-wall-rim))" strokeWidth="1.1" opacity="0.55" />
         {/* roof */}
-        <path d="M5.5 21 L20 8.5 L34.5 21 q-1 1.4 -2.6 0.6 L20 11.6 L8.1 21.6 q-1.6 0.8 -2.6 -0.6z" fill="rgb(var(--sb-roof-deep))" />
-        <path d="M7 20.6 L20 9.6 L33 20.6 L20 13.4z" fill="rgb(var(--sb-roof))" />
-        {/* door */}
-        <path d="M17 34.5 v-7 a3 3 0 0 1 6 0 v7z" fill="rgb(var(--sb-door))" />
-        <circle cx="21.6" cy="31" r="0.55" fill="rgb(var(--sb-sun))" />
-        {/* round window */}
-        <circle cx="13.6" cy="25.4" r="2.8" fill="rgb(var(--sb-window))" />
-        <path d="M13.6 22.6 v5.6 M10.8 25.4 h5.6" stroke="rgb(var(--sb-wall-rim))" strokeWidth="0.7" opacity="0.7" />
-        {/* bush */}
-        <path d="M27 34.5 a3 3 0 0 1 2 -4.6 a2.6 2.6 0 0 1 4.6 1.2 a2.2 2.2 0 0 1 0.4 3.4z" fill="rgb(var(--sb-meadow-deep))" />
-        {/* ground wash */}
-        <path d="M4 35 q16 -2.2 32 0 v1.2 q-16 1.6 -32 0z" fill="rgb(var(--sb-meadow))" opacity="0.8" />
+        <path d="M18 32 L47 9 L76 32 q-1.6 2 -4 0.8 L47 13.6 L22 32.8 q-2.4 1.2 -4 -0.8z" fill="rgb(var(--sb-roof-deep))" />
+        <path d="M20.5 31.2 L47 10.6 L73.5 31.2 L47 17z" fill="rgb(var(--sb-roof))" />
+        {/* round window with lemon-yellow frame and shutters */}
+        <rect x="27" y="36" width="3.4" height="10" rx="1" fill="rgb(var(--sb-lemon))" />
+        <rect x="42.6" y="36" width="3.4" height="10" rx="1" fill="rgb(var(--sb-lemon))" />
+        <circle cx="36.5" cy="41" r="5.6" fill="rgb(var(--sb-lemon-rim))" />
+        <circle cx="36.5" cy="41" r="4.6" fill="rgb(var(--sb-window))" />
+        <path d="M36.5 36.4 v9.2 M31.9 41 h9.2" stroke="rgb(var(--sb-wall-rim))" strokeWidth="0.8" opacity="0.7" />
+        {/* door with a lemon wreath */}
+        <path d="M51 58 v-12 a5 5 0 0 1 10 0 v12z" fill="rgb(var(--sb-door))" />
+        <circle cx="56" cy="47" r="2.6" fill="none" stroke="rgb(var(--sb-meadow-deep))" strokeWidth="1.2" />
+        <circle cx="56" cy="44.6" r="0.9" fill="rgb(var(--sb-lemon))" />
+        <circle cx="58.3" cy="47.6" r="0.9" fill="rgb(var(--sb-lemon))" />
+        <circle cx="53.8" cy="47.8" r="0.9" fill="rgb(var(--sb-lemon))" />
+        <circle cx="59.6" cy="52.5" r="0.6" fill="rgb(var(--sb-sun))" />
       </g>
-      <circle className="sb-window-glow" cx="13.6" cy="25.4" r="4.4" fill={`url(#${id}-glow)`} />
+      <circle className="sb-window-glow" cx="36.5" cy="41" r="7.5" fill={`url(#${id}-glow)`} />
+
+      {/* lemon tree on the visible left edge */}
+      <g filter={`url(#${id}-edge)`}>
+        <path d="M11 60 q1 -9 -0.4 -18" stroke="rgb(var(--sb-trunk))" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+      </g>
+      <g className="sb-tree-sway">
+        <g filter={`url(#${id}-edge)`}>
+          <circle cx="10.5" cy="34" r="9.5" fill="rgb(var(--sb-meadow-deep))" />
+          <circle cx="5.5" cy="38" r="6" fill="rgb(var(--sb-meadow))" />
+          <circle cx="16" cy="38.5" r="6" fill="rgb(var(--sb-meadow))" />
+        </g>
+        {[lemon(6.5, 33, -20), lemon(13.5, 30, 15), lemon(15.5, 39.5, -10), lemon(8, 41, 25)]}
+      </g>
+      {/* a fallen lemon */}
+      {lemon(19, 59.5, 10)}
     </svg>
   );
 }
