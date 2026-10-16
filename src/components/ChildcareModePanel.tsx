@@ -265,8 +265,21 @@ export default function ChildcareModePanel({
                 Edit check-in
               </button>
             </div>
+            <p className="mt-1 break-words text-xs text-muted">
+              Adding an activity will ask for confirmation.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleAction}
+            disabled={busy || editingCheckIn}
+            className={primaryButtonClass}
+          >
+            <LogOut aria-hidden="true" className="h-4 w-4 shrink-0" />
+            Check out
+          </button>
             {editingCheckIn && (
-              <div className="mt-2 min-w-0 rounded-lg border border-border bg-surface p-2.5">
+              <div className="w-full min-w-0 basis-full rounded-lg border border-border bg-surface p-2.5">
                 <label
                   htmlFor="childcare-edit-checkin-time"
                   className="text-xs font-medium text-warm-brown"
@@ -305,19 +318,6 @@ export default function ChildcareModePanel({
                 </div>
               </div>
             )}
-            <p className="mt-1 break-words text-xs text-muted">
-              Adding an activity will ask for confirmation.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleAction}
-            disabled={busy || editingCheckIn}
-            className={primaryButtonClass}
-          >
-            <LogOut aria-hidden="true" className="h-4 w-4 shrink-0" />
-            Check out
-          </button>
         </div>
       ) : (
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
