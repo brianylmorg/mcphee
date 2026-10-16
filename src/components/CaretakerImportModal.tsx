@@ -1287,7 +1287,7 @@ export default function CaretakerImportModal({
                 <li>Deduct {selectedBreastmilk} ml from breastmilk bank</li>
               </ul>
             )}
-            <button type="button" disabled={Boolean(busy) || !reviewConfirmed} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
+            <button type="button" disabled={Boolean(busy) || !reviewConfirmed || (hasSavedReview && !reviewDirty)} onClick={() => { void saveReview(); }} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold ${hasSavedReview && !reviewDirty ? "border-border bg-surface-muted text-muted" : "border-terracotta-dark bg-terracotta-dark text-white hover:bg-warm-brown"} disabled:border-border disabled:bg-surface-muted disabled:text-muted`}>
               {busy === "save" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-4 w-4" />}
               {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Care review saved" : "Save care review"}
             </button>
