@@ -16,8 +16,10 @@ test("awake fills the toggle with the current state, its timer and a switch to s
   assert.match(html, /data-state="awake"/);
   assert.match(html, />Awake</);
   assert.equal((html.match(/>1:20</g) ?? []).length, 1);
-  // One action: switch to the other state.
+  // The other state peeks in on the right as the single action.
   assert.equal((html.match(/<button/g) ?? []).length, 1);
+  assert.match(html, /data-scene="awake" data-role="current"/);
+  assert.match(html, /data-scene="sleeping" data-role="peek"/);
   assert.match(html, /aria-label="Set state to Sleeping"/);
   assert.match(html, />Sleep</);
   assert.doesNotMatch(html, /aria-label="Set state to Awake"/);
@@ -28,14 +30,17 @@ test("sleeping offers a wake-up switch and keeps the timer", () => {
   assert.match(html, /data-state="sleeping"/);
   assert.match(html, />Sleeping</);
   assert.match(html, />0:42</);
+  assert.match(html, /data-scene="sleeping" data-role="current"/);
+  assert.match(html, /data-scene="awake" data-role="peek"/);
   assert.match(html, /aria-label="Set state to Awake"[^>]*disabled=""/);
   assert.match(html, />Wake up</);
 });
 
-test("both scenes stay mounted (for the crossfade) and are hidden from assistive tech", () => {
+test("both scenes stay mounted (for the carousel) and are hidden from assistive tech", () => {
   const html = renderToStaticMarkup(createElement(SleepStateControl, { state: "awake", elapsedLabel: "0:05", disabled: false, onSelect: () => undefined }));
-  assert.match(html, /aria-hidden="true" class="sleep-scene sleep-scene-day"/);
-  assert.match(html, /aria-hidden="true" class="sleep-scene sleep-scene-night"/);
+  assert.equal((html.match(/aria-hidden="true" class="sleep-scene"/g) ?? []).length, 2);
+  assert.match(html, /sb-painted-day/);
+  assert.match(html, /sb-painted-night/);
   assert.match(html, /class="sb-sun-arc sb-pos"/);
   assert.match(html, /class="sb-moon-arc sb-pos"/);
   assert.match(html, /sb-bee-path/);

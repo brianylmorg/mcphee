@@ -245,66 +245,55 @@ html[data-care-mode="sick"][data-theme="dark"] {
   --scene-day-text: 255 244 224;
 }
 
-/* Full-width sleep toggle: the current state's scene fills the control. */
+/* Sleep toggle carousel: the current scene fills the control and the other
+   peeks in on the right through a soft gradient. Choosing the peek slides
+   everything left; the scene just left glides back in from the right. */
+.sleep-panel {
+  transition: transform 900ms cubic-bezier(0.65, 0, 0.25, 1);
+  will-change: transform;
+}
+.sleep-panel[data-role="current"] { transform: translateX(0); z-index: 1; }
+.sleep-panel[data-role="peek"] {
+  transform: translateX(66%);
+  z-index: 2;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, rgb(0 0 0 / 0.65) 9%, #000 18%);
+  mask-image: linear-gradient(to right, transparent 0, rgb(0 0 0 / 0.65) 9%, #000 18%);
+}
+.sleep-panel[data-role="leaving"] { transform: translateX(-100%); z-index: 1; }
+.sleep-panel[data-role="parked"] { transform: translateX(100%); transition: none; z-index: 2; }
+/* In the peek the scene shows its own left edge, so the CTA sits there. */
+.sleep-panel[data-role="peek"] .sleep-peek-cta,
+.sleep-panel[data-role="parked"] .sleep-peek-cta {
+  left: 0;
+  right: auto;
+}
+.sleep-panel[data-role="leaving"] .sleep-peek-cta { opacity: 0; }
 .sleep-scene {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  transition: opacity 1100ms ease;
 }
-.sleep-scene .sb-art {
-  display: block;
-  width: 100%;
-  height: 100%;
+/* The painted meadow stays light in both themes, so its text is always dark. */
+.sleep-panel[data-scene="awake"] { color: rgb(88 56 26); }
+.sleep-panel[data-scene="sleeping"] { color: rgb(var(--scene-night-text)); }
+/* A faint frosted wash behind the label and timer: lifts them off the art
+   without reading as a box. */
+.sleep-status-backing {
+  background: radial-gradient(closest-side, rgb(255 250 238 / 0.55), rgb(255 250 238 / 0.18) 70%, transparent);
+  backdrop-filter: blur(1.5px);
 }
-.sleep-toggle[data-state="awake"] .sleep-scene-night,
-.sleep-toggle[data-state="sleeping"] .sleep-scene-day {
-  opacity: 0;
+.sleep-panel[data-scene="sleeping"] .sleep-status-backing {
+  background: radial-gradient(closest-side, rgb(34 38 80 / 0.5), rgb(34 38 80 / 0.16) 70%, transparent);
 }
-/* Sunset / moonrise: the sun sinks out as night fades in, and rises back. */
-.sb-sun-arc,
-.sb-moon-arc {
-  transition: transform 1300ms cubic-bezier(0.45, 0, 0.2, 1);
+.sleep-peek-cta {
+  text-shadow: 0 0 6px rgb(255 250 238 / 0.9);
 }
-.sleep-toggle[data-state="sleeping"] .sb-sun-arc {
-  transform: translateY(70px);
+.sleep-panel[data-scene="sleeping"] .sleep-peek-cta {
+  text-shadow: 0 0 6px rgb(30 34 72 / 0.95);
 }
-.sleep-toggle[data-state="awake"] .sb-moon-arc {
-  transform: translateY(70px);
-}
-.sleep-toggle-content {
-  transition: color 900ms ease;
-}
-.sleep-toggle[data-state="awake"] .sleep-toggle-content {
-  color: rgb(var(--scene-day-text));
-  text-shadow: 0 0 8px rgb(var(--sb-day-sky-top) / 0.95);
-}
-.sleep-toggle[data-state="sleeping"] .sleep-toggle-content {
-  color: rgb(var(--scene-night-text));
-  text-shadow: 0 0 8px rgb(var(--sb-night-top) / 0.95);
-}
-.sleep-toggle .sleep-elapsed {
-  opacity: 0.95;
-}
-.sleep-toggle[data-state="awake"] .sleep-switch {
-  border-color: rgb(var(--sb-night-top) / 0.25);
-  background-color: rgb(var(--sb-night-top) / 0.82);
-  color: rgb(var(--scene-night-text));
-  text-shadow: none;
-}
-.sleep-toggle[data-state="sleeping"] .sleep-switch {
-  border-color: rgb(var(--sb-day-sky-top) / 0.5);
-  background-color: rgb(var(--sb-day-sky-top) / 0.9);
-  color: rgb(var(--scene-day-text));
-  text-shadow: none;
-}
+.sleep-peek-cta:not(:disabled):active { transform: scale(0.97); }
 @media (prefers-reduced-motion: reduce) {
-  .sleep-scene,
-  .sb-sun-arc,
-  .sb-moon-arc,
-  .sleep-toggle-content {
-    transition: none;
-  }
+  .sleep-panel { transition: none; }
 }
 
 .sb-art * {
@@ -827,6 +816,8 @@ body {
   height: 100%;
   object-fit: cover;
   object-position: center bottom;
+  /* the washes are very pale at this size: bring the pigment forward a touch */
+  filter: contrast(1.1) saturate(1.25);
 }
 .sb-pos {
   position: absolute;
@@ -890,11 +881,10 @@ body {
   to { transform: translateX(26px); }
 }
 @keyframes sb-bee-fly {
-  0%, 100% { transform: translate(-30px, 4px) rotate(-6deg); }
-  20% { transform: translate(10px, -10px) rotate(4deg); }
-  40% { transform: translate(52px, 0) rotate(8deg); }
-  60% { transform: translate(18px, 8px) scaleX(-1) rotate(-4deg); }
-  80% { transform: translate(-20px, -6px) scaleX(-1) rotate(4deg); }
+  0%, 100% { transform: translate(-26px, 4px) rotate(-5deg); }
+  25% { transform: translate(6px, -9px) rotate(4deg); }
+  50% { transform: translate(40px, -1px) rotate(7deg); }
+  75% { transform: translate(10px, 7px) rotate(-3deg); }
 }
 @keyframes sb-flap-a { 0% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes sb-flap-b { 0% { opacity: 0; } 50% { opacity: 1; } }
@@ -922,4 +912,22 @@ body {
   .sb-bee-frame-b { animation: none; opacity: 0; }
   .sb-zz { animation: none; opacity: 0.7; }
   .sb-smoke-rise { opacity: 0.7; }
+}
+
+/* Sunny glow around the baby face (a warm, Teletubbies-sun halo). */
+.baby-face-glow {
+  position: absolute;
+  inset: -12px -14px -10px;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgb(255 222 110 / 0.85), rgb(255 206 84 / 0.45) 55%, rgb(255 200 80 / 0) 100%);
+  filter: blur(4px);
+  animation: baby-face-glow 5s ease-in-out infinite;
+}
+@keyframes baby-face-glow {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .baby-face-glow { animation: none; }
 }

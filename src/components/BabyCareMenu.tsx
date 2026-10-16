@@ -31,6 +31,8 @@ export default function BabyCareMenu({ name, active, accessory, accessoryPlaceme
           <span className="baby-home-backdrop relative z-0 -mr-12 shrink-0">{accessory}</span>
         )}
         <span className="relative z-10 shrink-0">
+          {/* A warm, sunny glow around the face in every state and theme. */}
+          <span aria-hidden="true" className="baby-face-glow" />
           {/* The face is a second, pointer-only way into the same menu as the name. */}
           <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face relative block rounded-2xl transition-transform active:scale-95">
             <Image src="/icon.svg" alt="" width={72} height={80} priority className="h-16 w-14 object-contain" />

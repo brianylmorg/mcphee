@@ -69,13 +69,13 @@ export function StorybookDay({ className = "" }: { className?: string }) {
   return (
     <span aria-hidden="true" className={`sb-painted sb-painted-day ${className}`}>
       <Layer src="awake-backdrop.webp" className="sb-backdrop" />
-      <span className="sb-sun-arc sb-pos" style={{ left: "46%", top: "6%", width: "17%" }}>
+      <span className="sb-sun-arc sb-pos" style={{ left: "46%", top: "-10%", width: "17%" }}>
         <Layer src="sun.webp" className="sb-sun-glow" />
       </span>
       <span className="sb-pos sb-cloud-drift sb-cloud-a" style={{ left: "2%", top: "4%", width: "22%" }}><Layer src="cloud-1.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-b" style={{ left: "28%", top: "-6%", width: "15%" }}><Layer src="cloud-2.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-c" style={{ left: "76%", top: "0%", width: "18%" }}><Layer src="cloud-3.webp" /></span>
-      <span className="sb-pos sb-bee-path" style={{ left: "34%", top: "58%", width: "5.6%" }}>
+      <span className="sb-pos sb-bee-path" style={{ left: "52%", top: "56%", width: "5.6%" }}>
         <Layer src="bee-up.webp" className="sb-bee-frame sb-bee-frame-a" />
         <Layer src="bee-down.webp" className="sb-bee-frame sb-bee-frame-b" />
       </span>
