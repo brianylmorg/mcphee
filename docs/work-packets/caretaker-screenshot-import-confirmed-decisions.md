@@ -425,3 +425,99 @@ time. Active sick-mode saved reference and baseline calculation are unchanged.
 - Final live browser also passed the same post-sick 70 ml median and 320/390px
   checks using intercepted synthetic APIs, with zero page errors or live writes.
   Work packet remains local; no private-source Git history was pushed.
+
+
+## Explicit childcare check-in/out — production rollout 2026-10-16
+
+User requested a shared childcare mode: check-in/out, a clear in-childcare banner,
+checkout prompt for the original childcare-app screenshot, and dimmed activity
+entry actions with an explicit add-anyway confirmation. They reiterated using
+DeepSeek workers.
+
+Final behavior and boundaries:
+
+- Canonical `childcare_sessions` persists active and closed care times, recording
+  members, command request IDs, pending import and committed-batch linkage.
+  Household/member/baby checks and same-origin checks protect mode commands.
+  One active session per baby is enforced by a partial unique index; atomic SQL
+  prevents overlapping open sessions. Concurrent identical commands replay
+  safely. Checkout carries the intended session ID so a stale screen cannot end
+  a newer session. Known rejected commands clear UI retry identity; uncertain
+  network outcomes preserve it.
+- The banner and all pending imports survive refresh. Mode changes themselves
+  create no feeding/sleep records and change no milk stock. Check-out closes the
+  mode immediately and prompts screenshot import; cancelling leaves a visible
+  pending import for later. Every pending closed session stays discoverable.
+- Default check-in/out uses now. Optional Singapore datetime controls support
+  recorded times if a tap was missed, independent of browser timezone. Sources
+  remain single-day: cross-date checkout is rejected without closing the session
+  and explains how to record the actual checkout on the check-in date. This is
+  a same-day infant-care workflow, not overnight-care support.
+- New diary entries, breastfeeding start/completion, sleep/wake changes and
+  medication doses require explicit childcare consent. Dimming remains clickable.
+  Server-side guards run inside creation transactions. A stale screen receiving
+  `CHILDCARE_CONFIRMATION_REQUIRED` prompts unconditionally and retries the exact
+  request with the override only after acceptance. Historical edits/deletes,
+  undo, medication prescription metadata and milk-bank management stay available.
+- Linked screenshot imports prefill/fix the recorded care date and range, while
+  retaining mandatory review, full nap-history confirmation, blue exclusions,
+  confidence/duplicate validation and breastmilk stock validation. Successful
+  commit atomically clears pending and links its batch; failed commits preserve
+  pending and activity/stock data. Lost-response retries do not apply twice.
+- Session boundaries immediately appear in the diary. Linked OCR audit markers
+  are suppressed to preserve one canonical start/end pair. Import attribution
+  stays `childcare`; existing stored member attribution is preserved. Source
+  purge does not remove durable care history/linkage.
+
+Changed files include the new childcare schema/contract/API/server/client and
+session diary projector; dashboard and ChildcareModePanel; importer linkage and
+modal defaults; activity/timer/sleep/dose creation guards; protected migration
+routes; global dimming styles; and focused route/client/panel tests. Existing
+same-time median behavior and browser-local free OCR remain intact.
+
+Implementation and validation:
+
+- Source revision `4f81070e`. Native Sol implemented the foundation and reviewed
+  the in-progress integration; workers then reached usage quota. Main completed
+  remaining concurrency/session-identity safeguards and integration validation.
+  Isolated DeepSeek Flash workers produced the banner/pending panel, UI tests,
+  optional recorded-time controls and parent wiring. Their shell sandbox is
+  unavailable, so they generated patches from supplied source, mechanically
+  applied and reviewed by main. No claim that DeepSeek implemented the database.
+- Full suite: 216/216 passed. New panel tests 5/5, creation-retry tests 2/2 and
+  mode/linkage integration tests 9/9 cover concurrency, replay, stale checkout,
+  missed checkout recovery, ownership/origin rejection, missing/partial schema,
+  dose/sleep/timer confirmation, bounds, atomic stock failure and marker dedupe.
+- Local production webpack build and remote Turbopack build passed TypeScript.
+  Existing incompatible lint script was not represented as a lint pass.
+- Real local browser/API/SQLite/OCR flow passed with synthetic data and a fixed
+  test clock: persisted check-in banner; cancelled entry creates nothing;
+  checkout prompt; pending after modal close/reload; linked 08:00–13:00 range;
+  two blue exclusions; 275 ml consumed; bank 1000→725; sleep reconciliation;
+  one care marker pair; aborted successful commit then identical safe retry;
+  stale second-device check-in requires confirmation before adding a note.
+  Phone widths 320/390 and a New York browser timezone verified Singapore input
+  semantics, no overflow and no page errors. No real care data was imported.
+
+Deployment:
+
+- Candidate/final deployment `dpl_258CsBXeQbVtDjFYXk7ZQw3LHEjW`,
+  https://mcphee-1nbf4aeis-brianylms-projects.vercel.app, promoted to
+  https://mcphee.vercel.app after verification of no intervening deployment.
+  Primary alias was verified against this final READY deployment.
+- Existing protected caretaker migration endpoint applied the additive childcare
+  table/indexes and nullable batch link. Both schema readiness checks passed.
+  Only the existing MIGRATION_KEY was retrieved via its single-variable API into
+  process memory, and passed to curl through stdin configuration. No decrypted
+  environment export, database credential retrieval or secret file was created.
+- Candidate root returned 200; mode required membership; migration rejected an
+  unauthenticated POST; a nonexistent-household dashboard returned no babies or
+  sessions and confirmed childcare schema readiness. No production mode/activity
+  commands were created for validation.
+- Final live Chromium check passed active banner, dimmed/cancelled activity,
+  checkout opening original screenshot flow, recorded Singapore times, pending
+  after reload and 320/390px layout. All live API responses/writes were intercepted
+  using synthetic fixtures: zero live API writes and zero page errors.
+- No Git push, provider/billing changes, paid OCR, credential rotation or manual
+  notification run. Documentation remains local/excluded from deployment because
+  the work packet contains private source references.
