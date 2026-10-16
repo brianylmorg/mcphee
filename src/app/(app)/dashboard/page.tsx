@@ -19,7 +19,7 @@ import ActivityTimelineCard from "@/components/ActivityTimelineCard";
 import SickModePanel from "@/components/SickModePanel";
 import MedicationLogModal from "@/components/MedicationLogModal";
 import CaretakerImportModal from "@/components/CaretakerImportModal";
-import ChildcareModePanel from "@/components/ChildcareModePanel";
+import ChildcareHeaderMenu from "@/components/ChildcareHeaderMenu";
 import MedicationDoseEditModal from "@/components/MedicationDoseEditModal";
 import MedicationPrescriptionModal from "@/components/MedicationPrescriptionModal";
 import SickMilkProgress from "@/components/SickMilkProgress";
@@ -1502,9 +1502,25 @@ export default function DashboardPage() {
       <header className="dashboard-header bg-surface border-b border-border px-4 py-2 sm:px-5 sm:py-3">
         <div className="dashboard-header-inner mx-auto max-w-lg">
           <div className="dashboard-baby-identity text-center">
-            <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
-              {(closeCareMenu) => baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}
-            </BabyCareMenu>
+            <div className="flex min-w-0 items-center justify-center gap-1">
+              <BabyCareMenu name={baby?.name || "Baby"} active={Boolean(sickMode?.activeEpisode)}>
+                {(closeCareMenu) => baby?.id && <SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} />}
+              </BabyCareMenu>
+              {baby?.id && childcareMode.schemaReady && (
+                <ChildcareHeaderMenu
+                  key={baby.id}
+                  babyName={baby.name || "Baby"}
+                  activeSession={childcareMode.activeSession}
+                  pendingSessions={childcareMode.pendingSessions}
+                  busy={childcareBusy}
+                  error={childcareError}
+                  onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}
+                  onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
+                  onImport={(session) => openCaretakerImport(session)}
+                  importOpen={showCaretakerImport}
+                />
+              )}
+            </div>
             {(baby?.birth_date || latestWeight || userName) && (
               <p className="mt-0.5 text-center text-xs text-warm-brown-light">
                 {baby?.birth_date ? formatAge(baby.birth_date) : ""}
@@ -1580,18 +1596,6 @@ export default function DashboardPage() {
       )}
 
       <div className="dashboard-overview max-w-lg mx-auto px-3 py-3 sm:px-5 sm:py-4 space-y-2">
-        {baby?.id && childcareMode.schemaReady && (
-          <ChildcareModePanel
-            babyName={baby.name || "Baby"}
-            activeSession={childcareMode.activeSession}
-            pendingSessions={childcareMode.pendingSessions}
-            busy={childcareBusy}
-            error={childcareError}
-            onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}
-            onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
-            onImport={(session) => openCaretakerImport(session)}
-          />
-        )}
         <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45") + (childcareMode.activeSession ? " opacity-60" : "")} aria-label="Sleep status">
           <SleepStateControl
             compact={Boolean(sickMode?.activeEpisode)}
