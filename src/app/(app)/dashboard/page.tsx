@@ -1680,7 +1680,7 @@ export default function DashboardPage() {
                 />
               )}
                 subtitle={
-            <p className="baby-meta flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-warm-brown-light">
+            <p className="baby-meta flex items-center gap-x-2 whitespace-nowrap text-sm text-warm-brown-light">
               {baby?.birth_date && <span>{formatAge(baby.birth_date)}</span>}
               {baby?.birth_date && <span aria-hidden="true" className="text-border">·</span>}
               <Link
@@ -1691,7 +1691,6 @@ export default function DashboardPage() {
                 {latestWeight ? formatWeight(latestWeight) : "Add weight"}
                 <LineChart aria-hidden="true" className="h-3.5 w-3.5" />
               </Link>
-              {userName && <span aria-label={`Logging as ${userName}`} className="ml-1 border-l border-border pl-2 text-xs">{userName}</span>}
             </p>
                 }
               >
