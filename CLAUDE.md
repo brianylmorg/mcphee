@@ -90,9 +90,11 @@
 ## Design
 - Warm journal aesthetic, not clinical
 - Light mode: cream/terracotta palette
-- Dark mode: deep warm brown (NOT pure black — 3am friendly!)
-- Display serif: **Fraunces** (headings)
+- Dark mode: not implemented yet (light palette only); goal is deep warm brown, NOT pure black — 3am friendly
+- Sick mode: scoped blue-teal palette (`html[data-care-mode="sick"]`)
+- Display: **Manrope** (headings, card titles)
 - Body sans: **Instrument Sans**
+- Type, spacing and interaction roles: see `docs/UI.md`
 - Generous whitespace, tabular numerics
 - One-tap logging is #1 priority
 
