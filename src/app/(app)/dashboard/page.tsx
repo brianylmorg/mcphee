@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -1679,23 +1679,19 @@ export default function DashboardPage() {
                 />
               )}
             </div>
-            {(baby?.birth_date || latestWeight || userName) && (
-              <p className="mt-0.5 text-center text-xs text-warm-brown-light">
-                {baby?.birth_date ? formatAge(baby.birth_date) : ""}
-                {baby?.birth_date && latestWeight ? " · " : ""}
-                {latestWeight ? formatWeight(latestWeight) : ""}
-                {userName && <span aria-label={`Logging as ${userName}`} className="ml-2 border-l border-border pl-2">{userName}</span>}
-              </p>
-            )}
-          </div>
-          <div className="dashboard-header-tools mt-2 flex items-stretch justify-center gap-3">
-            <Link
-              href="/weight"
-              className="inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-terracotta/30 bg-terracotta/10 px-3 py-2 text-xs font-semibold text-accent-strong shadow-sm transition-colors hover:bg-terracotta/15"
-            >
-              <Scale aria-hidden="true" className="h-4 w-4" />
-              Weight details
-            </Link>
+            <p className="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-center text-sm text-warm-brown-light">
+              {baby?.birth_date && <span>{formatAge(baby.birth_date)}</span>}
+              {baby?.birth_date && <span aria-hidden="true" className="text-border">·</span>}
+              <Link
+                href="/weight"
+                aria-label={latestWeight ? `Weight ${formatWeight(latestWeight)}, open weight details` : "Add a weight, open weight details"}
+                className="inline-flex min-h-8 items-center gap-1 rounded-md px-1 font-semibold tabular-nums text-accent-strong underline decoration-terracotta/35 decoration-dotted underline-offset-4 transition-colors hover:bg-terracotta/10"
+              >
+                {latestWeight ? formatWeight(latestWeight) : "Add weight"}
+                <LineChart aria-hidden="true" className="h-3.5 w-3.5" />
+              </Link>
+              {userName && <span aria-label={`Logging as ${userName}`} className="ml-1 border-l border-border pl-2 text-xs">{userName}</span>}
+            </p>
           </div>
         </div>
       </header>

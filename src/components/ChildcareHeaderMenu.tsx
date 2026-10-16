@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
-import { Balloon, X } from "lucide-react";
+import { X } from "lucide-react";
+import { StorybookBalloon } from "@/components/StorybookArt";
 import ChildcareModePanel, { type ChildcareModePanelProps } from "@/components/ChildcareModePanel";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
@@ -45,16 +46,9 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         aria-label={statusLabel}
         title={statusLabel}
         onClick={() => dialogRef.current?.showModal()}
-        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-danger/15 hover:bg-danger/25" : "hover:bg-surface-muted"}`}
+        className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-danger/10 hover:bg-danger/15" : "hover:bg-surface-muted"}`}
       >
-        <Balloon
-          aria-hidden="true"
-          strokeWidth={1.75}
-          className={`h-6 w-6 text-danger [&>path:first-child]:stroke-muted ${isActive ? "[&>path:last-child]:fill-danger" : "[&>path:last-child]:fill-surface-muted"}`}
-        />
-        {isActive && (
-          <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />
-        )}
+        <StorybookBalloon active={isActive} className="h-9 w-8" />
       </button>
 
       <dialog

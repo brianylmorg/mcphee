@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
+import { StorybookDay, StorybookNight } from "@/components/StorybookArt";
+
 type SleepStateControlProps = {
   state: "awake" | "sleeping";
   elapsedLabel?: string;
@@ -27,26 +29,20 @@ function formatElapsed(ms: number): string {
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-/** Decorative day scene: a glowing sun with clouds drifting behind the label. */
+/** Decorative day scene inside the sliding thumb. */
 function DayScene() {
   return (
     <span aria-hidden="true" className="sleep-scene sleep-scene-day">
-      <span className="sleep-sun" />
-      <span className="sleep-cloud sleep-cloud-1" />
-      <span className="sleep-cloud sleep-cloud-2" />
-      <span className="sleep-cloud sleep-cloud-3" />
+      <StorybookDay />
     </span>
   );
 }
 
-/** Decorative night scene: a crescent moon with twinkling stars. */
+/** Decorative night scene inside the sliding thumb. */
 function NightScene() {
   return (
     <span aria-hidden="true" className="sleep-scene sleep-scene-night">
-      <span className="sleep-moon" />
-      {[1, 2, 3, 4, 5, 6].map((star) => (
-        <span key={star} className={`sleep-star sleep-star-${star}`} />
-      ))}
+      <StorybookNight />
     </span>
   );
 }
@@ -88,7 +84,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                 if (!active) onSelect(optionState);
               }}
               className={"sleep-option relative z-10 flex min-w-0 items-center justify-center rounded-lg font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none disabled:opacity-50 "
-                + (compact ? "min-h-9 gap-1.5 px-2 py-1 text-xs " : "min-h-14 flex-col gap-0 px-3 py-1.5 text-sm ")
+                + (compact ? "min-h-10 gap-1.5 px-2 py-1 text-xs " : "min-h-[4.5rem] flex-col gap-0 px-3 py-1.5 text-sm ")
                 + (active ? "sleep-option-active" : "text-muted hover:text-warm-brown")}
             >
               <span className="flex items-center gap-1.5">
@@ -99,7 +95,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                 <span>{label}</span>
               </span>
               {active && (
-                <span className={"sleep-elapsed font-display font-semibold tabular-nums " + (compact || since == null && elapsedLabel == null ? "text-xs" : "text-lg leading-6")}>
+                <span className={"sleep-elapsed font-display font-semibold tabular-nums " + (since == null && elapsedLabel == null ? "text-xs" : compact ? "text-base leading-5" : "text-[1.75rem] leading-8")}>
                   {displayedElapsed}
                 </span>
               )}
