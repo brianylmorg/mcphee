@@ -1346,9 +1346,10 @@ export default function DashboardPage() {
   const canGoToPreviousComparisonDay = comparisonMilkDate > earliestMilkDate;
   const canGoToNextComparisonDay = asOfDayOffset < -1;
 
-  // Normal mode uses the rolling seven completed days before today. Sick mode
-  // stays pinned to the active episode's saved pre-onset source dates, even if
-  // its live summary is temporarily unavailable or the comparison day changes.
+  // Normal mode uses the latest seven completed non-sick days with milk logs,
+  // looking further back to skip sick and no-log days. Sick mode stays pinned to
+  // the active episode's saved pre-onset source dates, even if its live summary
+  // is temporarily unavailable or the comparison day changes.
   const activeMedianEpisode = sickMode?.schemaReady ? sickMode.activeEpisode : null;
   const medianReference = sameTimeMilkMedianReference(milkHistory, todayDateKey, activeMedianEpisode);
   const medianDataDays = medianReference.days;
@@ -1358,7 +1359,7 @@ export default function DashboardPage() {
     : "";
   const medianInfoText = activeMedianEpisode
     ? "Uses the saved eligible days from the seven completed calendar days before sick mode began, comparing milk consumed by the current Singapore time on each day. These dates stay fixed for the episode. Recorded sick days and days without milk logs are excluded. Missing days reduce the count; no eligible days means unavailable."
-    : "Compares milk consumed by the current Singapore time across the seven completed calendar days before today. Recorded sick days and days without milk logs are excluded. The count shows when fewer than seven days qualify.";
+    : "Uses the latest seven completed non-sick days with milk logs, comparing intake by the current Singapore time. Skips sick days and days without logs, looking further back in the available 180-day history. The count shows when fewer than seven qualify.";
 
   // Signed volume (ml) and % difference of today's intake vs a same-time
   // reference total (comparison day or the 7-day median). Both parts share the

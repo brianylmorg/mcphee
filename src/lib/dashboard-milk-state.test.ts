@@ -138,11 +138,11 @@ test("sick feeds never enter either pre-sickness or normal same-time references"
 
   assert.deepEqual(sick.days.map((day) => day.date), ["2026-09-29"]);
   assert.equal(sick.medianMl, 200);
-  assert.deepEqual(normal.days.map((day) => day.date), ["2026-10-08"]);
-  assert.equal(normal.medianMl, 300);
+  assert.deepEqual(normal.days.map((day) => day.date), ["2026-09-29", "2026-10-08"]);
+  assert.equal(normal.medianMl, 250);
 });
 
-test("normal mode retains the rolling seven completed SGT day reference", () => {
+test("normal mode uses the latest seven completed non-sick SGT days with milk logs", () => {
   const history = [
     historyDay("2026-10-01", 1),
     historyDay("2026-10-02", 20),
@@ -157,8 +157,11 @@ test("normal mode retains the rolling seven completed SGT day reference", () => 
 
   assert.equal(reference.kind, "rolling");
   assert.equal(reference.anchorDate, "2026-10-09");
-  assert.deepEqual(reference.days.map((day) => day.date), ["2026-10-02", "2026-10-04", "2026-10-07"]);
-  assert.equal(reference.medianMl, 40);
+  assert.deepEqual(
+    reference.days.map((day) => day.date),
+    ["2026-10-01", "2026-10-02", "2026-10-04", "2026-10-07"],
+  );
+  assert.equal(reference.medianMl, 30);
 });
 
 test("active episodes without usable saved history do not fall back to rolling dates", () => {
@@ -264,4 +267,105 @@ test("same-time median selection does not mutate history or episode metadata", (
 
   assert.deepEqual(history, originalHistory);
   assert.deepEqual(episode, originalEpisode);
+});
+
+test("normal mode picks exactly the latest seven eligible non-sick logged days from unordered history", () => {
+  const history = [
+    historyDay("2026-10-16", 60),
+    historyDay("2026-10-05", 30),
+    historyDay("2026-10-30", 999),
+    historyDay("2026-11-03", 888),
+    historyDay("2026-10-13", 90, { isSickDay: true }),
+    historyDay("2026-10-10", 70, { totalMl: 0 }),
+    historyDay("2026-10-14", Number.NaN),
+    historyDay("2026-10-19", 10),
+    historyDay("2026-10-3", 77),
+    historyDay("2026-10-09", 50),
+    historyDay("2026-10-12", 40),
+    historyDay("2026-10-01", 1),
+    historyDay("2026-10-15", 70),
+    historyDay("2026-10-08", 20),
+    historyDay("2026-13-01", 66),
+    historyDay("2026-10-03", 2),
+    historyDay("2026-10-06", 95, { isSickDay: true }),
+  ];
+  const original = structuredClone(history);
+
+  const reference = sameTimeMilkMedianReference(history, "2026-10-30");
+
+  assert.equal(reference.kind, "rolling");
+  assert.equal(reference.anchorDate, "2026-10-30");
+  assert.deepEqual(reference.days.map((day) => day.date), [
+    "2026-10-05", "2026-10-08", "2026-10-09", "2026-10-12", "2026-10-15", "2026-10-16", "2026-10-19",
+  ]);
+  assert.equal(reference.medianMl, 40);
+  assert.deepEqual(history, original);
+});
+
+test("normal mode backfills pre-sickness days after an episode ends, then replaces them as healthy days accrue", () => {
+  const preSickDates = ["2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30"];
+  const history = [
+    ...preSickDates.map((date, index) => historyDay(date, 100 + index * 10)),
+    historyDay("2026-10-05", 700, { isSickDay: true }),
+    historyDay("2026-10-11", 700, { isSickDay: true }),
+    historyDay("2026-10-20", 700, { isSickDay: true }),
+    historyDay("2026-10-21", 200),
+    historyDay("2026-10-22", 210),
+    historyDay("2026-10-23", 220),
+    historyDay("2026-10-24", 230),
+  ];
+  const activeEpisode = {
+    startedAt: Date.parse("2026-10-02T09:00:00+08:00"),
+    baselineSourceDays: preSickDates.map((date) => ({ date, totalMl: 700 })),
+  };
+
+  const duringEpisode = sameTimeMilkMedianReference(history, "2026-10-25", activeEpisode);
+  const firstHealthyDay = sameTimeMilkMedianReference(history, "2026-10-21");
+  const seventhDay = sameTimeMilkMedianReference(history, "2026-10-22");
+  const replaced = sameTimeMilkMedianReference(history, "2026-10-25");
+
+  assert.deepEqual(duringEpisode.days.map((day) => day.date), preSickDates);
+  assert.equal(duringEpisode.medianMl, 125);
+  assert.deepEqual(firstHealthyDay.days.map((day) => day.date), preSickDates);
+  assert.deepEqual(seventhDay.days.map((day) => day.date), [...preSickDates, "2026-10-21"]);
+  assert.deepEqual(replaced.days.map((day) => day.date), [
+    "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24",
+  ]);
+});
+
+test("normal mode handles missing and insufficient eligible history without inventing days", () => {
+  const empty = sameTimeMilkMedianReference([], "2026-10-08");
+  const onlyToday = sameTimeMilkMedianReference([historyDay("2026-10-08", 900)], "2026-10-08");
+  const twoDays = sameTimeMilkMedianReference([
+    historyDay("2026-10-05", 100),
+    historyDay("2026-10-07", 300, { totalMl: 0 }),
+    historyDay("2026-10-06", 200),
+  ], "2026-10-08");
+
+  assert.deepEqual(empty, { anchorDate: "2026-10-08", kind: "rolling", days: [], medianMl: null });
+  assert.deepEqual(onlyToday.days, []);
+  assert.equal(onlyToday.medianMl, null);
+  assert.deepEqual(twoDays.days.map((day) => day.date), ["2026-10-05", "2026-10-06"]);
+  assert.equal(twoDays.medianMl, 150);
+});
+
+test("normal mode counts each calendar day once when history repeats a date", () => {
+  const history = [
+    historyDay("2026-10-06", 100),
+    historyDay("2026-10-01", 10),
+    historyDay("2026-10-06", 900),
+    historyDay("2026-10-02", 20),
+    historyDay("2026-10-03", 30),
+    historyDay("2026-10-04", 40),
+    historyDay("2026-10-05", 50),
+    historyDay("2026-10-07", 70, { isSickDay: true }),
+  ];
+
+  const reference = sameTimeMilkMedianReference(history, "2026-10-08");
+
+  assert.deepEqual(reference.days.map((day) => day.date), [
+    "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06",
+  ]);
+  assert.equal(reference.days[5].asOfNowMl, 100);
+  assert.equal(reference.medianMl, 35);
 });

@@ -55,8 +55,13 @@ function isEligibleSameTimeDay(day: SameTimeMilkHistoryDay): boolean {
  * During an active sick episode, the saved baseline source dates are the only
  * allowed reference dates. Their saved full-day totals are deliberately not
  * used here: the current history supplies both eligibility and its same-time
- * amount. Without an active episode, the reference remains the seven completed
- * SGT days before today.
+ * amount.
+ *
+ * Without an active episode, the reference is the latest seven completed SGT
+ * days strictly before today that are non-sick and carry milk logs. Selection
+ * walks backwards in time to skip sick and no-log days, so older healthy days
+ * backfill the window until seven (or as many as the 180-day history holds)
+ * are found. The selected days are returned in chronological order.
  */
 export function sameTimeMilkMedianReference<T extends SameTimeMilkHistoryDay>(
   history: readonly T[],
@@ -93,11 +98,23 @@ export function sameTimeMilkMedianReference<T extends SameTimeMilkHistoryDay>(
 
   const anchorDate = isCanonicalSgtDate(todayDate) ? todayDate : "";
   if (!anchorDate) return { anchorDate, kind: "rolling", days: [], medianMl: null };
-  const windowStart = shiftSgtDate(anchorDate, -7);
-  const windowEnd = shiftSgtDate(anchorDate, -1);
-  const days = history.filter((day) =>
-    day.date >= windowStart && day.date <= windowEnd && isEligibleSameTimeDay(day)
+
+  // Newest first so the latest seven completed non-sick logged days win. The
+  // spread keeps the caller's readonly history in its original order, and the
+  // date set guarantees at most one sample per calendar day.
+  const newestFirst = [...history].sort((left, right) =>
+    left.date < right.date ? 1 : left.date > right.date ? -1 : 0
   );
+  const chosen: T[] = [];
+  const chosenDates = new Set<string>();
+  for (const day of newestFirst) {
+    if (chosen.length === 7) break;
+    if (!isCanonicalSgtDate(day.date) || day.date >= anchorDate) continue;
+    if (chosenDates.has(day.date) || !isEligibleSameTimeDay(day)) continue;
+    chosenDates.add(day.date);
+    chosen.push(day);
+  }
+  const days = chosen.reverse();
   return {
     anchorDate,
     kind: "rolling",
