@@ -5,7 +5,7 @@
 - **Host:** Vercel (Singapore region, sin1)
 - **Database:** Turso (libSQL) — household_id scoped, 2 users max
 - **Auth:** Household-code model (6-char invite code + signed HTTP-only cookie)
-- **Stack:** Next.js 15 App Router + TypeScript, Tailwind, Drizzle ORM, Turso, pnpm
+- **Stack:** Next.js 16 App Router (`next` 16.2.4) + TypeScript, Tailwind, Drizzle ORM, Turso, pnpm
 - **Timezone:** Asia/Singapore (SGT), all timestamps stored as UTC epoch ms integers
 
 ## Conventions
@@ -19,12 +19,6 @@
 - All API routes that touch DB use `node` runtime (edge doesn't support libSQL)
 
 ## Features by Stage
-
-### Stage 1 — Scaffold + Household Setup
-- Welcome screen: create OR join household
-- Baby profile form (name + optional birth date)
-- Dashboard: baby name, age display, invite code
-- Leave-household action
 
 ### Stage 1 — Scaffold + Household Setup ✅
 - Welcome screen: create OR join household
@@ -74,19 +68,21 @@
 - Care overview spacing uses wider gaps between sections than between records, a full-width latest-diaper heading, quieter log links, and explicit timestamp/elapsed separators. It prioritizes readable phone layouts rather than compressing every possible prescription or warning onto a tiny screen; all entries remain available by scrolling when needed.
 - Textual elapsed labels use `Yh Xm ago` below 24 hours, then days with remaining hours and padded minutes (e.g. `1d, 1h, 00m ago`). Duration labels use the same shape without `ago`. Live second-by-second stopwatches retain their timer format.
 
-### Stage 4 — Growth Tracking
-- Weight (g), length (mm), optional head (mm), backdatable
-- Chart view (recharts)
-- WHO percentile overlays (Day 2)
+### Stage 4 — Growth Tracking ✅ (weight only)
+- Weight (g), backdatable; weight entry accepts kg
+- Weight page with chart, grid lines and persistent y-axis (custom SVG; `recharts` is not a dependency)
+- SG 2000 (NHG Polyclinics) weight-for-age percentile overlay, from the boys table only (baby sex is not modelled)
+- Length (mm) and head (mm) are stored in `measurements` but have no UI yet
 
-### Stage 5 — PWA + Push
-- Manifest, service worker, standalone mode
-- iOS HCTA prompt
-- Push subscriptions per device
-- Vercel Cron → check overdue → fire push notifications
-- Rate-limit via `notification_log`
+### Stage 5 — PWA + Push ✅ (partial)
+- Manifest, service worker (`/sw.js`) and standalone mode
+- Standalone pull-to-refresh on the dashboard (safe-refresh guards while editors or dialogs are open)
+- Push subscriptions per device (`/api/push-subscribe`, VAPID via `/api/push-vapid`)
+- Vercel Cron (`vercel.json`: `/api/notify` daily at 09:00 UTC, the Hobby plan limit) → overdue check → push
+- Rate-limit via `notification_log` (kind `overdue`)
+- Not confirmed: iOS HCTA prompt
 
-### Stage 6 — Nudges + Fussing Predictor
+### Stage 6 — Nudges + Fussing Predictor (not started)
 - Fussing button → ranked list by overdue score
 - Post-log nudges (context-aware)
 - Adaptive nudges (Day 2)
@@ -103,13 +99,21 @@
 ## Activity Types
 Main timeline: `bottlefeed` | `breastfeed` | `pump` | `diaper` | `vomit` | `sleep` | `note` | `temperature`
 
+Also stored as activities: `medication` (historical medication notes imported from sick mode; sick-mode doses are kept in `sick_mode_doses` and shown in the diary)
+
 Bank-only ledger: `bankadjust` | `bankfreeze` | `bankthaw` | `bankdiscard`
 
 ## Database Schema
 - `households`: id, invite_code (unique), created_at
+- `users`: id, household_id, name, created_at
 - `babies`: id, household_id, name, birth_date, created_at
 - `activities`: id, baby_id, type, started_at, ended_at, details (JSON), created_at, created_by
 - `active_timers`: id, baby_id, type, started_at, current_side, side_switches (JSON), started_by
 - `measurements`: id, baby_id, measured_at, weight_g, length_mm, head_mm, note, created_at
 - `push_subscriptions`: id, household_id, endpoint, p256dh, auth, label
 - `notification_log`: id, household_id, kind, sent_at
+- `paper_log_import_batches`: id, household_id, baby_id, status (staged | committed | cancelled), source_note, created_at, created_by
+- `paper_log_import_rows`: id, batch_id, row_index, status (staged | reviewed | duplicate | committed | skipped), source_ref, confidence, type, started_at, ended_at, details (JSON), note, raw_text, duplicate_activity_id, imported_activity_id, created_at
+- `sick_mode_episodes`: id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind, baseline_available_day_count, baseline_source_days (JSON), created_at, created_by, ended_by
+- `sick_mode_medications`: id, episode_id, name, dose_text, as_needed, min_interval_minutes, max_interval_minutes, created_at, created_by, updated_at, revision
+- `sick_mode_doses`: id, medication_id, given_at, dose_text, given_by, request_id (unique), created_at, updated_at, revision, deleted_at, deleted_by
