@@ -521,3 +521,26 @@ Deployment:
 - No Git push, provider/billing changes, paid OCR, credential rotation or manual
   notification run. Documentation remains local/excluded from deployment because
   the work packet contains private source references.
+
+### Compact childcare header controls — 16 October 2026
+
+- Source commit `f196a881` replaces the prominent dashboard childcare panel with
+  a small status icon beside the baby header. The icon opens a native accessible
+  dialog containing the existing status, check-in/out, recorded-time controls
+  and pending screenshot imports. Active/pending status remains indicated on
+  the icon; backend behavior and activity confirmation rules are unchanged.
+- Two bounded isolated DeepSeek Flash tasks supplied the new component and
+  dashboard integration. Main applied/reviewed the patches, corrected theme
+  tokens to existing project colors and reused the existing dialog backdrop.
+- Validation: all 216 tests passed; production webpack build and deployed
+  Turbopack build passed. Local and live Chromium checks covered normal/sick
+  headers at 320/390px, Escape/focus restoration, Singapore recorded times in
+  a New York browser, checkout opening the original import as the sole dialog,
+  pending import after reload and manual import handoff. No page errors.
+  Live API responses were intercepted synthetic fixtures: zero live API writes.
+- Candidate authenticated checks returned root 200 and unauthenticated mode 401.
+  No intervening primary deployment was found before promotion. Final READY
+  deployment `dpl_EW4SQqAWLRAKzWnuAJgxgBuVH7Hs`,
+  https://mcphee-7wdgs7jnf-brianylms-projects.vercel.app, verified on
+  https://mcphee.vercel.app after promotion. No migration, provider change or
+  Git push. This work packet remains local and excluded from deployment.
