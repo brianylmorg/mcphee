@@ -194,18 +194,17 @@ html[data-care-mode="sick"][data-theme="dark"] {
   --sb-balloon-idle-rim: 170 150 136;
   --sb-roof: 214 132 118;
   --sb-roof-deep: 176 96 86;
-  --sb-wall: 250 238 214;
-  --sb-wall-rim: 196 160 120;
-  --sb-door: 136 166 120;
+  --sb-wall: 240 230 210;
+  --sb-wall-rim: 170 150 128;
+  --sb-door: 132 160 182;
   --sb-window: 255 220 140;
   --sb-lemon: 250 220 80;
   --sb-lemon-rim: 214 172 40;
   --sb-trunk: 140 104 74;
-  /* Soft wash behind the baby face: butter and sage at home, rose at childcare. */
-  --sb-halo-home-inner: 250 226 160;
-  --sb-halo-home-outer: 190 214 170;
-  --sb-halo-away-inner: 244 190 182;
-  --sb-halo-away-outer: 236 206 214;
+  --sb-thatch: 222 186 120;
+  --sb-thatch-deep: 176 138 84;
+  --sb-rose: 226 150 150;
+  --sb-pot: 200 120 88;
   --scene-day-text: 88 56 26;
   --scene-night-text: 246 242 255;
 }
@@ -225,10 +224,6 @@ html[data-care-mode="sick"][data-theme="dark"] {
     --sb-balloon-idle-rim: 92 80 72;
     --sb-wall: 222 204 176;
     --sb-wall-rim: 150 120 90;
-    --sb-halo-home-inner: 150 120 60;
-    --sb-halo-home-outer: 90 112 76;
-    --sb-halo-away-inner: 160 92 92;
-    --sb-halo-away-outer: 120 80 96;
     --scene-day-text: 255 244 224;
   }
 }
@@ -247,10 +242,6 @@ html[data-care-mode="sick"][data-theme="dark"] {
   --sb-balloon-idle-rim: 92 80 72;
   --sb-wall: 222 204 176;
   --sb-wall-rim: 150 120 90;
-  --sb-halo-home-inner: 150 120 60;
-  --sb-halo-home-outer: 90 112 76;
-  --sb-halo-away-inner: 160 92 92;
-  --sb-halo-away-outer: 120 80 96;
   --scene-day-text: 255 244 224;
 }
 
@@ -775,22 +766,6 @@ body {
 @keyframes sb-tree-sway {
   0%, 100% { transform: rotate(-2deg); }
   50% { transform: rotate(2.5deg); }
-}
-/* Watercolour wash fading out around the baby face. */
-.baby-face-halo {
-  position: absolute;
-  inset: -14px -16px -10px;
-  border-radius: 9999px;
-  pointer-events: none;
-  filter: blur(6px);
-  opacity: 0.85;
-  transition: background 700ms ease;
-}
-.baby-face-halo[data-tone="home"] {
-  background: radial-gradient(closest-side, rgb(var(--sb-halo-home-inner) / 0.95), rgb(var(--sb-halo-home-outer) / 0.5) 62%, transparent);
-}
-.baby-face-halo[data-tone="away"] {
-  background: radial-gradient(closest-side, rgb(var(--sb-halo-away-inner) / 0.95), rgb(var(--sb-halo-away-outer) / 0.5) 62%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-smoke-puff,
