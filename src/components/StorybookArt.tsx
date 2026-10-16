@@ -75,9 +75,16 @@ export function StorybookDay({ className = "" }: { className?: string }) {
       <span className="sb-pos sb-cloud-drift sb-cloud-a" style={{ left: "2%", top: "4%", width: "22%" }}><Layer src="cloud-1.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-b" style={{ left: "28%", top: "-6%", width: "15%" }}><Layer src="cloud-2.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-c" style={{ left: "76%", top: "0%", width: "18%" }}><Layer src="cloud-3.webp" /></span>
-      <span className="sb-pos sb-bee-path" style={{ left: "52%", top: "56%", width: "5.6%" }}>
-        <Layer src="bee-up.webp" className="sb-bee-frame sb-bee-frame-a" />
-        <Layer src="bee-down.webp" className="sb-bee-frame sb-bee-frame-b" />
+      {/* The bee drifts left and right over the meadow, turning to face where it
+          flies, with a slight rock. The two painted poses face opposite ways,
+          so one is mirrored and they alternate only to flap the wings. */}
+      <span className="sb-pos sb-bee-path" style={{ left: "50%", top: "56%", width: "5.6%" }}>
+        <span className="sb-bee-face">
+          <span className="sb-bee-rock">
+            <Layer src="bee-up.webp" className="sb-bee-frame sb-bee-frame-a" />
+            <Layer src="bee-down.webp" className="sb-bee-frame sb-bee-frame-b sb-bee-mirror" />
+          </span>
+        </span>
       </span>
     </span>
   );
@@ -127,7 +134,7 @@ export function StorybookBalloon({ active, className = "" }: { active: boolean; 
         <stop offset="0" stopColor={active ? "rgb(var(--sb-balloon-light))" : "rgb(var(--sb-balloon-idle-light))"} />
         <stop offset="1" stopColor={active ? "rgb(var(--sb-balloon))" : "rgb(var(--sb-balloon-idle))"} />
       </radialGradient>
-      <path className="sb-balloon-string" d="M16 27.5 q-3 3 0 5.5 t0 6" stroke="rgb(var(--sb-ink))" strokeWidth="0.8" fill="none" opacity="0.55" strokeLinecap="round" />
+      <path className="sb-balloon-string" d="M16 27.5 q-3 3 0 5.5 t0 6" stroke="rgb(var(--sb-ink))" strokeWidth="1.15" fill="none" opacity="0.9" strokeLinecap="round" />
       <g className="sb-balloon-body">
         <g filter={`url(#${id}-edge)`}>
           <path d="M16 2.5 c7 0 11.5 5.4 11.5 11.6 c0 7 -6.2 12.4 -11.5 13.4 c-5.3 -1 -11.5 -6.4 -11.5 -13.4 C4.5 7.9 9 2.5 16 2.5z" fill={`url(#${id}-fill)`} />

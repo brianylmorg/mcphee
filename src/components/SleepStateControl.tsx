@@ -22,10 +22,10 @@ const SCENES = {
 } as const;
 
 /** Where a scene panel sits in the carousel track. */
-type Role = "current" | "peek" | "leaving" | "parked";
+type Role = "current" | "peek" | "entering" | "leaving" | "parked";
 
-/** How long the slide takes; the parked scene then glides back in as the peek. */
-const SLIDE_MS = 900;
+/** How long the sweep takes; the parked scene then glides back in as the peek. */
+const SLIDE_MS = 1000;
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -37,10 +37,10 @@ function formatElapsed(ms: number): string {
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function rolesFor(current: SleepState, otherRole: Role): Record<SleepState, Role> {
+function rolesFor(current: SleepState, otherRole: Role, currentRole: Role = "current"): Record<SleepState, Role> {
   return current === "awake"
-    ? { awake: "current", sleeping: otherRole }
-    : { sleeping: "current", awake: otherRole };
+    ? { awake: currentRole, sleeping: otherRole }
+    : { sleeping: currentRole, awake: otherRole };
 }
 
 /**
@@ -62,8 +62,9 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
   useEffect(() => {
     if (previous.current === state) return;
     previous.current = state;
-    // 1. slide: the old scene leaves to the left while the chosen one takes the stage.
-    setRoles(rolesFor(state, "leaving"));
+    // 1. sweep: the chosen scene glides in over the old one with a feathered
+    //    watercolour edge while the old one fades away beneath it.
+    setRoles(rolesFor(state, "leaving", "entering"));
     // 2. park the old scene off to the right without animating, 3. glide it in as the peek.
     let frame = 0;
     const timer = window.setTimeout(() => {
@@ -98,11 +99,11 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
             {scene === state ? (
               <div className="sleep-status relative z-10 flex h-full items-center px-3" aria-live="polite">
                 <div className="sleep-status-backing rounded-2xl px-3 py-1.5">
-                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  <p className="flex items-center gap-1.5 text-base font-semibold">
                     <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
                     <span>{label}</span>
                   </p>
-                  <p className={"sleep-elapsed font-display font-semibold tabular-nums " + (untimed ? "mt-0.5 text-sm" : compact ? "text-2xl leading-8" : "text-[2rem] leading-10")}>
+                  <p className={"sleep-elapsed font-display font-semibold tabular-nums " + (untimed ? "mt-0.5 text-sm" : compact ? "text-[1.75rem] leading-8" : "text-[2.4rem] leading-[2.75rem]")}>
                     {elapsed}
                   </p>
                 </div>
@@ -113,10 +114,12 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                 aria-label={"Set state to " + label}
                 disabled={disabled || role !== "peek"}
                 onClick={() => onSelect(scene)}
-                className="sleep-peek-cta absolute inset-y-0 z-10 flex w-[34%] items-center justify-center gap-1.5 pl-6 pr-2 text-sm font-semibold disabled:cursor-default"
+                className="sleep-peek-cta absolute inset-y-0 left-0 z-10 flex w-[13%] items-center justify-center disabled:cursor-default"
               >
-                <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-                <span className="whitespace-nowrap">{cta}</span>
+                <span className="sleep-peek-chip flex flex-col items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-center text-[11px] font-bold leading-tight">
+                  <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  <span>{cta}</span>
+                </span>
               </button>
             )}
           </div>

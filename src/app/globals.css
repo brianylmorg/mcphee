@@ -245,29 +245,35 @@ html[data-care-mode="sick"][data-theme="dark"] {
   --scene-day-text: 255 244 224;
 }
 
-/* Sleep toggle carousel: the current scene fills the control and the other
-   peeks in on the right through a soft gradient. Choosing the peek slides
-   everything left; the scene just left glides back in from the right. */
+/* Sleep toggle carousel: the current scene fills the control and the next
+   one peeks in (about 13%) on the right. Choosing it sweeps the next scene in
+   over the current one with a feathered watercolour edge while the old one
+   fades beneath; the old scene then glides back in from the right as the peek. */
+@property --sb-feather {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
 .sleep-panel {
-  transition: transform 900ms cubic-bezier(0.65, 0, 0.25, 1);
+  --sb-feather: 0%;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--sb-feather));
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--sb-feather));
+  transition: transform 700ms cubic-bezier(0.65, 0, 0.25, 1), opacity 1000ms ease;
   will-change: transform;
 }
 .sleep-panel[data-role="current"] { transform: translateX(0); z-index: 1; }
-.sleep-panel[data-role="peek"] {
-  transform: translateX(66%);
-  z-index: 2;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, rgb(0 0 0 / 0.65) 9%, #000 18%);
-  mask-image: linear-gradient(to right, transparent 0, rgb(0 0 0 / 0.65) 9%, #000 18%);
+.sleep-panel[data-role="peek"] { transform: translateX(87%); --sb-feather: 6%; z-index: 2; }
+.sleep-panel[data-role="entering"] { z-index: 2; animation: sleep-sweep-in 1000ms cubic-bezier(0.6, 0, 0.25, 1) forwards; }
+.sleep-panel[data-role="leaving"] { transform: translateX(0); opacity: 0; z-index: 1; }
+.sleep-panel[data-role="parked"] { transform: translateX(100%); --sb-feather: 6%; transition: none; z-index: 2; }
+@keyframes sleep-sweep-in {
+  0% { transform: translateX(87%); --sb-feather: 6%; }
+  45% { --sb-feather: 38%; }
+  100% { transform: translateX(0); --sb-feather: 0%; }
 }
-.sleep-panel[data-role="leaving"] { transform: translateX(-100%); z-index: 1; }
-.sleep-panel[data-role="parked"] { transform: translateX(100%); transition: none; z-index: 2; }
-/* In the peek the scene shows its own left edge, so the CTA sits there. */
-.sleep-panel[data-role="peek"] .sleep-peek-cta,
-.sleep-panel[data-role="parked"] .sleep-peek-cta {
-  left: 0;
-  right: auto;
-}
-.sleep-panel[data-role="leaving"] .sleep-peek-cta { opacity: 0; }
+/* The chip only shows on the peek; it fades as its scene leaves or arrives. */
+.sleep-peek-cta { transition: opacity 300ms ease; }
+.sleep-panel:not([data-role="peek"]) .sleep-peek-cta { opacity: 0; }
 .sleep-scene {
   position: absolute;
   inset: 0;
@@ -285,15 +291,24 @@ html[data-care-mode="sick"][data-theme="dark"] {
 .sleep-panel[data-scene="sleeping"] .sleep-status-backing {
   background: radial-gradient(closest-side, rgb(34 38 80 / 0.5), rgb(34 38 80 / 0.16) 70%, transparent);
 }
-.sleep-peek-cta {
-  text-shadow: 0 0 6px rgb(255 250 238 / 0.9);
+.sleep-peek-chip {
+  background: rgb(255 250 238 / 0.82);
+  box-shadow: 0 1px 6px rgb(60 40 20 / 0.18);
+  animation: sleep-peek-breathe 3.2s ease-in-out infinite;
 }
-.sleep-panel[data-scene="sleeping"] .sleep-peek-cta {
-  text-shadow: 0 0 6px rgb(30 34 72 / 0.95);
+.sleep-panel[data-scene="sleeping"] .sleep-peek-chip {
+  background: rgb(40 44 88 / 0.78);
+  box-shadow: 0 1px 6px rgb(10 12 40 / 0.35);
+}
+@keyframes sleep-peek-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
 }
 .sleep-peek-cta:not(:disabled):active { transform: scale(0.97); }
 @media (prefers-reduced-motion: reduce) {
   .sleep-panel { transition: none; }
+  .sleep-panel[data-role="entering"] { animation: none; transform: translateX(0); }
+  .sleep-peek-chip { animation: none; }
 }
 
 .sb-art * {
@@ -775,8 +790,8 @@ body {
 }
 /* The cottage sits behind the face: its right side fades out under it. */
 .sb-home {
-  -webkit-mask-image: linear-gradient(to right, #000 38%, rgb(0 0 0 / 0.55) 58%, transparent 80%);
-  mask-image: linear-gradient(to right, #000 38%, rgb(0 0 0 / 0.55) 58%, transparent 80%);
+  -webkit-mask-image: linear-gradient(to right, #000 58%, rgb(0 0 0 / 0.6) 76%, transparent 94%);
+  mask-image: linear-gradient(to right, #000 58%, rgb(0 0 0 / 0.6) 76%, transparent 94%);
 }
 .sb-tree-sway {
   transform-box: fill-box;
@@ -849,7 +864,12 @@ body {
 .sb-cloud-sleepy { animation-duration: 24s; animation-delay: -5s; }
 
 /* The bee flies a lazy figure-of-eight; two painted poses flap its wings. */
-.sb-bee-path { animation: sb-bee-fly 11s ease-in-out infinite; }
+.sb-bee-path { animation: sb-bee-travel 12s ease-in-out infinite; }
+.sb-bee-face, .sb-bee-rock { display: block; position: relative; }
+/* Base pose faces left: face right while flying right, then turn at the end. */
+.sb-bee-face { animation: sb-bee-turn 12s steps(1) infinite; }
+.sb-bee-rock { animation: sb-bee-rock 1.6s ease-in-out infinite alternate; }
+.sb-bee-mirror { transform: scaleX(-1); }
 .sb-bee-frame { position: absolute; top: 0; left: 0; }
 .sb-bee-frame-a { position: relative; animation: sb-flap-a 0.32s steps(1) infinite; }
 .sb-bee-frame-b { animation: sb-flap-b 0.32s steps(1) infinite; }
@@ -880,11 +900,17 @@ body {
   from { transform: translateX(-14px); }
   to { transform: translateX(26px); }
 }
-@keyframes sb-bee-fly {
-  0%, 100% { transform: translate(-26px, 4px) rotate(-5deg); }
-  25% { transform: translate(6px, -9px) rotate(4deg); }
-  50% { transform: translate(40px, -1px) rotate(7deg); }
-  75% { transform: translate(10px, 7px) rotate(-3deg); }
+@keyframes sb-bee-travel {
+  0%, 100% { transform: translateX(-34px); }
+  50% { transform: translateX(34px); }
+}
+@keyframes sb-bee-turn {
+  0% { transform: scaleX(-1); }
+  50% { transform: scaleX(1); }
+}
+@keyframes sb-bee-rock {
+  from { transform: translateY(-1.5px) rotate(-4deg); }
+  to { transform: translateY(1.5px) rotate(4deg); }
 }
 @keyframes sb-flap-a { 0% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes sb-flap-b { 0% { opacity: 0; } 50% { opacity: 1; } }
@@ -907,7 +933,7 @@ body {
   100% { opacity: 0; transform: translate(4px, -8px) scale(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise { animation: none; }
+  .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-bee-face, .sb-bee-rock, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise { animation: none; }
   .sb-bee-frame-a { animation: none; opacity: 1; }
   .sb-bee-frame-b { animation: none; opacity: 0; }
   .sb-zz { animation: none; opacity: 0.7; }
