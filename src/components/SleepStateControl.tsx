@@ -91,7 +91,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
       className={"sleep-toggle relative isolate min-w-0 overflow-hidden rounded-xl border border-border shadow-inner " + (compact ? "h-20" : "h-[6.25rem]")}
     >
       {(["awake", "sleeping"] as const).map((scene) => {
-        const { label, cta, Icon, Art } = SCENES[scene];
+        const { label, Icon, Art } = SCENES[scene];
         const role = roles[scene];
         return (
           <div key={scene} data-scene={scene} data-role={role} className="sleep-panel absolute inset-0">
@@ -108,23 +108,30 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                   </p>
                 </div>
               </div>
-            ) : (
-              <button
-                type="button"
-                aria-label={"Set state to " + label}
-                disabled={disabled || role !== "peek"}
-                onClick={() => onSelect(scene)}
-                className="sleep-peek-cta absolute inset-y-0 left-0 z-10 flex w-[13%] items-center justify-center disabled:cursor-default"
-              >
-                <span className="sleep-peek-chip flex flex-col items-center gap-0.5 rounded-xl px-1.5 py-1.5 text-center text-[11px] font-bold leading-tight">
-                  <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-                  <span>{cta}</span>
-                </span>
-              </button>
-            )}
+            ) : null}
           </div>
         );
       })}
+      {/* The next state's call to action: plain text on the art, centred on the
+          seam so it straddles both scenes. Its strip is the tap target. */}
+      {(() => {
+        const next: SleepState = state === "awake" ? "sleeping" : "awake";
+        const { label, cta, Icon } = SCENES[next];
+        const settled = roles[next] === "peek";
+        return (
+          <button
+            type="button"
+            data-target={next}
+            aria-label={"Set state to " + label}
+            disabled={disabled || !settled}
+            onClick={() => onSelect(next)}
+            className={"sleep-next-cta absolute inset-y-0 right-0 z-20 flex w-[26%] flex-col items-center justify-center gap-0.5 text-sm font-bold disabled:cursor-default " + (settled ? "opacity-100" : "opacity-0")}
+          >
+            <Icon aria-hidden="true" className="h-5 w-5" />
+            <span className="whitespace-nowrap">{cta}</span>
+          </button>
+        );
+      })()}
     </div>
   );
 }

@@ -27,13 +27,16 @@ export default function BabyCareMenu({ name, active, accessory, accessoryPlaceme
   return (
     <>
       <div className="baby-identity-row isolate flex min-w-0 items-center justify-center gap-3">
-        {accessory && accessoryPlacement === "behind" && (
-          <span className="baby-home-backdrop relative z-10 -mr-12 shrink-0">{accessory}</span>
-        )}
         <span className="relative shrink-0">
           {/* A warm, sunny glow around the face in every state and theme; it
               sits under the cottage, which sits under the face. */}
           <span aria-hidden="true" className="baby-face-glow z-0" />
+          {/* The cottage sits behind the face (anchored to it, outside the row's
+              width so the name and weight keep their room); its base reaches
+              below the chin. */}
+          {accessory && accessoryPlacement === "behind" && (
+            <span className="baby-home-backdrop absolute -bottom-3 right-[calc(100%-1.75rem)] z-10">{accessory}</span>
+          )}
           {/* The face is a second, pointer-only way into the same menu as the name. */}
           <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face relative z-20 block rounded-2xl transition-transform active:scale-95">
             <Image src="/icon.svg" alt="" width={72} height={80} priority className="h-16 w-14 object-contain" />

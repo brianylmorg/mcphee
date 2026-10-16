@@ -46,11 +46,11 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         aria-label={statusLabel}
         title={statusLabel}
         onClick={() => dialogRef.current?.showModal()}
-        className={`relative flex shrink-0 items-center justify-center rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 ${isActive ? "h-14 w-11" : "h-16 w-[6.4rem]"}`}
+        className={`relative flex shrink-0 items-center justify-center rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 ${isActive ? "h-14 w-11" : ""}`}
       >
         {isActive
           ? <StorybookBalloon active className="h-12 w-10 -rotate-12" />
-          : <StorybookHome className="h-16" />}
+          : <StorybookHome className="h-[5.25rem]" />}
       </button>
 
       <dialog

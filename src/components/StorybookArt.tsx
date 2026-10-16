@@ -134,7 +134,10 @@ export function StorybookBalloon({ active, className = "" }: { active: boolean; 
         <stop offset="0" stopColor={active ? "rgb(var(--sb-balloon-light))" : "rgb(var(--sb-balloon-idle-light))"} />
         <stop offset="1" stopColor={active ? "rgb(var(--sb-balloon))" : "rgb(var(--sb-balloon-idle))"} />
       </radialGradient>
-      <path className="sb-balloon-string" d="M16 27.5 q-3 3 0 5.5 t0 6" stroke="rgb(var(--sb-ink))" strokeWidth="1.15" fill="none" opacity="0.9" strokeLinecap="round" />
+      <g className="sb-balloon-string">
+        <path d="M16 27.5 q-3 3 0 5.5 t0 6" stroke="rgb(60 40 30 / 0.35)" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+        <path d="M16 27.5 q-3 3 0 5.5 t0 6" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+      </g>
       <g className="sb-balloon-body">
         <g filter={`url(#${id}-edge)`}>
           <path d="M16 2.5 c7 0 11.5 5.4 11.5 11.6 c0 7 -6.2 12.4 -11.5 13.4 c-5.3 -1 -11.5 -6.4 -11.5 -13.4 C4.5 7.9 9 2.5 16 2.5z" fill={`url(#${id}-fill)`} />
@@ -161,7 +164,7 @@ export function StorybookBalloon({ active, className = "" }: { active: boolean; 
  */
 export function StorybookHome({ className = "" }: { className?: string }) {
   return (
-    <span aria-hidden="true" className={`sb-home-wrap relative inline-block ${className}`}>
+    <span aria-hidden="true" className={`sb-home-wrap relative block aspect-[360/232] ${className}`}>
       <Layer src="cottage.webp" className="sb-home" />
       <span className="sb-pos sb-smoke-rise" style={{ left: "26%", bottom: "92%", width: "9%" }}><Layer src="smoke.webp" /></span>
     </span>
