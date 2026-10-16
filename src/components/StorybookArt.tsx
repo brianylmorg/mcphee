@@ -60,6 +60,12 @@ function Layer({ src, className, style }: { src: string; className?: string; sty
   return <img src={`${ART}/${src}`} alt="" draggable={false} decoding="async" className={`sb-layer ${className ?? ""}`} style={style} />;
 }
 
+const DAY_BEES = [
+  { id: "a", left: "50%", top: "56%", width: "5.6%", duration: "12s", delay: "0s", rockDelay: "0s" },
+  { id: "b", left: "66%", top: "34%", width: "4.2%", duration: "15s", delay: "-6s", rockDelay: "-1.1s" },
+  { id: "c", left: "55%", top: "75%", width: "3.6%", duration: "10s", delay: "-3s", rockDelay: "-1.9s" },
+];
+
 /**
  * Awake: the painted morning meadow fills the toggle. The sun glows in open
  * sky (inside `.sb-sun-arc`, so it can set), clouds drift at different speeds
@@ -75,16 +81,20 @@ export function StorybookDay({ className = "" }: { className?: string }) {
       <span className="sb-pos sb-cloud-drift sb-cloud-a" style={{ left: "2%", top: "4%", width: "22%" }}><Layer src="cloud-1.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-b" style={{ left: "28%", top: "-6%", width: "15%" }}><Layer src="cloud-2.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-c" style={{ left: "76%", top: "0%", width: "18%" }}><Layer src="cloud-3.webp" /></span>
-      {/* The bee drifts left and right over the meadow, turning to face where it
-          flies, with a gentle rock. One painted pose only: swapping the two
-          poses (different sizes) made it jitter. */}
-      <span className="sb-pos sb-bee-path" style={{ left: "50%", top: "56%", width: "5.6%" }}>
-        <span className="sb-bee-face">
-          <span className="sb-bee-rock">
-            <Layer src="bee-up.webp" className="sb-bee-frame" />
+      {/* Bees drift left and right over the open meadow (clear of the timer and
+          the peek), turning to face where they fly, with a gentle rock. Each has
+          its own size, speed and phase; travel and turn share one duration so
+          the turn always lands at the end of a pass. One painted pose only:
+          swapping two differently sized poses made them jitter. */}
+      {DAY_BEES.map((bee) => (
+        <span key={bee.id} className="sb-pos sb-bee-path" style={{ left: bee.left, top: bee.top, width: bee.width, animationDuration: bee.duration, animationDelay: bee.delay }}>
+          <span className="sb-bee-face" style={{ animationDuration: bee.duration, animationDelay: bee.delay }}>
+            <span className="sb-bee-rock" style={{ animationDelay: bee.rockDelay }}>
+              <Layer src="bee-up.webp" className="sb-bee-frame" />
+            </span>
           </span>
         </span>
-      </span>
+      ))}
     </span>
   );
 }
