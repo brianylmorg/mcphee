@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
-import { Baby, X } from "lucide-react";
+import { X } from "lucide-react";
 import ChildcareModePanel, { type ChildcareModePanelProps } from "@/components/ChildcareModePanel";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
@@ -50,7 +50,11 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         onClick={() => dialogRef.current?.showModal()}
         className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${isActive ? "bg-terracotta/10 text-accent-strong hover:bg-terracotta/20" : "text-muted hover:bg-surface-muted"}`}
       >
-        <Baby aria-hidden="true" className="h-5 w-5" />
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+          <path d="m3 3 18 18" />
+          <path d="M8 9c-2 1-5 4-5 7 0 5 10 5 11 1 1-3-2-6-4-8Z" />
+          <path d="M8 8C4 8 4 4 7 5l2 3c0-4 4-3 3-1l-2 2" />
+        </svg>
         {(isActive || hasPending) && (
           <span aria-hidden="true" className={`absolute right-1 top-1 h-2 w-2 rounded-full ${isActive ? "bg-terracotta" : "bg-terracotta/50"}`} />
         )}
