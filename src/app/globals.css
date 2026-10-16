@@ -501,7 +501,13 @@ body {
   }
 }
 
-/* Entries remain clickable so a household member can confirm an exception. */
-[data-childcare-active="true"] .health-log-action {
-  opacity: 0.55;
+/* While the baby is at childcare the dashboard greys out and ignores taps
+   until someone chooses "Browse anyway". The add button stays usable and asks
+   for confirmation before logging during care. */
+[data-childcare-dimmed="true"] .dashboard-overview > :not(.childcare-dim-banner) {
+  opacity: 0.5;
+  filter: grayscale(0.7);
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 200ms ease, filter 200ms ease;
 }

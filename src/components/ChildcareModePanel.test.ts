@@ -160,20 +160,19 @@ test("every row carries its own import status", () => {
   assert.equal((html.match(/>No import needed</g) ?? []).length, 1);
 });
 
-test("unimported rows offer import, dismiss and remove while imported rows never remove", () => {
+test("collapsed history rows show only the add-screenshot icon and the edit button", () => {
   const html = render({
     pendingSessions: [daytime],
     historySessions: [daytime, imported, noImportNeeded],
     ...historyCallbacks,
   });
 
-  // Only the screenshot-pending row imports or dismisses its draft.
-  assert.equal((html.match(/Import screenshot/g) ?? []).length, 1);
-  assert.equal((html.match(/Dismiss import/g) ?? []).length, 1);
-  // All three closed rows can be corrected.
-  assert.equal((html.match(/aria-label="Edit times"/g) ?? []).length, 3);
-  // Remove is offered for the unimported rows only, never for the imported one.
-  assert.equal((html.match(/Remove session/g) ?? []).length, 2);
+  // Only the screenshot-pending row offers the add-screenshot icon.
+  assert.equal((html.match(/aria-label="Import screenshot"/g) ?? []).length, 1);
+  // Every closed row has one edit button; skip and remove stay inside it.
+  assert.equal((html.match(/aria-label="Edit session"/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /Skip screenshot|Dismiss import|Remove session/);
+  assert.equal((html.match(/>Screenshot pending</g) ?? []).length, 1);
 });
 
 test("history rows still render for SSR callers that omit the optional callbacks", () => {
@@ -181,7 +180,7 @@ test("history rows still render for SSR callers that omit the optional callbacks
 
   assert.ok(html.includes("16 Oct 2026"));
   assert.ok(html.includes("Import screenshot"));
-  assert.doesNotMatch(html, /Edit times|Dismiss import|Remove session/);
+  assert.doesNotMatch(html, /Edit session|Skip screenshot|Remove session/);
 });
 
 test("approved sleep window is never shown on history rows", () => {
@@ -226,8 +225,8 @@ test("busy disables every visible control and shows the escaped parent error", (
   });
 
   const buttonTags = html.match(/<button[^>]*>/g) ?? [];
-  // Check in, plus import, dismiss, remove and edit for the listed rows.
-  assert.equal(buttonTags.length, 6);
+  // Check in, plus the pending import shortcut and an edit button per listed row.
+  assert.equal(buttonTags.length, 4);
   assert.equal(buttonTags.filter((tag) => tag.includes('disabled=""')).length, buttonTags.length);
   assert.match(html, /Check in</);
   assert.match(html, /role="alert"/);

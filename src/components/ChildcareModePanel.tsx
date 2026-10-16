@@ -133,9 +133,10 @@ const SESSION_STATUS_LABEL: Record<SessionImportStatus, string> = {
   none: "No import needed",
 };
 
-const SESSION_STATUS_BADGE_CLASS: Record<Exclude<SessionImportStatus, "imported">, string> = {
-  pending: "border-terracotta/40 bg-terracotta/10 text-accent-strong",
-  none: "border-border bg-surface-muted text-muted",
+const SESSION_STATUS_TEXT_CLASS: Record<SessionImportStatus, string> = {
+  imported: "text-success",
+  pending: "text-accent-strong",
+  none: "text-muted",
 };
 
 const primaryButtonClass =
@@ -508,14 +509,14 @@ export default function ChildcareModePanel({
       typeof window === "undefined"
         ? false
         : window.confirm(
-            "Dismiss this screenshot import? The saved screenshot draft is discarded. Activities already imported from it stay untouched.",
+            "Skip the screenshot for this session? It stops asking for one and discards any unsaved screenshot draft. The session itself is kept.",
           );
     if (!confirmed) return;
     void runRowAction(
       session,
       "dismiss",
       onDismissImport,
-      "Could not dismiss the import. Please try again.",
+      "Could not skip the screenshot. Please try again.",
     );
   }
 
@@ -662,6 +663,9 @@ export default function ChildcareModePanel({
               const isImported = status === "imported";
               const isPending = status === "pending";
               const isEditing = editingId === session.id;
+              const canSkip = isPending && Boolean(onDismissImport);
+              const canRemove = !isImported && Boolean(onRemoveSession);
+              const hasRowMenu = Boolean(onEditSession) || canSkip || canRemove;
               const rowBusy = busy || savingTimes || rowAction?.id === session.id;
 
               return (
@@ -672,73 +676,47 @@ export default function ChildcareModePanel({
                         <p className="break-words text-sm font-medium text-warm-brown">
                           {formatSgDate(session.checkedInAt)}
                         </p>
-                        {status === "imported" ? (
-                          <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-success">
-                            <Check aria-hidden="true" className="h-3 w-3 shrink-0" />
-                            {SESSION_STATUS_LABEL[status]}
-                          </span>
-                        ) : (
-                          <span
-                            className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${SESSION_STATUS_BADGE_CLASS[status]}`}
-                          >
-                            {SESSION_STATUS_LABEL[status]}
-                          </span>
-                        )}
+                        <span
+                          className={`inline-flex shrink-0 items-center gap-0.5 text-[11px] font-medium ${SESSION_STATUS_TEXT_CLASS[status]}`}
+                        >
+                          {status === "imported" && <Check aria-hidden="true" className="h-3 w-3 shrink-0" />}
+                          {SESSION_STATUS_LABEL[status]}
+                        </span>
                       </div>
                       <p className="break-words text-xs tabular-nums text-warm-brown-light">
                         {formatCareWindow(session)} SGT
                       </p>
                     </div>
-                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                      {onEditSession && (
-                        <button
-                          type="button"
-                          onClick={() => (isEditing ? closeTimesEditor() : openTimesEditor(session))}
-                          disabled={rowBusy}
-                          aria-expanded={isEditing}
-                          aria-label="Edit times"
-                          title="Edit times"
-                          className={`${compactSecondaryButtonClass} h-8 w-8`}
-                        >
-                          <Pencil aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                        </button>
-                      )}
+                    <div className="flex shrink-0 items-center gap-1.5">
                       {isPending && (
                         <button
                           type="button"
                           onClick={() => onImport(session)}
                           disabled={rowBusy}
-                          className={compactSecondaryButtonClass}
+                          aria-label="Import screenshot"
+                          title="Import screenshot"
+                          className={`${compactSecondaryButtonClass} h-8 w-8 text-accent-strong`}
                         >
-                          <ImageUp aria-hidden="true" className="h-3 w-3 shrink-0" />
-                          Import screenshot
+                          <ImageUp aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                         </button>
                       )}
-                      {isPending && onDismissImport && (
+                      {hasRowMenu && (
                         <button
                           type="button"
-                          onClick={() => handleDismissImport(session)}
+                          onClick={() => (isEditing ? closeTimesEditor() : openTimesEditor(session))}
                           disabled={rowBusy}
-                          className={compactDangerButtonClass}
+                          aria-expanded={isEditing}
+                          aria-label="Edit session"
+                          title="Edit session"
+                          className={`${compactSecondaryButtonClass} h-8 w-8`}
                         >
-                          Dismiss import
-                        </button>
-                      )}
-                      {!isImported && onRemoveSession && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSession(session)}
-                          disabled={rowBusy}
-                          className={compactDangerButtonClass}
-                        >
-                          <Trash2 aria-hidden="true" className="h-3 w-3 shrink-0" />
-                          Remove session
+                          <Pencil aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {isEditing && (
+                  {isEditing && onEditSession && (
                     <ChildcareTimesEditor
                       isImported={isImported}
                       startValue={editStart}
@@ -751,6 +729,32 @@ export default function ChildcareModePanel({
                       onSave={() => void handleSaveTimes(session)}
                       onCancel={closeTimesEditor}
                     />
+                  )}
+
+                  {isEditing && (canSkip || canRemove) && (
+                    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border pt-2">
+                      {canSkip && (
+                        <button
+                          type="button"
+                          onClick={() => handleDismissImport(session)}
+                          disabled={rowBusy}
+                          className={compactDangerButtonClass}
+                        >
+                          Skip screenshot
+                        </button>
+                      )}
+                      {canRemove && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSession(session)}
+                          disabled={rowBusy}
+                          className={compactDangerButtonClass}
+                        >
+                          <Trash2 aria-hidden="true" className="h-3 w-3 shrink-0" />
+                          Remove session
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {rowError?.id === session.id && (
