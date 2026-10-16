@@ -159,7 +159,7 @@ export default function DashboardPage() {
   const [childcareBusy, setChildcareBusy] = useState(false);
   const [childcareError, setChildcareError] = useState<string | null>(null);
   const [childcareOverride, setChildcareOverride] = useState(false);
-  const childcareCommandRef = useRef<{ action: "checkIn" | "checkOut"; requestId: string; at: number; sessionId?: string } | null>(null);
+  const childcareCommandRef = useRef<{ action: "checkIn" | "checkOut" | "editCheckIn"; requestId: string; at: number; expectedCheckedInAt?: number; sessionId?: string } | null>(null);
   const [logType, setLogType] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editingDose, setEditingDose] = useState<Activity | null>(null);
@@ -1066,8 +1066,8 @@ export default function DashboardPage() {
     setShowCaretakerImport(true);
   };
 
-  const mutateChildcareMode = async (action: "checkIn" | "checkOut", recordedAt?: number) => {
-    if (!baby?.id || childcareBusy) return;
+  const mutateChildcareMode = async (action: "checkIn" | "checkOut" | "editCheckIn", recordedAt?: number): Promise<boolean> => {
+    if (!baby?.id || childcareBusy) return false;
     let attempt = childcareCommandRef.current;
     if (
       !attempt ||
@@ -1078,14 +1078,23 @@ export default function DashboardPage() {
         action,
         requestId: crypto.randomUUID(),
         at: recordedAt ?? Date.now(),
-        ...(action === "checkOut" ? { sessionId: childcareMode.activeSession?.id } : {}),
+        ...(action === "checkOut" || action === "editCheckIn" ? { sessionId: childcareMode.activeSession?.id } : {}),
+        ...(action === "editCheckIn" ? { expectedCheckedInAt: childcareMode.activeSession?.checkedInAt } : {}),
       };
-      if (action === "checkOut" && !attempt.sessionId) {
-        childcareCommandRef.current = null;
-        await fetchData({ refreshMilkHistory: false });
-        return;
-      }
       childcareCommandRef.current = attempt;
+    }
+    if ((action === "checkOut" || action === "editCheckIn") && !attempt.sessionId) {
+      childcareCommandRef.current = null;
+      await fetchData({ refreshMilkHistory: false });
+      return false;
+    }
+    if (
+      action === "editCheckIn" &&
+      (attempt.expectedCheckedInAt === undefined || attempt.sessionId !== childcareMode.activeSession?.id)
+    ) {
+      childcareCommandRef.current = null;
+      await fetchData({ refreshMilkHistory: false });
+      return false;
     }
     setChildcareBusy(true);
     setChildcareError(null);
@@ -1098,7 +1107,8 @@ export default function DashboardPage() {
           babyId: baby.id,
           requestId: attempt.requestId,
           at: attempt.at,
-          ...(action === "checkOut" ? { sessionId: attempt.sessionId } : {}),
+          ...(action === "checkOut" || action === "editCheckIn" ? { sessionId: attempt.sessionId } : {}),
+          ...(action === "editCheckIn" ? { expectedCheckedInAt: attempt.expectedCheckedInAt } : {}),
         }),
       });
       const payload = await response.json().catch(() => ({})) as Partial<ChildcareModeCommandResponse> & { error?: string };
@@ -1117,11 +1127,13 @@ export default function DashboardPage() {
         openCaretakerImport(payload.session);
       }
       setActivityFilterRefresh((value) => value + 1);
+      return true;
     } catch (caught) {
       const status = (caught as { status?: number }).status;
       if (status != null && status >= 400 && status < 500) childcareCommandRef.current = null;
       setChildcareError(caught instanceof Error ? caught.message : "Could not update childcare status.");
       await fetchData({ refreshMilkHistory: false });
+      return false;
     } finally {
       setChildcareBusy(false);
     }
@@ -1516,6 +1528,7 @@ export default function DashboardPage() {
                   error={childcareError}
                   onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}
                   onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
+                  onEditCheckIn={(at) => mutateChildcareMode("editCheckIn", at)}
                   onImport={(session) => openCaretakerImport(session)}
                   importOpen={showCaretakerImport}
                 />

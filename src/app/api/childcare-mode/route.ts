@@ -68,27 +68,33 @@ export async function POST(request: NextRequest) {
   const now = Date.now();
   const atProvided = body.at != null;
   const at = atProvided ? body.at : now;
-  if (!babyId || !REQUEST_ID.test(requestId) || (action !== "checkIn" && action !== "checkOut") || !validAt(at, now)) {
+  const expectedCheckedInAt = body.expectedCheckedInAt;
+  if (!babyId || !REQUEST_ID.test(requestId) || (action !== "checkIn" && action !== "checkOut" && action !== "editCheckIn") || !validAt(at, now)) {
     return NextResponse.json({ error: "action, babyId, requestId, and a valid time are required" }, { status: 400 });
   }
-  if (action === "checkOut" && !expectedSessionId) {
+  if ((action === "checkOut" || action === "editCheckIn") && !expectedSessionId) {
     return NextResponse.json({ error: "The childcare session is required. Refresh and try again." }, { status: 400 });
+  }
+  if (action === "editCheckIn" && (!atProvided || !validAt(expectedCheckedInAt, now))) {
+    return NextResponse.json({ error: "The new and expected check-in times are required. Refresh and try again." }, { status: 400 });
   }
   if (!await babyBelongsToHousehold(db, babyId, member.householdId)) {
     return NextResponse.json({ error: "Baby not found" }, { status: 404 });
   }
 
-  const requestColumn = action === "checkIn" ? "check_in_request_id" : "check_out_request_id";
-  const prior = await db.execute({
-    sql: `SELECT * FROM childcare_sessions WHERE baby_id = ? AND ${requestColumn} = ? LIMIT 1`,
-    args: [babyId, requestId],
-  });
-  if (prior.rows[0]) {
-    const priorAt = action === "checkIn" ? Number(prior.rows[0].checked_in_at) : Number(prior.rows[0].checked_out_at);
-    if ((atProvided && priorAt !== at) || (action === "checkOut" && String(prior.rows[0].id) !== expectedSessionId)) {
-      return NextResponse.json({ error: "requestId was already used for a different childcare command", code: "REQUEST_ID_CONFLICT" }, { status: 409 });
+  if (action !== "editCheckIn") {
+    const requestColumn = action === "checkIn" ? "check_in_request_id" : "check_out_request_id";
+    const prior = await db.execute({
+      sql: `SELECT * FROM childcare_sessions WHERE baby_id = ? AND ${requestColumn} = ? LIMIT 1`,
+      args: [babyId, requestId],
+    });
+    if (prior.rows[0]) {
+      const priorAt = action === "checkIn" ? Number(prior.rows[0].checked_in_at) : Number(prior.rows[0].checked_out_at);
+      if ((atProvided && priorAt !== at) || (action === "checkOut" && String(prior.rows[0].id) !== expectedSessionId)) {
+        return NextResponse.json({ error: "requestId was already used for a different childcare command", code: "REQUEST_ID_CONFLICT" }, { status: 409 });
+      }
+      return commandResponse(db, member.householdId, babyId, prior.rows[0] as Record<string, unknown>, true);
     }
-    return commandResponse(db, member.householdId, babyId, prior.rows[0] as Record<string, unknown>, true);
   }
 
   if (action === "checkIn") {
@@ -140,6 +146,52 @@ export async function POST(request: NextRequest) {
     }, false);
   }
 
+  if (action === "editCheckIn") {
+    const active = await db.execute({
+      sql: "SELECT * FROM childcare_sessions WHERE baby_id = ? AND checked_out_at IS NULL LIMIT 1",
+      args: [babyId],
+    });
+    const activeRow = active.rows[0];
+    if (!activeRow || String(activeRow.id) !== expectedSessionId) {
+      return NextResponse.json({ error: "Childcare state changed on another device. Refresh and try again.", code: "CHILDCARE_STATE_CHANGED" }, { status: 409 });
+    }
+    if (Number(activeRow.checked_in_at) === at) {
+      return commandResponse(db, member.householdId, babyId, activeRow as Record<string, unknown>, true);
+    }
+    if (Number(activeRow.checked_in_at) !== expectedCheckedInAt) {
+      return NextResponse.json({ error: "Childcare state changed on another device. Refresh and try again.", code: "CHILDCARE_STATE_CHANGED" }, { status: 409 });
+    }
+
+    const updated = await db.execute({
+      sql: `UPDATE childcare_sessions
+            SET checked_in_at = ?, updated_at = ?
+            WHERE id = ? AND baby_id = ? AND checked_out_at IS NULL AND checked_in_at = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM childcare_sessions AS other
+                WHERE other.baby_id = ? AND other.id <> ?
+                  AND COALESCE(other.checked_out_at, 9223372036854775807) > ?
+              )`,
+      args: [at, now, activeRow.id, babyId, expectedCheckedInAt, babyId, activeRow.id, at],
+    });
+    if (updated.rowsAffected !== 1) {
+      const current = await db.execute({
+        sql: "SELECT * FROM childcare_sessions WHERE baby_id = ? AND checked_out_at IS NULL LIMIT 1",
+        args: [babyId],
+      });
+      const currentRow = current.rows[0];
+      if (currentRow && String(currentRow.id) === expectedSessionId && Number(currentRow.checked_in_at) === at) {
+        return commandResponse(db, member.householdId, babyId, currentRow as Record<string, unknown>, true);
+      }
+      if (!currentRow || String(currentRow.id) !== expectedSessionId || Number(currentRow.checked_in_at) !== expectedCheckedInAt) {
+        return NextResponse.json({ error: "Childcare state changed on another device. Refresh and try again.", code: "CHILDCARE_STATE_CHANGED" }, { status: 409 });
+      }
+      return NextResponse.json({ error: "That check-in time overlaps an existing childcare session", code: "SESSION_OVERLAP" }, { status: 409 });
+    }
+    return commandResponse(db, member.householdId, babyId, {
+      ...activeRow, checked_in_at: at,
+    } as Record<string, unknown>, false);
+  }
+
   const active = await db.execute({
     sql: "SELECT * FROM childcare_sessions WHERE baby_id = ? AND checked_out_at IS NULL LIMIT 1",
     args: [babyId],
@@ -151,7 +203,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Childcare state changed on another device. Refresh and try again.", code: "CHILDCARE_STATE_CHANGED" }, { status: 409 });
   }
   if (sgtDateKey(at) !== sgtDateKey(Number(active.rows[0].checked_in_at))) {
-    return NextResponse.json({ error: "Record the actual check-out time on the check-in date using Record a different time.", code: "CHILDCARE_DATE_MISMATCH" }, { status: 400 });
+    return NextResponse.json({ error: "Set the check-out time to a time on the check-in date.", code: "CHILDCARE_DATE_MISMATCH" }, { status: 400 });
   }
   if (at <= Number(active.rows[0].checked_in_at)) {
     return NextResponse.json({ error: "Check-out time must be after check-in time" }, { status: 400 });
@@ -161,8 +213,8 @@ export async function POST(request: NextRequest) {
       sql: `UPDATE childcare_sessions
             SET checked_out_at = ?, checked_out_by = ?, check_out_request_id = ?,
                 pending_import = 1, updated_at = ?
-            WHERE id = ? AND checked_out_at IS NULL AND checked_in_at < ?`,
-      args: [at, member.name, requestId, now, active.rows[0].id, at],
+            WHERE id = ? AND checked_out_at IS NULL AND checked_in_at = ? AND checked_in_at < ?`,
+      args: [at, member.name, requestId, now, active.rows[0].id, active.rows[0].checked_in_at, at],
     });
     if (updated.rowsAffected !== 1) {
       const replay = await db.execute({

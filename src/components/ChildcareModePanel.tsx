@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Baby, ImageUp, LogIn, LogOut } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Baby, ImageUp, LogIn, LogOut, Pencil } from "lucide-react";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
 export interface ChildcareModePanelProps {
@@ -12,6 +12,8 @@ export interface ChildcareModePanelProps {
   error: string | null;
   onCheckIn: (at?: number) => void;
   onCheckOut: (at?: number) => void;
+  /** Required: the parent persists the edited check-in time and resolves true only on success. */
+  onEditCheckIn: (at: number) => Promise<boolean>;
   onImport: (session: ChildcareSessionSummary) => void;
 }
 
@@ -104,6 +106,9 @@ const primaryButtonClass =
 const secondaryButtonClass =
   "inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-warm-brown transition-colors hover:border-terracotta/30 hover:text-accent-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border disabled:hover:text-warm-brown";
 
+const compactSecondaryButtonClass =
+  "inline-flex min-h-6 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-border bg-surface px-2 py-0.5 text-xs font-medium text-warm-brown transition-colors hover:border-terracotta/30 hover:text-accent-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border disabled:hover:text-warm-brown";
+
 /**
  * Presentational childcare check-in/check-out panel. Shows the current in-care
  * state for the baby, offers the matching check-in or check-out action, and
@@ -118,18 +123,33 @@ export default function ChildcareModePanel({
   error,
   onCheckIn,
   onCheckOut,
+  onEditCheckIn,
   onImport,
 }: ChildcareModePanelProps) {
   const activeId = activeSession ? activeSession.id : null;
+  const activeCheckedInAt = activeSession ? activeSession.checkedInAt : null;
   const [customTime, setCustomTime] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [editingCheckIn, setEditingCheckIn] = useState(false);
+  const [editCheckInTime, setEditCheckInTime] = useState("");
+  const [editCheckInError, setEditCheckInError] = useState<string | null>(null);
+  const [savingCheckIn, setSavingCheckIn] = useState(false);
+  // Bumped whenever the active session changes so a save that resolves late can
+  // never write editor state onto a session it no longer belongs to.
+  const editTokenRef = useRef(0);
 
-  // Any session-id change (fresh check-in, check-out, or leaving care) drops the
-  // previous custom time so a stale value can never be reused.
+  // Any session-id or check-in change (fresh check-in, check-out, an edited
+  // check-in time, or leaving care) drops the previous custom time, closes the
+  // inline editor and discards a pending save's stale resolution.
   useEffect(() => {
+    editTokenRef.current += 1;
     setCustomTime("");
     setLocalError(null);
-  }, [activeId]);
+    setEditingCheckIn(false);
+    setEditCheckInTime("");
+    setEditCheckInError(null);
+    setSavingCheckIn(false);
+  }, [activeId, activeCheckedInAt]);
 
   const seenIds = new Set<string>();
   const importableSessions = pendingSessions.filter((session) => {
@@ -144,7 +164,7 @@ export default function ChildcareModePanel({
 
   const maxSgtNow = toSgDateTimeLocal(Date.now());
   const minSgt = activeSession ? toSgDateTimeLocal(activeSession.checkedInAt) : undefined;
-  const alertMessage = error || localError;
+  const alertMessage = error || localError || editCheckInError;
 
   /** One handler per press: check-in or check-out, with the typed time when valid. */
   function handleAction() {
@@ -175,6 +195,46 @@ export default function ChildcareModePanel({
     }
   }
 
+  /** Opens the inline editor prefilled with the active session's check-in time. */
+  function openCheckInEditor(at: number) {
+    setEditCheckInTime(toSgDateTimeLocal(at));
+    setEditCheckInError(null);
+    setEditingCheckIn(true);
+  }
+
+  /** Local only: cancelling never saves, checks out, or notifies the parent. */
+  function closeCheckInEditor() {
+    setEditingCheckIn(false);
+    setEditCheckInTime("");
+    setEditCheckInError(null);
+  }
+
+  async function handleSaveCheckIn() {
+    const parsed = parseSgDateTimeLocal(editCheckInTime);
+    if (parsed == null || parsed <= 0 || parsed > Date.now() + 2 * 60 * 1000) {
+      setEditCheckInError("Enter a check-in time no later than now (Singapore).");
+      return;
+    }
+    editTokenRef.current += 1;
+    const token = editTokenRef.current;
+    setEditCheckInError(null);
+    setSavingCheckIn(true);
+    let saved = false;
+    try {
+      saved = await onEditCheckIn(parsed);
+    } catch {
+      saved = false;
+    }
+    // A session change already reset the editor; ignore this stale resolution.
+    if (editTokenRef.current !== token) return;
+    setSavingCheckIn(false);
+    if (saved) {
+      closeCheckInEditor();
+    } else {
+      setEditCheckInError("Could not save the check-in time. Please try again.");
+    }
+  }
+
   return (
     <section
       aria-label="Childcare"
@@ -187,12 +247,64 @@ export default function ChildcareModePanel({
             <h3 className="break-words text-sm font-semibold text-warm-brown sm:text-base">
               {babyName} is in childcare
             </h3>
-            <p
-              role="status"
-              className="mt-0.5 break-words text-xs font-medium tabular-nums text-warm-brown-light"
-            >
-              Checked in {formatSgDate(activeSession.checkedInAt)} at {formatSgTime(activeSession.checkedInAt)} SGT
-            </p>
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <p
+                role="status"
+                className="min-w-0 break-words text-xs font-medium tabular-nums text-warm-brown-light"
+              >
+                Checked in {formatSgDate(activeSession.checkedInAt)} at {formatSgTime(activeSession.checkedInAt)} SGT
+              </p>
+              <button
+                type="button"
+                onClick={() => openCheckInEditor(activeSession.checkedInAt)}
+                disabled={busy || editingCheckIn}
+                aria-label="Edit check-in"
+                className={compactSecondaryButtonClass}
+              >
+                <Pencil aria-hidden="true" className="h-3 w-3 shrink-0" />
+                Edit check-in
+              </button>
+            </div>
+            {editingCheckIn && (
+              <div className="mt-2 min-w-0 rounded-lg border border-border bg-surface p-2.5">
+                <label
+                  htmlFor="childcare-edit-checkin-time"
+                  className="text-xs font-medium text-warm-brown"
+                >
+                  Edit check-in time (Singapore)
+                </label>
+                <input
+                  id="childcare-edit-checkin-time"
+                  type="datetime-local"
+                  value={editCheckInTime}
+                  onChange={(event) => setEditCheckInTime(event.target.value)}
+                  disabled={busy || savingCheckIn}
+                  max={maxSgtNow}
+                  className="mt-1 w-full min-w-0 max-w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm tabular-nums text-warm-brown focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40"
+                />
+                <p className="mt-1 text-xs text-muted">
+                  Enter the actual check-in time; it must not be later than now (Singapore).
+                </p>
+                <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveCheckIn}
+                    disabled={busy || savingCheckIn}
+                    className={primaryButtonClass}
+                  >
+                    Save check-in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeCheckInEditor}
+                    disabled={busy || savingCheckIn}
+                    className={secondaryButtonClass}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             <p className="mt-1 break-words text-xs text-muted">
               Adding an activity will ask for confirmation.
             </p>
@@ -200,7 +312,7 @@ export default function ChildcareModePanel({
           <button
             type="button"
             onClick={handleAction}
-            disabled={busy}
+            disabled={busy || editingCheckIn}
             className={primaryButtonClass}
           >
             <LogOut aria-hidden="true" className="h-4 w-4 shrink-0" />
@@ -230,7 +342,7 @@ export default function ChildcareModePanel({
 
       <details className="mt-3 min-w-0 rounded-lg border border-border bg-surface px-2.5 py-1.5">
         <summary className="cursor-pointer select-none text-xs font-medium text-warm-brown-light transition-colors hover:text-accent-strong">
-          Record a different time
+          {activeSession ? "Set check-out time" : "Set check-in time"}
         </summary>
         <div className="mt-2 flex w-full min-w-0 max-w-full flex-col gap-1.5">
           <label
@@ -244,12 +356,16 @@ export default function ChildcareModePanel({
             type="datetime-local"
             value={customTime}
             onChange={(event) => setCustomTime(event.target.value)}
-            disabled={busy}
+            disabled={busy || editingCheckIn}
             max={maxSgtNow}
             min={minSgt}
             className="w-full min-w-0 max-w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm tabular-nums text-warm-brown focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/40"
           />
-          <p className="text-xs text-muted">Leave blank to use now.</p>
+          <p className="text-xs text-muted">
+            {activeSession
+              ? "Use this when recording a check-out late. Leave blank to use now."
+              : "Use this when recording a check-in late. Leave blank to use now."}
+          </p>
         </div>
       </details>
 

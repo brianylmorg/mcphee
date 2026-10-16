@@ -159,6 +159,77 @@ test("check-in and check-out are shared, retry-safe, concurrency-safe, and retai
   assert.deepEqual(raced.map((response) => response.status).sort(), [200, 409], "the unique active-session index serializes simultaneous check-ins");
 }));
 
+test("an active check-in can be edited safely without overlapping history or accepting stale edits", async () => fixture(async db => {
+  await db.execute({
+    sql: `INSERT INTO childcare_sessions
+          (id,baby_id,checked_in_at,checked_out_at,check_in_request_id,check_out_request_id,pending_import,created_at,updated_at)
+          VALUES ('prior','baby',?,?,?,?,0,?,?)`,
+    args: [at("08:00"), at("09:00"), "prior-checkin-command", "prior-checkout-command", at("08:00"), at("09:00")],
+  });
+  const started = await json(await POST(request("/api/childcare-mode", "POST", {
+    action: "checkIn", babyId: "baby", requestId: "editable-checkin-command", at: at("10:00"),
+  })));
+  const base = {
+    action: "editCheckIn", babyId: "baby", sessionId: started.session.id,
+    expectedCheckedInAt: at("10:00"), requestId: "edit-checkin-command",
+  };
+
+  const overlap = await POST(request("/api/childcare-mode", "POST", { ...base, at: at("08:30") }));
+  assert.equal(overlap.status, 409);
+  assert.equal((await json(overlap)).code, "SESSION_OVERLAP");
+  assert.equal((await json(await GET(request("/api/childcare-mode?babyId=baby")))).activeSession.checkedInAt, at("10:00"));
+
+  const edited = await POST(request("/api/childcare-mode", "POST", { ...base, at: at("09:00") }));
+  assert.equal(edited.status, 200);
+  const editedBody = await json(edited);
+  assert.equal(editedBody.idempotent, false);
+  assert.equal(editedBody.session.checkedInAt, at("09:00"));
+  assert.equal(editedBody.activeSession.checkedInAt, at("09:00"));
+
+  const replay = await POST(request("/api/childcare-mode", "POST", { ...base, at: at("09:00") }));
+  assert.equal(replay.status, 200);
+  assert.equal((await json(replay)).idempotent, true);
+
+  const stale = await POST(request("/api/childcare-mode", "POST", { ...base, requestId: "stale-edit-command", at: at("09:30") }));
+  assert.equal(stale.status, 409);
+  assert.equal((await json(stale)).code, "CHILDCARE_STATE_CHANGED");
+
+  const competing = await Promise.all([
+    POST(request("/api/childcare-mode", "POST", { ...base, expectedCheckedInAt: at("09:00"), requestId: "competing-edit-one", at: at("09:15") })),
+    POST(request("/api/childcare-mode", "POST", { ...base, expectedCheckedInAt: at("09:00"), requestId: "competing-edit-two", at: at("09:30") })),
+  ]);
+  assert.deepEqual(competing.map(response => response.status).sort(), [200, 409]);
+  const current = await json(await GET(request("/api/childcare-mode?babyId=baby")));
+  assert.ok([at("09:15"), at("09:30")].includes(current.activeSession.checkedInAt));
+}));
+
+test("check-in edits race safely with checkout and never produce an invalid closed window", async () => fixture(async db => {
+  const started = await json(await POST(request("/api/childcare-mode", "POST", {
+    action: "checkIn", babyId: "baby", requestId: "race-edit-start-command", at: at("10:00"),
+  })));
+  const [edited, checkedOut] = await Promise.all([
+    POST(request("/api/childcare-mode", "POST", {
+      action: "editCheckIn", babyId: "baby", sessionId: started.session.id,
+      expectedCheckedInAt: at("10:00"), at: at("11:00"), requestId: "race-edit-command",
+    })),
+    POST(request("/api/childcare-mode", "POST", {
+      action: "checkOut", babyId: "baby", sessionId: started.session.id,
+      at: at("10:30"), requestId: "race-checkout-command",
+    })),
+  ]);
+  assert.equal([edited, checkedOut].filter(response => response.status === 200).length, 1);
+  const stored = (await db.execute({
+    sql: "SELECT checked_in_at, checked_out_at FROM childcare_sessions WHERE id = ?",
+    args: [started.session.id],
+  })).rows[0];
+  if (stored.checked_out_at == null) {
+    assert.equal(Number(stored.checked_in_at), at("11:00"));
+  } else {
+    assert.equal(Number(stored.checked_in_at), at("10:00"));
+    assert.ok(Number(stored.checked_out_at) > Number(stored.checked_in_at));
+  }
+}));
+
 test("active childcare blocks new activity and timer completion until the exact request is explicitly confirmed", async () => fixture(async db => {
   await db.execute({
     sql: "INSERT INTO active_timers VALUES ('timer','baby','breastfeed',?,'L','[]','member')",
