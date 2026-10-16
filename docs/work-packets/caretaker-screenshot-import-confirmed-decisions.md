@@ -544,3 +544,27 @@ Deployment:
   https://mcphee-7wdgs7jnf-brianylms-projects.vercel.app, verified on
   https://mcphee.vercel.app after promotion. No migration, provider change or
   Git push. This work packet remains local and excluded from deployment.
+
+### Explicit active check-in editing — 16 October 2026
+
+- Source commits `52d7c65c` and `7d907de7`: status modal now has an explicit
+  Edit check-in button beside the active session timestamp, a full-width
+  Singapore datetime editor, Save check-in and Cancel. The optional next-action
+  time is labelled Set check-in time / Set check-out time with late-entry help.
+- Two bounded DeepSeek tasks implemented panel and dashboard wiring; Sol owned
+  the edit API and data-integrity tests. Main integrated, reviewed, corrected
+  labels/layout and validated. Active-only editing uses session ID and expected
+  check-in timestamp, atomic overlap protection and safe desired-time replay.
+  Checkout also compares the timestamp it validated, preventing an edit race
+  from creating an invalid care window. No schema migration.
+- Validation: 218/218 tests, production webpack build and final deployed
+  Turbopack build passed. Local/live Chromium tested cancel without saving,
+  failed-save input preservation, successful timestamp change, 320/390px
+  editor usability, Singapore input in New York timezone, normal/sick headers
+  and checkout/pending-import dialog handoffs. No page errors; synthetic
+  intercepted API fixtures only, zero live API writes.
+- Final deployment `dpl_HpLfp71jZAnh1xB5L4zVT1yypahY`,
+  https://mcphee-8jn7oh8b3-brianylms-projects.vercel.app, promoted and verified
+  READY on https://mcphee.vercel.app. Authenticated candidate root 200;
+  unauthenticated childcare endpoint 401. No Git push or provider/billing
+  changes. Work packet remains local and excluded from deployment.
