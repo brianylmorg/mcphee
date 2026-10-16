@@ -23,7 +23,8 @@ export function MilkHistoryChart({
 
   // Start scrolled to the latest day: apply before first paint, then re-apply
   // after paint in case the scrollable layout settles late (iOS Safari can
-  // ignore scrollLeft set in a post-paint effect).
+  // ignore scrollLeft set in a post-paint effect). The chart only mounts once
+  // loading ends, so loading is a dependency too.
   useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
@@ -46,7 +47,7 @@ export function MilkHistoryChart({
       window.clearTimeout(timeout);
       observer.disconnect();
     };
-  }, [days.length, latestDate]);
+  }, [days.length, latestDate, isLoading]);
 
   if (isLoading) {
     return <p className="py-12 text-center text-sm text-muted">Loading history…</p>;
@@ -176,7 +177,8 @@ export function MilkAsOfHistoryChart({
 
   // Start scrolled to the latest day: apply before first paint, then re-apply
   // after paint in case the scrollable layout settles late (iOS Safari can
-  // ignore scrollLeft set in a post-paint effect).
+  // ignore scrollLeft set in a post-paint effect). The chart only mounts once
+  // loading ends, so loading is a dependency too.
   useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
@@ -199,7 +201,7 @@ export function MilkAsOfHistoryChart({
       window.clearTimeout(timeout);
       observer.disconnect();
     };
-  }, [days.length, latestDate]);
+  }, [days.length, latestDate, isLoading]);
 
   if (isLoading) {
     return <p className="py-10 text-center text-sm text-muted">Loading comparison…</p>;

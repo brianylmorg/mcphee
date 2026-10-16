@@ -104,7 +104,6 @@ const sgtHourFormatter = new Intl.DateTimeFormat("en-SG", {
 
 // The milk charts show a recent window, not the full history (which now spans
 // months); the day-by-day navigation still uses the complete milkHistory.
-const MILK_CHART_WINDOW_DAYS = 30;
 
 // Bank transfers are edited and deleted through the milk-bank ledger, never
 // through the generic activity API, so the diary routes them separately.
@@ -1554,7 +1553,7 @@ export default function DashboardPage() {
     activeSickSummary
       ? { date: todayDateKey, totalMl: activeSickSummary.todayConsumedMl, breastmilkMl: activeSickSummary.todayBreastmilkMl, formulaMl: activeSickSummary.todayFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: activeSickSummary.todayConsumedMl, isSickDay: true }
       : { date: todayDateKey, totalMl: dailyMilkMl, breastmilkMl: dailyBreastmilkMl, formulaMl: dailyFormulaMl, expectedMl: expectedDailyMilkMl, asOfNowMl: dailyMilkMl },
-  ].sort((a, b) => a.date.localeCompare(b.date)).slice(-MILK_CHART_WINDOW_DAYS);
+  ].sort((a, b) => a.date.localeCompare(b.date));
 
   const asOfMilkDays = chartMilkDays.filter((day) => day.date <= todayDateKey);
 
@@ -2319,15 +2318,18 @@ export default function DashboardPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="milk-history-title"
+          onClick={(event) => { if (event.target === event.currentTarget) setShowMilkHistoryChart(false); }}
+          onKeyDown={(event) => { if (event.key === "Escape") setShowMilkHistoryChart(false); }}
         >
-          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-surface p-5 shadow-xl">
-            <div className="flex items-start justify-between gap-4">
+          <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg bg-surface shadow-xl">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 pb-3 pt-4">
               <div>
                 <h2 id="milk-history-title" className="font-display text-xl text-warm-brown">Milk consumption charts</h2>
-                <p className="mt-1 text-sm text-muted">Last {MILK_CHART_WINDOW_DAYS} days — full-day totals and same-time comparisons</p>
+                <p className="mt-1 text-sm text-muted">Latest day on the right · scroll left for older days</p>
               </div>
               <button
                 type="button"
+                autoFocus
                 onClick={() => setShowMilkHistoryChart(false)}
                 aria-label="Close milk consumption charts"
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-muted hover:text-warm-brown"
@@ -2335,16 +2337,27 @@ export default function DashboardPage() {
                 <X aria-hidden="true" className="h-5 w-5" />
               </button>
             </div>
-            <section className="mt-5">
-              <h3 className="text-sm font-semibold text-warm-brown">Total milk consumption history</h3>
-              <p className="mt-1 text-xs text-muted">Daily breastmilk, formula, and expected totals</p>
-              <MilkHistoryChart days={chartMilkDays} isLoading={isMilkHistoryLoading} />
-            </section>
-            <section className="mt-6 border-t border-border pt-5">
-              <h3 className="text-sm font-semibold text-warm-brown">Consumed by {milkHistoryCutoffLabel}</h3>
-              <p className="mt-1 text-xs text-muted">Total milk consumed by the same time each day, including today</p>
-              <MilkAsOfHistoryChart days={asOfMilkDays} isLoading={isMilkHistoryLoading} />
-            </section>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
+              <section className="mt-4">
+                <h3 className="text-sm font-semibold text-warm-brown">Total milk consumption history</h3>
+                <p className="mt-1 text-xs text-muted">Daily breastmilk, formula, and expected totals</p>
+                <MilkHistoryChart days={chartMilkDays} isLoading={isMilkHistoryLoading} />
+              </section>
+              <section className="mt-6 border-t border-border pt-5">
+                <h3 className="text-sm font-semibold text-warm-brown">Consumed by {milkHistoryCutoffLabel}</h3>
+                <p className="mt-1 text-xs text-muted">Total milk consumed by the same time each day, including today</p>
+                <MilkAsOfHistoryChart days={asOfMilkDays} isLoading={isMilkHistoryLoading} />
+              </section>
+            </div>
+            <div className="shrink-0 border-t border-border px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setShowMilkHistoryChart(false)}
+                className="min-h-11 w-full rounded-lg border border-border bg-surface text-sm font-semibold text-warm-brown transition-colors hover:bg-surface-muted"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
