@@ -250,7 +250,7 @@ export default function DashboardPage() {
     setSelectedMilkDate((current) => current || todayDateKey);
   }, [todayDateKey]);
   const isActivityFiltered = Boolean(activityDateFilter || activityTypeFilters.length > 0);
-  const activityActionTypes = ["bottlefeed", "breastfeed", "pump", "diaper", "vomit", "note", "temperature", ...(sickModeActive ? ["medication"] : [])];
+  const activityActionTypes = ["bottlefeed", "breastfeed", "pump", "diaper", "note", "temperature", ...(sickModeActive ? ["medication"] : [])];
   const activityIcons: Record<string, LucideIcon> = {
     bottlefeed: Milk,
     breastfeed: Heart,
@@ -272,7 +272,6 @@ export default function DashboardPage() {
     { value: "breastfeed", label: "Breastfeed" },
     { value: "pump", label: "Pump" },
     { value: "diaper", label: "Diaper" },
-    { value: "vomit", label: "Vomit" },
     { value: "note", label: "Note" },
     { value: "temperature", label: "Temperature" },
     { value: "sleep", label: "Sleep" },

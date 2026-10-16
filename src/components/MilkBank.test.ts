@@ -19,7 +19,7 @@ test("milk bank separates Available and Frozen and blocks thaw for expired packe
     onChanged: async () => undefined,
   }));
 
-  assert.match(html, /Available/);
+  assert.doesNotMatch(html, />Available</);
   assert.match(html, />120<\/span>\s*<span[^>]*>ml/);
   assert.match(html, /Frozen/);
   assert.match(html, /aria-expanded="false"/);
@@ -32,8 +32,32 @@ test("milk bank separates Available and Frozen and blocks thaw for expired packe
   assert.match(html, /aria-label="Edit 80 ml packet"/);
   assert.match(html, /aria-label="Delete 80 ml packet"/);
   assert.doesNotMatch(html, /aria-label="Thaw 80 ml packet"/);
-  assert.match(html, /Bank history/);
+  assert.match(html, /Freezer bank history/);
   assert.match(html, /aria-label="Delete Freeze transfer"/);
+});
+
+test("frozen details toggle sits after the reconcile action and owns the history panel", () => {
+  const html = renderToStaticMarkup(createElement(MilkBank, {
+    babyId: "baby-1",
+    availableMl: 120,
+    availableBatches: [],
+    frozenMl: 80,
+    frozenPackets: [],
+    history: [{ id: "freeze-1", eventType: "Freeze", amountMl: 80, at: 100, packetId: "freeze-1" }],
+    onChanged: async () => undefined,
+  }));
+
+  const reconcileIndex = html.indexOf("Reconcile Available milk");
+  const snowflakeIndex = html.indexOf("Show frozen milk details");
+  assert.ok(reconcileIndex >= 0, "reconcile button is rendered");
+  assert.ok(snowflakeIndex >= 0, "snowflake button is rendered");
+  assert.ok(reconcileIndex < snowflakeIndex, "snowflake button comes after the reconcile button");
+
+  const panelIndex = html.indexOf('id="frozen-bank-details"');
+  const historyIndex = html.indexOf("Freezer bank history");
+  assert.ok(panelIndex >= 0, "frozen details panel is rendered");
+  assert.ok(historyIndex >= 0, "freezer bank history is rendered");
+  assert.ok(panelIndex < historyIndex, "bank history lives inside the frozen details panel");
 });
 
 test("standalone milk bank keeps its balances and actions in a separate dashboard card", () => {
