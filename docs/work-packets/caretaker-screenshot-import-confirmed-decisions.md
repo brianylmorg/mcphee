@@ -568,3 +568,37 @@ Deployment:
   READY on https://mcphee.vercel.app. Authenticated candidate root 200;
   unauthenticated childcare endpoint 401. No Git push or provider/billing
   changes. Work packet remains local and excluded from deployment.
+
+### Shorter screenshot review and childcare prefill — 16 October 2026
+
+- Source `eb79696a`: review starts with a short three-step checklist linking to
+  care hours, entries and approval. Screenshot/source text and long background
+  explanations are collapsed; sleep explanation is behind an info icon. Normal
+  entry cards are compact. Care hours use time-only controls on the selected
+  Singapore date. The approval section no longer obscures entries as a large
+  sticky panel. Mandatory checks and row-level blockers remain enforced.
+- Regular import carries the active childcare session, prepopulating its date
+  and check-in. Only missing care end must be entered. Explicit End care & read
+  screenshot checks out the intended session before OCR/staging; opening, typing
+  and file selection do not check out. Authoritative returned times are adopted.
+  Successful checkout is retained through OCR/stage retries, including network
+  failure/cancellation; lost checkout replies reuse the existing request ID.
+  Pending-session imports from the header retain both saved times.
+- DeepSeek handled compact row, select, overview/info, review, footer and browser
+  script tasks. Sol handled bounded lifecycle/dashboard wiring and concurrency
+  review. Main integrated/reviewed patches, fixed the existing required-callback
+  test fixture, checked screenshots and ran final validation.
+- Validation: 218/218 tests; local webpack and deployed Turbopack production
+  builds; existing childcare/header browser regression; 14 new local and live
+  browser checks. Verified New York browser/Singapore date/time, no checkout
+  before explicit action, transient checkout failure, OCR/stage retry without
+  another successful checkout, checklist initial position, collapsed source and
+  sleep help, mandatory approval gating and 320/390px layout. Live API calls
+  were intercepted synthetic fixtures: zero real writes and zero page errors.
+- Final READY deployment `dpl_AMXHbb9gLQkuft1NUidgfbbYKesA`,
+  https://mcphee-5lj7s9d5b-brianylms-projects.vercel.app, promoted and primary
+  alias verified at https://mcphee.vercel.app. No migration, Git push, paid OCR
+  or provider/retention changes. Work packet remains local/excluded.
+- Childcare icon now uses the standard balloon: red fill with pale red active
+  background; neutral grey fill with red outline while inactive. Both states
+  were verified in Chromium, including 320/390px layout and status dialog.
