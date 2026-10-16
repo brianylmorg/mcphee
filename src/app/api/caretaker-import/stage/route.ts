@@ -239,7 +239,7 @@ export async function POST(request: NextRequest) {
   const byHash = await db.execute({
     sql: `SELECT id, childcare_session_id FROM paper_log_import_batches
           WHERE household_id = ? AND baby_id = ? AND source_hash = ?
-            AND source_kind = 'caretaker_screenshot' LIMIT 1`,
+            AND source_kind = 'caretaker_screenshot' AND status <> 'cancelled' LIMIT 1`,
     args: [member.householdId, babyId, sourceHash],
   });
   if (byHash.rows.length > 0) {
@@ -328,7 +328,7 @@ export async function POST(request: NextRequest) {
     const raced = await db.execute({
       sql: `SELECT id, childcare_session_id FROM paper_log_import_batches
             WHERE household_id = ? AND baby_id = ? AND source_hash = ?
-              AND source_kind = 'caretaker_screenshot' LIMIT 1`,
+              AND source_kind = 'caretaker_screenshot' AND status <> 'cancelled' LIMIT 1`,
       args: [member.householdId, babyId, sourceHash],
     });
     if (raced.rows.length > 0) {

@@ -47,7 +47,7 @@ export async function projectChildcareSessionLog(
     sql: `SELECT cs.id, cs.baby_id, cs.checked_in_at, cs.checked_out_at,
                  cs.created_at, cs.updated_at, b.name AS baby_name
           FROM childcare_sessions cs JOIN babies b ON b.id = cs.baby_id
-          WHERE ${where}`,
+          WHERE ${where} AND cs.removed_at IS NULL`,
     args,
   });
   const window = dateWindow(date);

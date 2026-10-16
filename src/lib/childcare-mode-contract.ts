@@ -6,12 +6,15 @@ export type ChildcareSessionSummary = {
   pendingImport: boolean;
   importBatchId: string | null;
   importCompletedAt: number | null;
+  removedAt: number | null;
+  reviewedCareWindow?: { startedAt: number; endedAt: number } | null;
 };
 
 export type ChildcareModeState = {
   schemaReady: boolean;
   activeSession: ChildcareSessionSummary | null;
   pendingSessions: ChildcareSessionSummary[];
+  historySessions: ChildcareSessionSummary[];
 };
 
 export type ChildcareModeCommandResponse = ChildcareModeState & {

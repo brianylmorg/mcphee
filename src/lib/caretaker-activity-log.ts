@@ -4,6 +4,7 @@ import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
 import type { TimelineRecord } from "@/lib/activity-timeline";
 import { caretakerSleepCoverageFromAudit } from "@/lib/caretaker-sleep-audit";
 import { isChildcareModeSchemaReady } from "@/db/childcare-mode-schema";
+import { matchUnlinkedImports, type MatchableBatch, type MatchableSession } from "@/lib/childcare-import-match";
 
 /** Imports are shown as childcare; the stored uploader is never changed. */
 const CARETAKER_CREATED_BY = "childcare";
@@ -26,6 +27,7 @@ type CaretakerBatchRow = {
   audit_metadata: unknown;
   baby_name: unknown;
   childcare_session_id: unknown;
+  selected_date?: unknown;
 };
 
 /**
@@ -89,6 +91,51 @@ function compareTimelineDescending(a: TimelineRecord, b: TimelineRecord): number
   return idA < idB ? 1 : -1;
 }
 
+async function loadSessionOwnedBatchIds(
+  db: Pick<Client, "execute">,
+  householdId: string,
+  babyId: string | null,
+  batches: CaretakerBatchRow[],
+): Promise<Set<string>> {
+  const unlinked: MatchableBatch[] = batches
+    .filter((batch) => batch.childcare_session_id == null)
+    .map((batch) => ({
+      id: String(batch.id),
+      babyId: String(batch.baby_id),
+      childcareSessionId: null,
+      selectedDate: typeof batch.selected_date === "string" && batch.selected_date ? batch.selected_date : null,
+      committedAt: batch.committed_at == null ? null : Number(batch.committed_at),
+      coverage: caretakerSleepCoverageFromAudit(batch.audit_metadata),
+    }));
+  if (unlinked.length === 0) return new Set();
+
+  const args: string[] = [householdId];
+  let where = "b.household_id = ? AND cs.removed_at IS NULL";
+  if (babyId) {
+    where += " AND cs.baby_id = ?";
+    args.push(babyId);
+  }
+  try {
+    const result = await db.execute({
+      sql: `SELECT cs.id, cs.baby_id, cs.checked_in_at, cs.checked_out_at, cs.import_batch_id
+            FROM childcare_sessions cs JOIN babies b ON b.id = cs.baby_id
+            WHERE ${where}`,
+      args,
+    });
+    const sessions: MatchableSession[] = result.rows.map((row) => ({
+      id: String(row.id),
+      babyId: String(row.baby_id),
+      checkedInAt: Number(row.checked_in_at),
+      checkedOutAt: row.checked_out_at == null ? null : Number(row.checked_out_at),
+      importBatchId: row.import_batch_id == null ? null : String(row.import_batch_id),
+    }));
+    return new Set([...matchUnlinkedImports(sessions, unlinked).values()].map((batch) => batch.id));
+  } catch (error) {
+    console.error("Childcare session matching unavailable:", error);
+    return new Set();
+  }
+}
+
 export async function projectCaretakerActivityLog(
   db: Pick<Client, "execute">,
   householdId: string,
@@ -116,7 +163,7 @@ export async function projectCaretakerActivityLog(
   let batches: CaretakerBatchRow[];
   try {
     const result = await db.execute({
-      sql: `SELECT cb.id, cb.baby_id, cb.committed_at, cb.audit_metadata, b.name AS baby_name,
+      sql: `SELECT cb.id, cb.baby_id, cb.committed_at, cb.audit_metadata, cb.selected_date, b.name AS baby_name,
                    ${childcareSchemaReady ? "cb.childcare_session_id" : "NULL"} AS childcare_session_id
         FROM paper_log_import_batches cb
         JOIN babies b ON b.id = cb.baby_id
@@ -130,6 +177,12 @@ export async function projectCaretakerActivityLog(
     console.error("Caretaker activity log projection unavailable:", error);
     return capToLimit(activities);
   }
+
+  // Unlinked imports that belong to a recorded session are shown through that
+  // session's own care markers, so they never add a second care start/end.
+  const sessionOwnedBatchIds = childcareSchemaReady
+    ? await loadSessionOwnedBatchIds(db, householdId, babyId, batches)
+    : new Set<string>();
 
   const importedByBaby = new Map<string, Set<string>>();
   const markers: TimelineRecord[] = [];
@@ -159,6 +212,7 @@ export async function projectCaretakerActivityLog(
     }
 
     if (!includeMarkers || batch.childcare_session_id != null) continue;
+    if (sessionOwnedBatchIds.has(String(batch.id))) continue;
 
     const coverage = caretakerSleepCoverageFromAudit(metadata);
     if (!coverage) continue;

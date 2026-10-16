@@ -469,7 +469,7 @@ test("absent or partial childcare schema remains unavailable without creating sc
   for (const partial of [false, true]) {
     if (partial) await db.execute("CREATE TABLE childcare_sessions (id TEXT PRIMARY KEY)");
     const state = await json(await GET(request("/api/childcare-mode?babyId=baby")));
-    assert.deepEqual(state, { schemaReady: false, activeSession: null, pendingSessions: [] });
+    assert.deepEqual(state, { schemaReady: false, activeSession: null, pendingSessions: [], historySessions: [] });
     const response = await POST(request("/api/childcare-mode", "POST", { action: "checkIn", babyId: "baby", requestId: "unready-schema-command" }));
     assert.equal(response.status, 503);
   }

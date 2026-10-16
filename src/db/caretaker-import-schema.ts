@@ -36,9 +36,9 @@ const INDEXES = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_caretaker_import_stage_request
     ON paper_log_import_batches(household_id, stage_request_id)
     WHERE source_kind = 'caretaker_screenshot'`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_caretaker_import_source_hash_v2
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_caretaker_import_source_hash_v4
     ON paper_log_import_batches(household_id, baby_id, source_hash)
-    WHERE source_kind = 'caretaker_screenshot'`,
+    WHERE source_kind = 'caretaker_screenshot' AND status <> 'cancelled'`,
   `CREATE INDEX IF NOT EXISTS idx_caretaker_import_expiry
     ON paper_log_import_batches(expires_at)
     WHERE source_kind = 'caretaker_screenshot' AND purged_at IS NULL`,
@@ -69,6 +69,9 @@ async function addMissingColumns(
 export async function applyCaretakerImportSchema(db: SchemaExecutor): Promise<void> {
   await addMissingColumns(db, "paper_log_import_batches", CARETAKER_IMPORT_BATCH_COLUMNS);
   await addMissingColumns(db, "paper_log_import_rows", CARETAKER_IMPORT_ROW_COLUMNS);
+  // v2 covered cancelled drafts (blocking a re-import); v3 also freed expired ones.
+  await db.execute("DROP INDEX IF EXISTS idx_caretaker_import_source_hash_v2");
+  await db.execute("DROP INDEX IF EXISTS idx_caretaker_import_source_hash_v3");
   for (const sql of INDEXES) await db.execute(sql);
 }
 
@@ -81,7 +84,7 @@ export async function isCaretakerImportSchemaReady(db: SchemaExecutor): Promise<
         sql: `SELECT name FROM sqlite_master WHERE type = 'index' AND name IN (?, ?, ?, ?)`,
         args: [
           "idx_caretaker_import_stage_request",
-          "idx_caretaker_import_source_hash_v2",
+          "idx_caretaker_import_source_hash_v4",
           "idx_caretaker_import_expiry",
           "idx_caretaker_import_rows_batch",
         ],

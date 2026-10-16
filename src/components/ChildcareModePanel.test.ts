@@ -5,7 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
-import ChildcareModePanel, { type ChildcareModePanelProps } from "./ChildcareModePanel";
+import ChildcareModePanel, {
+  ChildcareTimesEditor,
+  validateSessionTimes,
+  type ChildcareModePanelProps,
+} from "./ChildcareModePanel";
 
 // 2026-10-16T00:00:00Z is 08:00 on 16 Oct 2026 in Singapore.
 const CHECKED_IN_AT = Date.parse("2026-10-16T00:00:00Z");
@@ -19,6 +23,8 @@ function session(overrides: Partial<ChildcareSessionSummary> = {}): ChildcareSes
     pendingImport: true,
     importBatchId: null,
     importCompletedAt: null,
+    removedAt: null,
+    reviewedCareWindow: null,
     ...overrides,
   };
 }
@@ -51,79 +57,265 @@ const overnight = session({
   checkedOutAt: Date.parse("2026-10-17T22:15:00Z"),
 });
 
-test("idle panel shows the not-checked-in state and check in only", () => {
-  const html = render();
-  assert.match(html, /aria-label="Childcare"/);
-  assert.match(html, />Childcare</);
-  assert.ok(html.includes("Not checked in"));
-  assert.match(html, /Check in</);
-  assert.equal((html.match(/<button/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /Check out/);
-  assert.doesNotMatch(html, /Care logs to import/);
+// Closed and already imported: 10 Oct 2026, 09:00 - 17:00 SGT.
+const imported = session({
+  id: "session-imported",
+  checkedInAt: Date.parse("2026-10-10T01:00:00Z"),
+  checkedOutAt: Date.parse("2026-10-10T09:00:00Z"),
+  pendingImport: false,
+  importBatchId: "batch-fixture",
+  importCompletedAt: Date.parse("2026-10-11T00:00:00Z"),
 });
 
-test("active session shows the SGT check-in stamp, confirmation note and check out", () => {
+// Closed, never flagged for a screenshot import: 5 Oct 2026, 09:00 - 17:00 SGT.
+const noImportNeeded = session({
+  id: "session-plain",
+  checkedInAt: Date.parse("2026-10-05T01:00:00Z"),
+  checkedOutAt: Date.parse("2026-10-05T09:00:00Z"),
+  pendingImport: false,
+});
+
+const historyCallbacks = {
+  onEditSession: async () => true,
+  onDismissImport: async () => true,
+  onRemoveSession: async () => true,
+};
+
+test("idle state says 'Not in childcare' and offers a check in that records now", () => {
+  const html = render();
+
+  assert.match(html, /aria-label="Childcare"/);
+  assert.match(html, />Childcare</);
+  assert.ok(html.includes("Not in childcare"));
+  assert.match(html, /Check in</);
+  assert.doesNotMatch(html, /Check out/);
+  assert.equal((html.match(/<button/g) ?? []).length, 1);
+  // The custom-time details block is gone: no picker until a session exists.
+  assert.doesNotMatch(
+    html,
+    /Set check-in time|Set check-out time|datetime-local|Previous sessions|Care logs to import/,
+  );
+});
+
+test("active stay shows the SGT start stamp, latest editor wording and check out", () => {
   const html = render({ activeSession: session({ id: "session-active" }) });
+
   assert.ok(html.includes("Aria is in childcare"));
   assert.ok(html.includes("Checked in 16 Oct 2026 at 08:00 SGT"));
   assert.ok(html.includes("Adding an activity will ask for confirmation."));
+  assert.match(html, /aria-label="Edit start time"/);
+  assert.match(html, /Edit start time</);
   assert.match(html, /Check out</);
   assert.doesNotMatch(html, /Check in</);
+  // The start-time editor stays closed until the caretaker asks for it.
+  assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /datetime-local|Save start time/);
 });
 
-test("import list keeps only unseen closed pending sessions and prints no raw ids", () => {
+test("previous sessions merge history and pending, dedupe by id and read newest first", () => {
   const html = render({
     activeSession: session({ id: "session-active" }),
-    pendingSessions: [
+    pendingSessions: [daytime, overnight, { ...daytime }],
+    historySessions: [
       daytime,
-      { ...daytime, checkedInAt: Date.parse("2026-07-04T03:00:00Z") },
-      overnight,
-      session({ id: "session-done", checkedInAt: Date.parse("2026-09-01T01:00:00Z"), importCompletedAt: Date.parse("2026-09-02T00:00:00Z") }),
-      session({ id: "session-flagged", checkedInAt: Date.parse("2026-08-01T01:00:00Z"), pendingImport: false }),
-      session({ id: "session-open", checkedInAt: Date.parse("2026-06-01T01:00:00Z"), checkedOutAt: null }),
+      imported,
+      noImportNeeded,
+      session({ id: "session-removed", removedAt: Date.parse("2026-11-02T00:00:00Z"), checkedInAt: Date.parse("2026-11-01T01:00:00Z"), checkedOutAt: Date.parse("2026-11-01T09:00:00Z") }),
+      session({ id: "session-open", checkedInAt: Date.parse("2026-09-01T01:00:00Z"), checkedOutAt: null }),
       session({ id: "session-active", checkedInAt: Date.parse("2026-05-01T01:00:00Z") }),
     ],
   });
 
-  assert.match(html, /Care logs to import/);
-  assert.equal((html.match(/<li /g) ?? []).length, 2);
-  assert.equal((html.match(/Import screenshot/g) ?? []).length, 2);
-  // Genuine rows keep their SGT dates; the overnight stay spells out the end date.
-  assert.ok(html.includes("16 Oct 2026"));
+  // One combined list: no second "Care logs to import" section.
+  assert.equal((html.match(/Previous sessions/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /Care logs to import/);
+  // Four closed sessions: the duplicated id and the active stay collapse away.
+  assert.equal((html.match(/<li /g) ?? []).length, 4);
+
+  // Measured from the list heading: the active-stay stamp also prints that date.
+  const listStart = html.indexOf("Previous sessions");
+  assert.ok(listStart > -1);
+  const positions = ["17 Oct 2026", "16 Oct 2026", "10 Oct 2026", "5 Oct 2026"].map((label) =>
+    html.indexOf(label, listStart),
+  );
+  assert.ok(positions.every((position) => position > -1));
+  assert.deepEqual([...positions].sort((first, second) => first - second), positions);
+
+  // Genuine rows keep their SGT windows; an overnight stay spells out the end date.
   assert.ok(html.includes("09:15 - 17:30 SGT"));
   assert.ok(html.includes("23:40 - 18 Oct 2026, 06:15 SGT"));
-  // Completed, unflagged, still-open, active and duplicate-id rows are dropped.
-  assert.doesNotMatch(html, /(1 Sep|1 Aug|1 Jun|1 May|4 Jul) 2026/);
+  // Removed, still-open and active sessions never reach the list.
+  assert.doesNotMatch(html, /(1 Nov|1 Sep|1 May) 2026/);
   assert.doesNotMatch(html, /session-[a-z-]+/);
 });
 
-test("busy disables every visible check-in and import control and shows the escaped error", () => {
-  const html = render({ busy: true, error: "Couldn't check in <twice>", pendingSessions: [daytime, overnight] });
+test("every row carries its own import status", () => {
+  const html = render({
+    pendingSessions: [daytime],
+    historySessions: [daytime, imported, noImportNeeded],
+  });
+
+  assert.equal((html.match(/>Imported</g) ?? []).length, 1);
+  assert.equal((html.match(/>Screenshot pending</g) ?? []).length, 1);
+  assert.equal((html.match(/>No import needed</g) ?? []).length, 1);
+});
+
+test("unimported rows offer import, dismiss and remove while imported rows never remove", () => {
+  const html = render({
+    pendingSessions: [daytime],
+    historySessions: [daytime, imported, noImportNeeded],
+    ...historyCallbacks,
+  });
+
+  // Only the screenshot-pending row imports or dismisses its draft.
+  assert.equal((html.match(/Import screenshot/g) ?? []).length, 1);
+  assert.equal((html.match(/Dismiss import/g) ?? []).length, 1);
+  // All three closed rows can be corrected.
+  assert.equal((html.match(/Edit times/g) ?? []).length, 3);
+  // Remove is offered for the unimported rows only, never for the imported one.
+  assert.equal((html.match(/Remove session/g) ?? []).length, 2);
+});
+
+test("history rows still render for SSR callers that omit the optional callbacks", () => {
+  const html = render({ pendingSessions: [daytime], historySessions: [imported, noImportNeeded] });
+
+  assert.ok(html.includes("16 Oct 2026"));
+  assert.ok(html.includes("Import screenshot"));
+  assert.doesNotMatch(html, /Edit times|Dismiss import|Remove session/);
+});
+
+test("approved sleep window is shown only when it differs from the attendance window", () => {
+  const sameAsAttendance = render({
+    historySessions: [
+      session({
+        id: "session-reviewed-same",
+        checkedInAt: Date.parse("2026-10-16T01:15:00Z"),
+        checkedOutAt: Date.parse("2026-10-16T09:30:00Z"),
+        reviewedCareWindow: {
+          startedAt: Date.parse("2026-10-16T01:15:00Z"),
+          endedAt: Date.parse("2026-10-16T09:30:00Z"),
+        },
+      }),
+    ],
+  });
+  assert.doesNotMatch(sameAsAttendance, /Approved sleep/);
+
+  const reviewedDifferently = render({
+    historySessions: [
+      session({
+        id: "session-reviewed-different",
+        checkedInAt: Date.parse("2026-10-16T01:15:00Z"),
+        checkedOutAt: Date.parse("2026-10-16T09:30:00Z"),
+        reviewedCareWindow: {
+          startedAt: Date.parse("2026-10-16T05:00:00Z"),
+          endedAt: Date.parse("2026-10-16T07:30:00Z"),
+        },
+      }),
+    ],
+  });
+  assert.match(reviewedDifferently, /Approved sleep 13:00 - 15:30 SGT/);
+});
+
+test("busy disables every visible control and shows the escaped parent error", () => {
+  const html = render({
+    busy: true,
+    error: "Couldn't check in <twice>",
+    pendingSessions: [daytime],
+    historySessions: [imported],
+    ...historyCallbacks,
+  });
 
   const buttonTags = html.match(/<button[^>]*>/g) ?? [];
-  assert.equal(buttonTags.length, 3);
+  // Check in, plus import, dismiss, remove and edit for the listed rows.
+  assert.equal(buttonTags.length, 6);
   assert.equal(buttonTags.filter((tag) => tag.includes('disabled=""')).length, buttonTags.length);
-  // The optional custom-time field is disabled alongside the buttons.
-  const customTimeField = /<input[^>]*type="datetime-local"[^>]*>/.exec(html)?.[0] ?? "";
-  assert.ok(customTimeField.includes('disabled=""'));
   assert.match(html, /Check in</);
   assert.match(html, /role="alert"/);
   assert.ok(html.includes("Couldn&#x27;t check in &lt;twice&gt;"));
 });
 
-test("custom time field is a labelled native datetime-local input in both states", () => {
-  const idle = render();
-  const active = render({ activeSession: session({ id: "session-active" }) });
+test("attendance validation keeps the window real, ordered and no later than now", () => {
+  const now = Date.parse("2026-10-16T12:00:00Z"); // 20:00 SGT.
+  const valid = validateSessionTimes("2026-10-16T09:15", "2026-10-16T17:30", now);
+  assert.equal(valid.ok, true);
+  if (valid.ok) {
+    assert.equal(valid.startedAt, Date.parse("2026-10-16T09:15:00+08:00"));
+    assert.equal(valid.endedAt, Date.parse("2026-10-16T17:30:00+08:00"));
+  }
 
-  const idleField = /<input[^>]*type="datetime-local"[^>]*>/.exec(idle)?.[0] ?? "";
-  const activeField = /<input[^>]*type="datetime-local"[^>]*>/.exec(active)?.[0] ?? "";
-  assert.ok(idleField.length > 0);
-  assert.ok(activeField.length > 0);
+  const reversed = validateSessionTimes("2026-10-16T17:30", "2026-10-16T09:15", now);
+  assert.equal(reversed.ok, false);
+  if (!reversed.ok) assert.match(reversed.message, /after the start time/);
 
-  const fieldId = / id="([^"]+)"/.exec(idleField)?.[1] ?? "";
-  assert.ok(fieldId.length > 0);
-  assert.ok(idle.includes(`<label for="${fieldId}"`));
-  assert.ok(active.includes(`<label for="${fieldId}"`));
-  assert.match(idle, /Check-in time \(Singapore\)/);
-  assert.match(active, /Check-out time \(Singapore\)/);
+  const future = validateSessionTimes("2026-10-16T09:15", "2026-10-16T21:30", now);
+  assert.equal(future.ok, false);
+  if (!future.ok) assert.match(future.message, /not be later than now/);
+
+  const impossibleDay = validateSessionTimes("2026-02-30T09:15", "2026-03-02T09:00", now);
+  assert.equal(impossibleDay.ok, false);
+  if (!impossibleDay.ok) assert.match(impossibleDay.message, /valid start time/);
+
+  const missingEnd = validateSessionTimes("2026-10-16T09:15", "", now);
+  assert.equal(missingEnd.ok, false);
+  if (!missingEnd.ok) assert.match(missingEnd.message, /valid end time/);
+});
+
+test("attendance editor labels start and end and flags imported rows as attendance-only", () => {
+  const html = renderToStaticMarkup(
+    createElement(ChildcareTimesEditor, {
+      isImported: true,
+      startValue: "2026-10-16T09:15",
+      endValue: "2026-10-16T17:30",
+      maxValue: "2026-10-16T20:00",
+      error: null,
+      onStartChange: () => {},
+      onEndChange: () => {},
+      onSave: () => {},
+      onCancel: () => {},
+    }),
+  );
+
+  const fields = html.match(/<input[^>]*type="datetime-local"[^>]*>/g) ?? [];
+  assert.equal(fields.length, 2);
+  for (const field of fields) {
+    const fieldId = / id="([^"]+)"/.exec(field)?.[1] ?? "";
+    assert.ok(fieldId.length > 0);
+    assert.ok(html.includes(`<label for="${fieldId}"`));
+  }
+  assert.match(html, /value="2026-10-16T09:15"/);
+  assert.match(html, /value="2026-10-16T17:30"/);
+  assert.match(html, /max="2026-10-16T20:00"/);
+  assert.ok(html.includes("Start time (Singapore)"));
+  assert.ok(html.includes("End time (Singapore)"));
+  assert.ok(
+    html.includes(
+      "Changes attendance times only. Imported activities and the approved sleep window stay unchanged.",
+    ),
+  );
+  assert.match(html, />Save times</);
+  assert.match(html, />Cancel</);
+  assert.doesNotMatch(html, /disabled=""/);
+});
+
+test("attendance editor keeps its failure message and locked state while saving", () => {
+  const html = renderToStaticMarkup(
+    createElement(ChildcareTimesEditor, {
+      isImported: false,
+      startValue: "",
+      endValue: "",
+      error: "Could not save the new times. Please try again.",
+      disabled: true,
+      onStartChange: () => {},
+      onEndChange: () => {},
+      onSave: () => {},
+      onCancel: () => {},
+    }),
+  );
+
+  assert.ok(html.includes("Updates the recorded care window for this session."));
+  assert.ok(html.includes("Could not save the new times. Please try again."));
+  assert.match(html, /role="alert"/);
+  const buttonTags = html.match(/<button[^>]*>/g) ?? [];
+  assert.equal(buttonTags.length, 2);
+  assert.equal(buttonTags.filter((tag) => tag.includes('disabled=""')).length, 2);
 });

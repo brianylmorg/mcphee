@@ -156,7 +156,7 @@ export default function DashboardPage() {
   const [showActivityMenu, setShowActivityMenu] = useState(false);
   const [showCaretakerImport, setShowCaretakerImport] = useState(false);
   const [caretakerImportSession, setCaretakerImportSession] = useState<ChildcareSessionSummary | null>(null);
-  const [childcareMode, setChildcareMode] = useState<ChildcareModeState>({ schemaReady: false, activeSession: null, pendingSessions: [] });
+  const [childcareMode, setChildcareMode] = useState<ChildcareModeState>({ schemaReady: false, activeSession: null, pendingSessions: [], historySessions: [] });
   const [childcareBusy, setChildcareBusy] = useState(false);
   const [childcareError, setChildcareError] = useState<string | null>(null);
   const [childcareOverride, setChildcareOverride] = useState(false);
@@ -480,7 +480,7 @@ export default function DashboardPage() {
       setActivities(data.activities || []);
       setChildcareMode(data.childcareMode && typeof data.childcareMode === "object"
         ? data.childcareMode as ChildcareModeState
-        : { schemaReady: false, activeSession: null, pendingSessions: [] });
+        : { schemaReady: false, activeSession: null, pendingSessions: [], historySessions: [] });
       if (data.household?.inviteCode) {
         setInviteCode(data.household.inviteCode);
       }
@@ -1133,6 +1133,7 @@ export default function DashboardPage() {
         schemaReady: Boolean(payload.schemaReady),
         activeSession: payload.activeSession ?? null,
         pendingSessions: Array.isArray(payload.pendingSessions) ? payload.pendingSessions : [],
+        historySessions: Array.isArray(payload.historySessions) ? payload.historySessions : [],
         session: payload.session,
         idempotent: Boolean(payload.idempotent),
       };
@@ -1149,6 +1150,47 @@ export default function DashboardPage() {
       setChildcareError(caught instanceof Error ? caught.message : "Could not update childcare status.");
       await fetchData({ refreshMilkHistory: false });
       return null;
+    } finally {
+      setChildcareBusy(false);
+    }
+  };
+
+
+  const updateChildcareHistory = async (
+    action: "editSession" | "dismissImport" | "removeSession",
+    session: ChildcareSessionSummary,
+    times?: { checkedInAt: number; checkedOutAt: number },
+  ): Promise<boolean> => {
+    if (!baby?.id || childcareBusy) return false;
+    setChildcareBusy(true);
+    setChildcareError(null);
+    try {
+      const response = await fetch("/api/childcare-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action, babyId: baby.id, sessionId: session.id,
+          requestId: crypto.randomUUID(),
+          expectedCheckedInAt: session.checkedInAt,
+          expectedCheckedOutAt: session.checkedOutAt,
+          ...times,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not update this childcare session.");
+      setChildcareMode({
+        schemaReady: Boolean(payload.schemaReady),
+        activeSession: payload.activeSession ?? null,
+        pendingSessions: Array.isArray(payload.pendingSessions) ? payload.pendingSessions : [],
+        historySessions: Array.isArray(payload.historySessions) ? payload.historySessions : [],
+      });
+      setActivityFilterRefresh(value => value + 1);
+      await fetchData({ refreshMilkHistory: false });
+      return true;
+    } catch (caught) {
+      setChildcareError(caught instanceof Error ? caught.message : "Could not update this childcare session.");
+      await fetchData({ refreshMilkHistory: false });
+      return false;
     } finally {
       setChildcareBusy(false);
     }
@@ -1539,6 +1581,10 @@ export default function DashboardPage() {
                   babyName={baby.name || "Baby"}
                   activeSession={childcareMode.activeSession}
                   pendingSessions={childcareMode.pendingSessions}
+                  historySessions={childcareMode.historySessions ?? []}
+                  onEditSession={(session, times) => updateChildcareHistory("editSession", session, times)}
+                  onDismissImport={(session) => updateChildcareHistory("dismissImport", session)}
+                  onRemoveSession={(session) => updateChildcareHistory("removeSession", session)}
                   busy={childcareBusy}
                   error={childcareError}
                   onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}

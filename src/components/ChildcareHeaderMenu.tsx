@@ -16,12 +16,9 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
   const titleId = useId();
 
   const isActive = panelProps.activeSession !== null;
-  const hasPending = !isActive && panelProps.pendingSessions.length > 0;
   const statusLabel = isActive
     ? "Childcare status: in childcare"
-    : hasPending
-      ? "Childcare status: screenshot pending"
-      : "Childcare status: not checked in";
+    : "Childcare status: not in childcare";
 
   const close = () => dialogRef.current?.close();
 
@@ -55,8 +52,8 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
           strokeWidth={1.75}
           className={`h-6 w-6 text-red-600 [&>path:first-child]:stroke-stone-500 ${isActive ? "[&>path:last-child]:fill-red-500" : "[&>path:last-child]:fill-stone-100"}`}
         />
-        {(isActive || hasPending) && (
-          <span aria-hidden="true" className={`absolute right-1 top-1 h-2 w-2 rounded-full ${isActive ? "bg-red-600" : "bg-muted/50"}`} />
+        {isActive && (
+          <span aria-hidden="true" className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-600" />
         )}
       </button>
 
@@ -70,7 +67,7 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         onClick={event => {
           if (event.target === dialogRef.current) close();
         }}
-        className="baby-care-dialog m-auto max-h-[85dvh] w-[calc(100%_-_2rem)] max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-0 text-left text-warm-brown shadow-xl"
+        className="baby-care-dialog m-auto max-h-[85dvh] w-[calc(100%_-_2rem)] max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-border bg-surface p-0 text-left text-warm-brown shadow-xl"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
           <div className="min-w-0">

@@ -4,9 +4,12 @@ import { createClient, type Client } from "@libsql/client";
 import { NextRequest } from "next/server";
 
 import { applyCaretakerImportSchema } from "@/db/caretaker-import-schema";
+import { applyChildcareModeSchema } from "@/db/childcare-mode-schema";
+import { GET as getChildcareMode } from "@/app/api/childcare-mode/route";
 import { GET as getActivities } from "./route";
 
 const DAY = "2026-10-05";
+const SESSION_DAY = "2026-10-16";
 const ts = (date: string, time: string) => Date.parse(`${date}T${time}:00+08:00`);
 
 type ActivityRecord = {
@@ -129,6 +132,7 @@ function insertBatch({
   householdId,
   babyId,
   auditMetadata,
+  selectedDate = DAY,
   committedAt = ts(DAY, "18:00"),
   purgedAt = null,
 }: {
@@ -136,6 +140,7 @@ function insertBatch({
   householdId: string;
   babyId: string;
   auditMetadata: string;
+  selectedDate?: string;
   committedAt?: number;
   purgedAt?: number | null;
 }) {
@@ -152,13 +157,88 @@ function insertBatch({
       "Parent One",
       `source-${id}`,
       ts("2026-10-12", "00:00"),
-      DAY,
+      selectedDate,
       auditMetadata,
       committedAt,
       purgedAt,
     ],
   };
 }
+
+test("unlinked import on a session day shows one care window and clears the pending import", async () => {
+  const { client, restore } = await openTestDb("unlinked-session");
+  try {
+    await createCoreSchema(client);
+    await createCaretakerTables(client);
+    await applyChildcareModeSchema(client);
+
+    await client.batch([
+      {
+        sql: `INSERT INTO childcare_sessions
+              (id, baby_id, checked_in_at, checked_out_at, check_in_request_id,
+               check_out_request_id, pending_import, import_batch_id, created_at, updated_at)
+              VALUES ('session-1', 'baby-1', ?, ?, 'session-1-check-in', 'session-1-check-out',
+                      1, NULL, ?, ?)`,
+        args: [
+          ts(SESSION_DAY, "09:00"),
+          ts(SESSION_DAY, "15:06"),
+          ts(SESSION_DAY, "15:06"),
+          ts(SESSION_DAY, "15:06"),
+        ],
+      },
+      insertBatch({
+        id: "batch-unlinked",
+        householdId: "house-1",
+        babyId: "baby-1",
+        selectedDate: SESSION_DAY,
+        committedAt: ts(SESSION_DAY, "17:00"),
+        auditMetadata: audit(2, [], {
+          startedAt: ts(SESSION_DAY, "09:00"),
+          endedAt: ts(SESSION_DAY, "16:13"),
+        }),
+      }),
+    ], "write");
+
+    const listed = await activitiesFrom(`/api/activities?babyId=baby-1&date=${SESSION_DAY}`);
+    const notesOf = (row: ActivityRecord) =>
+      (JSON.parse(String(row.details)) as { notes?: unknown }).notes;
+    const careStarted = listed.activities.filter((row) => notesOf(row) === "Care started");
+    const careEnded = listed.activities.filter((row) => notesOf(row) === "Care ended");
+
+    assert.equal(careStarted.length, 1, "the matched session contributes the only care start");
+    assert.equal(careEnded.length, 1, "the matched session contributes the only care end");
+    assert.equal(careStarted[0].started_at, ts(SESSION_DAY, "09:00"));
+    assert.equal(
+      careEnded[0].started_at,
+      ts(SESSION_DAY, "15:06"),
+      "the closed session's checkout time owns the care end, not the import's 16:13 window",
+    );
+    assert.equal(careEnded[0].id, "childcare-care:session-1:end");
+    assert.equal(
+      listed.activities.some((row) => row.id.startsWith("caretaker-care:")),
+      false,
+      "a session-owned import never adds its own marker pair",
+    );
+
+    const stateResponse = await getChildcareMode(
+      new NextRequest("http://localhost/api/childcare-mode?babyId=baby-1", {
+        headers: { cookie: "mcphee_hh=house-1; mcphee_user=user-1" },
+      }),
+    );
+    assert.equal(stateResponse.status, 200);
+    const state = await stateResponse.json() as {
+      pendingSessions: { id: string }[];
+      historySessions: { id: string; pendingImport: boolean; importBatchId: string | null }[];
+    };
+    assert.deepEqual(state.pendingSessions, [], "the matched import clears the pending prompt");
+    assert.equal(state.historySessions.length, 1);
+    assert.equal(state.historySessions[0].id, "session-1");
+    assert.equal(state.historySessions[0].pendingImport, false);
+    assert.equal(state.historySessions[0].importBatchId, "batch-unlinked");
+  } finally {
+    restore();
+  }
+});
 
 test("activity GET remains read-only and unchanged when the caretaker schema is absent", async () => {
   const { client, restore } = await openTestDb("no-schema");

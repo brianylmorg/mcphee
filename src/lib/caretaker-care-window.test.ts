@@ -13,6 +13,7 @@ test("linked care window preserves exact session seconds and milliseconds", () =
     pendingImport: true,
     importBatchId: "batch-fixture",
     importCompletedAt: null,
+    removedAt: null,
   };
 
   const window = resolveCaretakerCareWindow(
