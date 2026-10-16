@@ -54,54 +54,45 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
     return () => window.clearInterval(interval);
   }, []);
   const displayedElapsed = elapsedLabel ?? (since == null ? "Not timed yet" : formatElapsed(Math.max(0, now - since)));
+  const current = options.find((option) => option.state === state)!;
+  const other = options.find((option) => option.state !== state)!;
+  const CurrentIcon = current.Icon;
+  const OtherIcon = other.Icon;
+  const untimed = since == null && elapsedLabel == null;
+
+  // The whole toggle is the current state's scene. Both scenes stay mounted
+  // and crossfade; the sun sinks as the moon rises (and back) on a switch.
   return (
     <div
       data-compact={compact}
       data-state={state}
-      className="sleep-toggle relative min-w-0 overflow-hidden rounded-xl border border-border bg-surface/60 p-1 shadow-inner"
+      role="group"
       aria-label="Sleep state"
+      className="sleep-toggle relative isolate min-w-0 overflow-hidden rounded-xl border border-border shadow-inner"
     >
-      <div className="relative grid grid-cols-2 gap-1">
-        <span
-          aria-hidden="true"
-          data-state={state}
-          className="sleep-thumb pointer-events-none absolute inset-y-0 left-0 w-[calc(50%_-_0.125rem)] overflow-hidden rounded-lg shadow-sm transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-          style={{ transform: state === "sleeping" ? "translateX(calc(100% + 0.25rem))" : "translateX(0)" }}
+      <span aria-hidden="true" className="sleep-scene sleep-scene-day"><StorybookDay /></span>
+      <span aria-hidden="true" className="sleep-scene sleep-scene-night"><StorybookNight /></span>
+
+      <div className={"sleep-toggle-content relative z-10 flex items-center justify-between gap-3 " + (compact ? "min-h-16 px-3 py-2" : "min-h-[6rem] px-4 py-3")}>
+        <div className="min-w-0" aria-live="polite">
+          <p className="sleep-state-label flex items-center gap-1.5 text-sm font-semibold">
+            <CurrentIcon aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span>{current.label}</span>
+          </p>
+          <p className={"sleep-elapsed font-display font-semibold tabular-nums " + (untimed ? "mt-0.5 text-sm" : compact ? "text-2xl leading-8" : "text-[2rem] leading-10")}>
+            {displayedElapsed}
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-label={"Set state to " + other.label}
+          disabled={disabled}
+          onClick={() => onSelect(other.state)}
+          className="sleep-switch inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-semibold shadow-sm backdrop-blur-sm transition-[color,background-color,border-color,transform] duration-700 active:scale-95 disabled:opacity-50 motion-reduce:transition-none"
         >
-          <DayScene />
-          <NightScene />
-        </span>
-        {options.map(({ state: optionState, label, Icon }) => {
-          const active = state === optionState;
-          return (
-            <button
-              key={optionState}
-              type="button"
-              aria-label={"Set state to " + label}
-              aria-pressed={active}
-              disabled={disabled}
-              onClick={() => {
-                if (!active) onSelect(optionState);
-              }}
-              className={"sleep-option relative z-10 flex min-w-0 items-center justify-center rounded-lg font-semibold transition-[color,opacity] duration-500 motion-reduce:transition-none disabled:opacity-50 "
-                + (compact ? "min-h-10 gap-1.5 px-2 py-1 text-xs " : "min-h-[4.5rem] flex-col gap-0 px-3 py-1.5 text-sm ")
-                + (active ? "sleep-option-active" : "text-muted hover:text-warm-brown")}
-            >
-              <span className="flex items-center gap-1.5">
-                <Icon
-                  aria-hidden="true"
-                  className={"h-4 w-4 shrink-0 transition-transform duration-500 ease-out motion-reduce:transition-none " + (active ? "scale-110" : "scale-90 opacity-60")}
-                />
-                <span>{label}</span>
-              </span>
-              {active && (
-                <span className={"sleep-elapsed font-display font-semibold tabular-nums " + (since == null && elapsedLabel == null ? "text-xs" : compact ? "text-base leading-5" : "text-[1.75rem] leading-8")}>
-                  {displayedElapsed}
-                </span>
-              )}
-            </button>
-          );
-        })}
+          <OtherIcon aria-hidden="true" className="h-4 w-4" />
+          {other.state === "sleeping" ? "Sleep" : "Wake up"}
+        </button>
       </div>
     </div>
   );

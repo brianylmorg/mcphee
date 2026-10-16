@@ -50,139 +50,147 @@ function WatercolourDefs({ id }: { id: string }) {
   );
 }
 
-/** Awake: a smiling sun, drifting clouds, a meadow and a bobbing bee. */
+const CLOUD_PATH = "M4 12 a5 5 0 0 1 6-6 a7 7 0 0 1 13 1 a5 5 0 0 1 4 9 h-22 a4 4 0 0 1 -1-4z";
+
+/**
+ * Awake: the whole toggle is a morning meadow. The sun sits in `.sb-sun-arc`
+ * so it can sink when the baby falls asleep; clouds drift along the top and a
+ * bee loops low beneath the text.
+ */
 export function StorybookDay({ className = "" }: { className?: string }) {
   const id = useSvgId("sbday");
+  const cloud = (x: number, y: number, scale: number, shade = 0.6) => (
+    <g filter={`url(#${id}-edge)`} transform={`translate(${x} ${y}) scale(${scale})`}>
+      <path d={CLOUD_PATH} fill="rgb(var(--sb-cloud))" />
+      <path d="M5 15 h21" stroke="rgb(var(--sb-cloud-shade))" strokeWidth="1.6" strokeLinecap="round" opacity={shade} />
+    </g>
+  );
   return (
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 160 64" preserveAspectRatio="xMidYMid slice" className={`sb-art ${className}`}>
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 320 96" preserveAspectRatio="xMidYMid slice" className={`sb-art ${className}`}>
       <WatercolourDefs id={id} />
-      <linearGradient id={`${id}-sky`} x1="0" y1="0" x2="0.4" y2="1">
+      <linearGradient id={`${id}-sky`} x1="0" y1="0" x2="0.3" y2="1">
         <stop offset="0" stopColor="rgb(var(--sb-day-sky-top))" />
         <stop offset="1" stopColor="rgb(var(--sb-day-sky-bottom))" />
       </linearGradient>
-      <rect width="160" height="64" fill={`url(#${id}-sky)`} />
-      {/* soft pigment blooms in the wash */}
+      <rect width="320" height="96" fill={`url(#${id}-sky)`} />
       <g filter={`url(#${id}-bleed)`} opacity="0.55">
-        <ellipse cx="34" cy="20" rx="26" ry="12" fill="rgb(var(--sb-day-bloom))" />
-        <ellipse cx="112" cy="46" rx="30" ry="10" fill="rgb(var(--sb-day-bloom))" />
+        <ellipse cx="60" cy="30" rx="54" ry="16" fill="rgb(var(--sb-day-bloom))" />
+        <ellipse cx="250" cy="64" rx="60" ry="14" fill="rgb(var(--sb-day-bloom))" />
       </g>
 
-      {/* sun with slowly turning brushstroke rays */}
-      <g transform="translate(140 14)">
-        <g className="sb-sun-rays" filter={`url(#${id}-edge)`} stroke="rgb(var(--sb-sun-rim))" strokeWidth="2.2" strokeLinecap="round" opacity="0.7">
-          {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-            <line key={angle} x1="0" y1="-15" x2="0" y2="-20" transform={`rotate(${angle})`} />
-          ))}
-        </g>
-        <g filter={`url(#${id}-edge)`}>
-          <circle r="11.5" fill="rgb(var(--sb-sun))" />
-          <circle r="11.5" fill="none" stroke="rgb(var(--sb-sun-rim))" strokeWidth="1.4" opacity="0.65" />
-        </g>
-        {/* sleepy-happy face */}
-        <g stroke="rgb(var(--sb-ink))" strokeWidth="0.9" strokeLinecap="round" fill="none" opacity="0.75">
-          <path d="M-5 -1.5 q1.6 1.6 3.2 0" />
-          <path d="M1.8 -1.5 q1.6 1.6 3.2 0" />
-          <path d="M-2.2 3 q2.2 2 4.4 0" />
-        </g>
-        <circle cx="-6.4" cy="2.4" r="1.8" fill="rgb(var(--sb-blush))" opacity="0.55" />
-        <circle cx="6.4" cy="2.4" r="1.8" fill="rgb(var(--sb-blush))" opacity="0.55" />
-      </g>
-
-      {/* drifting clouds */}
-      <g className="sb-drift sb-drift-slow">
-        <g filter={`url(#${id}-edge)`} transform="translate(8 4)">
-          <path d="M4 12 a5 5 0 0 1 6-6 a7 7 0 0 1 13 1 a5 5 0 0 1 4 9 h-22 a4 4 0 0 1 -1-4z" fill="rgb(var(--sb-cloud))" />
-          <path d="M5 15 h21" stroke="rgb(var(--sb-cloud-shade))" strokeWidth="1.6" strokeLinecap="round" opacity="0.6" />
-        </g>
-      </g>
-      <g className="sb-drift sb-drift-slower">
-        <g filter={`url(#${id}-edge)`} transform="translate(70 0) scale(0.7)">
-          <path d="M4 12 a5 5 0 0 1 6-6 a7 7 0 0 1 13 1 a5 5 0 0 1 4 9 h-22 a4 4 0 0 1 -1-4z" fill="rgb(var(--sb-cloud))" />
-          <path d="M5 15 h21" stroke="rgb(var(--sb-cloud-shade))" strokeWidth="1.6" strokeLinecap="round" opacity="0.6" />
+      <g className="sb-sun-arc">
+        <g transform="translate(184 36)">
+          <g className="sb-sun-rays" filter={`url(#${id}-edge)`} stroke="rgb(var(--sb-sun-rim))" strokeWidth="2.4" strokeLinecap="round" opacity="0.65">
+            {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => {
+              // Drawn at their angle (not via transform: .sb-art uses fill-box origins).
+              const rad = (angle * Math.PI) / 180;
+              return (
+                <line key={angle} x1={(17 * Math.sin(rad)).toFixed(2)} y1={(-17 * Math.cos(rad)).toFixed(2)} x2={(23 * Math.sin(rad)).toFixed(2)} y2={(-23 * Math.cos(rad)).toFixed(2)} />
+              );
+            })}
+          </g>
+          <g filter={`url(#${id}-edge)`}>
+            <circle r="13" fill="rgb(var(--sb-sun))" />
+            <circle r="13" fill="none" stroke="rgb(var(--sb-sun-rim))" strokeWidth="1.4" opacity="0.6" />
+          </g>
+          <g stroke="rgb(var(--sb-ink))" strokeWidth="0.9" strokeLinecap="round" fill="none" opacity="0.7">
+            <path d="M-5.6 -1.6 q1.8 1.8 3.6 0" />
+            <path d="M2 -1.6 q1.8 1.8 3.6 0" />
+            <path d="M-2.4 3.4 q2.4 2.2 4.8 0" />
+          </g>
+          <circle cx="-7.2" cy="2.8" r="2" fill="rgb(var(--sb-blush))" opacity="0.5" />
+          <circle cx="7.2" cy="2.8" r="2" fill="rgb(var(--sb-blush))" opacity="0.5" />
         </g>
       </g>
 
-      {/* meadow */}
+      <g className="sb-drift sb-drift-slow">{cloud(22, 4, 1)}</g>
+      <g className="sb-drift sb-drift-slower">{cloud(120, 4, 0.72, 0.5)}</g>
+      <g className="sb-drift sb-drift-slowest">{cloud(282, 10, 0.6, 0.45)}</g>
+
       <g filter={`url(#${id}-edge)`}>
-        <path d="M-4 64 V57 q20 -6 42 -1 t44 0 t44 -2 t40 1 V64z" fill="rgb(var(--sb-meadow))" opacity="0.85" />
-        <path d="M-4 64 V60 q26 -4 54 0 t56 -1 t58 1 V64z" fill="rgb(var(--sb-meadow-deep))" opacity="0.7" />
+        <path d="M-4 96 V86 q36 -7 80 -2 t84 -1 t84 -2 t80 2 V96z" fill="rgb(var(--sb-meadow))" opacity="0.85" />
+        <path d="M-4 96 V91 q46 -5 104 0 t108 -1 t116 1 V96z" fill="rgb(var(--sb-meadow-deep))" opacity="0.7" />
       </g>
       <g fill="rgb(var(--sb-flower))" opacity="0.85">
-        <circle cx="22" cy="57.5" r="1.3" />
-        <circle cx="96" cy="56.8" r="1.2" />
-        <circle cx="128" cy="58" r="1.4" />
+        {[24, 70, 118, 172, 214, 268, 300].map((x, i) => <circle key={x} cx={x} cy={86 + (i % 3) * 0.8} r={1.2 + (i % 2) * 0.3} />)}
       </g>
 
-      {/* a little bee looping near the meadow */}
       <g className="sb-bee">
-        <g transform="translate(14 44)">
-          <path d="M-8 2 q-4 -6 -10 -3" stroke="rgb(var(--sb-ink))" strokeWidth="0.6" strokeDasharray="1.2 1.6" fill="none" opacity="0.45" />
-          <ellipse className="sb-bee-wing" cx="-0.8" cy="-3.2" rx="2.4" ry="1.6" fill="rgb(var(--sb-wing))" opacity="0.85" />
-          <ellipse cx="0" cy="0" rx="3.6" ry="2.6" fill="rgb(var(--sb-sun))" stroke="rgb(var(--sb-ink))" strokeWidth="0.5" />
-          <path d="M-0.8 -2.4 v4.8 M1.4 -2.2 v4.4" stroke="rgb(var(--sb-ink))" strokeWidth="0.9" />
-          <circle cx="3" cy="-0.6" r="0.45" fill="rgb(var(--sb-ink))" />
+        <g transform="translate(150 70)">
+          <path d="M-8 2 q-5 -6 -12 -3" stroke="rgb(var(--sb-ink))" strokeWidth="0.6" strokeDasharray="1.2 1.6" fill="none" opacity="0.4" />
+          <ellipse className="sb-bee-wing" cx="-0.8" cy="-3.4" rx="2.6" ry="1.7" fill="rgb(var(--sb-wing))" opacity="0.85" />
+          <ellipse cx="0" cy="0" rx="3.8" ry="2.7" fill="rgb(var(--sb-sun))" stroke="rgb(var(--sb-ink))" strokeWidth="0.5" />
+          <path d="M-0.8 -2.5 v5 M1.5 -2.3 v4.6" stroke="rgb(var(--sb-ink))" strokeWidth="0.9" />
+          <circle cx="3.1" cy="-0.6" r="0.45" fill="rgb(var(--sb-ink))" />
         </g>
       </g>
 
-      <rect width="160" height="64" filter={`url(#${id}-paper)`} />
+      <rect width="320" height="96" filter={`url(#${id}-paper)`} />
     </svg>
   );
 }
 
-/** Sleeping: a dozing crescent moon, twinkling sparkles and drifting z's. */
+/**
+ * Sleeping: the whole toggle is a night sky. The moon sits in `.sb-moon-arc`
+ * so it can rise as the sun sets; sparkles twinkle and z's drift up.
+ */
 export function StorybookNight({ className = "" }: { className?: string }) {
   const id = useSvgId("sbnight");
   const sparkle = "M0 -3.4 Q0.5 -0.5 3.4 0 Q0.5 0.5 0 3.4 Q-0.5 0.5 -3.4 0 Q-0.5 -0.5 0 -3.4z";
   return (
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 160 64" preserveAspectRatio="xMidYMid slice" className={`sb-art ${className}`}>
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 320 96" preserveAspectRatio="xMidYMid slice" className={`sb-art ${className}`}>
       <WatercolourDefs id={id} />
-      <linearGradient id={`${id}-sky`} x1="0" y1="0" x2="0.5" y2="1">
+      <linearGradient id={`${id}-sky`} x1="0" y1="0" x2="0.4" y2="1">
         <stop offset="0" stopColor="rgb(var(--sb-night-top))" />
         <stop offset="1" stopColor="rgb(var(--sb-night-bottom))" />
       </linearGradient>
-      <rect width="160" height="64" fill={`url(#${id}-sky)`} />
+      <rect width="320" height="96" fill={`url(#${id}-sky)`} />
       <g filter={`url(#${id}-bleed)`} opacity="0.5">
-        <ellipse cx="30" cy="48" rx="34" ry="12" fill="rgb(var(--sb-night-bloom))" />
-        <ellipse cx="120" cy="16" rx="28" ry="12" fill="rgb(var(--sb-night-bloom))" />
+        <ellipse cx="70" cy="74" rx="70" ry="16" fill="rgb(var(--sb-night-bloom))" />
+        <ellipse cx="190" cy="26" rx="56" ry="16" fill="rgb(var(--sb-night-bloom))" />
       </g>
 
-      {/* moon gently rocking, with a nightcap of glow */}
-      <g transform="translate(138 18)">
-        <g className="sb-moon">
-          <circle r="15" fill="rgb(var(--sb-moon) / 0.18)" filter={`url(#${id}-bleed)`} />
-          <g filter={`url(#${id}-edge)`}>
-            <path d="M3 -12 a12 12 0 1 0 6 20 a10 10 0 0 1 -6 -20z" fill="rgb(var(--sb-moon))" />
-            <path d="M3 -12 a12 12 0 1 0 6 20" fill="none" stroke="rgb(var(--sb-moon-rim))" strokeWidth="1.2" opacity="0.6" />
+      <g className="sb-moon-arc">
+        <g transform="translate(184 36)">
+          <g className="sb-moon">
+            <circle r="18" fill="rgb(var(--sb-moon) / 0.18)" filter={`url(#${id}-bleed)`} />
+            <g filter={`url(#${id}-edge)`}>
+              <path d="M3.5 -14 a14 14 0 1 0 7 23 a11.5 11.5 0 0 1 -7 -23z" fill="rgb(var(--sb-moon))" />
+              <path d="M3.5 -14 a14 14 0 1 0 7 23" fill="none" stroke="rgb(var(--sb-moon-rim))" strokeWidth="1.2" opacity="0.6" />
+            </g>
+            <path d="M-6.4 -1.2 q2 1.8 4 0" stroke="rgb(var(--sb-ink))" strokeWidth="0.9" strokeLinecap="round" fill="none" opacity="0.7" />
+            <circle cx="-5.2" cy="4" r="1.9" fill="rgb(var(--sb-blush))" opacity="0.5" />
+            <text className="sb-z sb-z-1" x="-17" y="-7" fontSize="7" fill="rgb(var(--sb-moon))">z</text>
+            <text className="sb-z sb-z-2" x="-23" y="-13" fontSize="5" fill="rgb(var(--sb-moon))">z</text>
           </g>
-          <path d="M-5.5 -1 q1.8 1.6 3.6 0" stroke="rgb(var(--sb-ink))" strokeWidth="0.9" strokeLinecap="round" fill="none" opacity="0.7" />
-          <circle cx="-4.5" cy="3.4" r="1.7" fill="rgb(var(--sb-blush))" opacity="0.5" />
-          <text className="sb-z sb-z-1" x="-14" y="-6" fontSize="6" fill="rgb(var(--sb-moon))">z</text>
-          <text className="sb-z sb-z-2" x="-19" y="-11" fontSize="4.5" fill="rgb(var(--sb-moon))">z</text>
         </g>
       </g>
 
-      {/* sparkles */}
       {[
-        { x: 14, y: 12, s: 1, d: "0s" },
-        { x: 40, y: 50, s: 0.7, d: "-1.1s" },
-        { x: 62, y: 9, s: 0.8, d: "-2.2s" },
-        { x: 92, y: 54, s: 0.6, d: "-0.6s" },
-        { x: 108, y: 8, s: 0.9, d: "-1.7s" },
-        { x: 6, y: 40, s: 0.55, d: "-2.8s" },
+        { x: 18, y: 14, s: 1, d: "0s" },
+        { x: 64, y: 30, s: 0.6, d: "-1.1s" },
+        { x: 104, y: 10, s: 0.85, d: "-2.2s" },
+        { x: 146, y: 20, s: 0.55, d: "-0.6s" },
+        { x: 226, y: 10, s: 0.9, d: "-1.7s" },
+        { x: 290, y: 16, s: 0.75, d: "-2.8s" },
+        { x: 306, y: 58, s: 0.55, d: "-0.3s" },
+        { x: 120, y: 62, s: 0.5, d: "-1.4s" },
       ].map((star) => (
         <g key={`${star.x}-${star.y}`} transform={`translate(${star.x} ${star.y}) scale(${star.s})`}>
           <path className="sb-sparkle" style={{ animationDelay: star.d }} d={sparkle} fill="rgb(var(--sb-star))" />
         </g>
       ))}
 
-      {/* a sleepy cloud along the bottom */}
       <g className="sb-drift sb-drift-slower">
-        <g filter={`url(#${id}-edge)`} transform="translate(18 50) scale(0.8)">
-          <path d="M4 12 a5 5 0 0 1 6-6 a7 7 0 0 1 13 1 a5 5 0 0 1 4 9 h-22 a4 4 0 0 1 -1-4z" fill="rgb(var(--sb-night-cloud))" opacity="0.7" />
+        <g filter={`url(#${id}-edge)`} transform="translate(40 76) scale(0.9)">
+          <path d={CLOUD_PATH} fill="rgb(var(--sb-night-cloud))" opacity="0.7" />
         </g>
       </g>
+      <g filter={`url(#${id}-edge)`}>
+        <path d="M-4 96 V90 q50 -5 110 -1 t110 0 t108 -1 V96z" fill="rgb(var(--sb-night-bottom))" opacity="0.9" />
+      </g>
 
-      <rect width="160" height="64" filter={`url(#${id}-paper)`} />
+      <rect width="320" height="96" filter={`url(#${id}-paper)`} />
     </svg>
   );
 }
