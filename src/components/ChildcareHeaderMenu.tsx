@@ -53,7 +53,7 @@ export default function ChildcareHeaderMenu({ importOpen, onImport, babyName, ..
         <Balloon
           aria-hidden="true"
           strokeWidth={1.75}
-          className={`h-6 w-6 text-red-600 [&>path:first-child]:stroke-muted ${isActive ? "[&>path:last-child]:fill-red-500" : "[&>path:last-child]:fill-surface-muted"}`}
+          className={`h-6 w-6 text-red-600 [&>path:first-child]:stroke-stone-500 ${isActive ? "[&>path:last-child]:fill-red-500" : "[&>path:last-child]:fill-stone-100"}`}
         />
         {(isActive || hasPending) && (
           <span aria-hidden="true" className={`absolute right-1 top-1 h-2 w-2 rounded-full ${isActive ? "bg-red-600" : "bg-muted/50"}`} />
