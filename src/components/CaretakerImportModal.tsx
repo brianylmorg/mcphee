@@ -42,7 +42,6 @@ import {
   type CaretakerOcrProgress,
 } from "@/lib/caretaker-import-client";
 import CaretakerImportInfo from "@/components/CaretakerImportInfo";
-import CaretakerReviewOverview from "@/components/CaretakerReviewOverview";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
 type View = "select" | "scanning" | "review" | "success";
@@ -211,7 +210,7 @@ function localBlockingIssues(row: CaretakerImportRow, draft: ReviewDraft, select
   else if (!draft.startedAt.startsWith(`${selectedDate}T`)) issues.push("The start time must be on the selected date.");
   if (row.origin === "uncertain" && !draft.resolvedOrigin) issues.push("Choose who entered this source row.");
   if (draft.resolvedOrigin === "household") issues.push("Household entries must stay excluded.");
-  if (isLowConfidence(row) && !draft.confirmLowConfidence) issues.push("Confirm this row against the screenshot.");
+  if (isLowConfidence(row) && !draft.confirmLowConfidence) issues.push("Check this entry before final approval.");
   if (draft.note.length > 500) issues.push("Keep the note to 500 characters or fewer.");
 
   if (draft.type === "bottlefeed") {
@@ -455,12 +454,6 @@ function ReviewRowCard({
             </label>
           )}
 
-          {isLowConfidence(row) && included && (
-            <label className="flex min-h-11 items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs leading-relaxed text-warning">
-              <input type="checkbox" checked={draft.confirmLowConfidence} disabled={disabled} onChange={event => onChange({ confirmLowConfidence: event.target.checked })} className="mt-0.5 h-4 w-4 shrink-0 accent-terracotta-dark" />
-              I checked this row against the screenshot.
-            </label>
-          )}
         </div>
       </details>
 
@@ -522,10 +515,39 @@ export default function CaretakerImportModal({
   useEffect(() => {
     const previousFocus = document.activeElement;
     const dialog = dialogRef.current;
+    const body = document.body;
+    const root = document.documentElement;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const previousBodyStyles = {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      width: body.style.width,
+      overscrollBehavior: body.style.overscrollBehavior,
+    };
+    const previousRootOverscrollBehavior = root.style.overscrollBehavior;
+
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = `-${scrollX}px`;
+    body.style.width = "100%";
+    body.style.overscrollBehavior = "none";
+    root.style.overscrollBehavior = "none";
     dialog?.showModal();
     return () => {
       scanAbortRef.current?.abort();
       dialog?.close();
+      body.style.overflow = previousBodyStyles.overflow;
+      body.style.position = previousBodyStyles.position;
+      body.style.top = previousBodyStyles.top;
+      body.style.left = previousBodyStyles.left;
+      body.style.width = previousBodyStyles.width;
+      body.style.overscrollBehavior = previousBodyStyles.overscrollBehavior;
+      root.style.overscrollBehavior = previousRootOverscrollBehavior;
+      window.scrollTo(scrollX, scrollY);
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     };
   }, []);
@@ -558,6 +580,10 @@ export default function CaretakerImportModal({
   const serverBlockers = selectedRows.flatMap(row => row.issues.filter(issue => issue.blocking));
   const careStart = parseSingaporeDateTime(careStartedAt);
   const careEnd = parseSingaporeDateTime(careEndedAt);
+  const linkedCareSession = snapshot?.childcareSession ?? null;
+  const linkedCoverage = linkedCareSession && linkedCareSession.checkedOutAt != null
+    ? { startedAt: linkedCareSession.checkedInAt, endedAt: linkedCareSession.checkedOutAt }
+    : null;
   const sleepPlanErrors = (() => {
     if (!snapshot) return [];
     const errors: string[] = [];
@@ -604,9 +630,8 @@ export default function CaretakerImportModal({
       ...row.issues.filter(issue => issue.blocking)
         .map(issue => `Entry ${row.rowIndex + 1} (${rowLabel(drafts[row.id].type)}): ${issue.message}`),
     ]),
-    ...(!napsChecked ? ["Confirm that you checked every nap and that the gaps were awake."] : []),
-    ...(hasSavedReview && !reviewDirty && !reviewConfirmed
-      ? ["Check the approval box above to apply the reviewed care log."]
+    ...(!reviewConfirmed
+      ? ["Confirm the final review, including the complete sleep record for the care hours."]
       : []),
     ...(stale ? ["Load the latest review before applying."] : []),
   ];
@@ -852,11 +877,10 @@ export default function CaretakerImportModal({
   const updateSleepPlan = (change: {
     careStartedAt?: string;
     careEndedAt?: string;
-    napsChecked?: boolean;
   }) => {
     if (change.careStartedAt != null) setCareStartedAt(change.careStartedAt);
     if (change.careEndedAt != null) setCareEndedAt(change.careEndedAt);
-    if (change.napsChecked != null) setNapsChecked(change.napsChecked);
+    setNapsChecked(false);
     setReviewDirty(true);
     setReviewConfirmed(false);
     setHasSavedReview(false);
@@ -865,20 +889,22 @@ export default function CaretakerImportModal({
     commitAttemptRef.current = null;
   };
 
-  const importNonDuplicates = () => {
+  const updateReviewConfirmation = (checked: boolean) => {
     setDrafts(current => Object.fromEntries(rows.map(row => {
       const draft = current[row.id];
-      const isHousehold = row.origin === "household" || row.status === "blue_excluded" || draft.resolvedOrigin === "household";
-      const isExactDuplicate = row.status === "duplicate"
-        || row.issues.some(issue => issue.code === "EXACT_DUPLICATE");
-      return [row.id, isHousehold || isExactDuplicate ? { ...draft, action: "exclude" } : draft];
+      return [row.id, isLowConfidence(row) && draft.action === "include"
+        ? { ...draft, confirmLowConfidence: checked }
+        : draft];
     })));
-    setNapsChecked(false);
-    setReviewDirty(true);
-    setHasSavedReview(false);
-    setReviewConfirmed(false);
-    setError(null);
-    commitAttemptRef.current = null;
+    setReviewConfirmed(checked);
+    setNapsChecked(checked);
+    if (napsChecked !== checked) {
+      setReviewDirty(true);
+      setHasSavedReview(false);
+      setStale(false);
+      setError(null);
+      commitAttemptRef.current = null;
+    }
   };
 
   const saveReview = async () => {
@@ -892,8 +918,8 @@ export default function CaretakerImportModal({
       setError("Fix the care period and keep every included nap inside it before saving the review.");
       return;
     }
-    if (!napsChecked) {
-      setError("Confirm that you checked the complete nap history for this care period.");
+    if (!reviewConfirmed) {
+      setError("Confirm the final review before saving the care log.");
       return;
     }
     setBusy("save");
@@ -922,7 +948,7 @@ export default function CaretakerImportModal({
       setNapsChecked(sleepReview.napsChecked);
       setReviewDirty(false);
       setHasSavedReview(sleepReview.napsChecked);
-      setReviewConfirmed(false);
+      setReviewConfirmed(sleepReview.napsChecked);
       setStale(false);
       commitAttemptRef.current = null;
     } catch (caught) {
@@ -1030,7 +1056,7 @@ export default function CaretakerImportModal({
       aria-labelledby="caretaker-import-title"
       onCancel={event => { event.preventDefault(); requestClose(); }}
       onClick={event => { if (event.target === dialogRef.current) requestClose(); }}
-      className="baby-care-dialog m-auto w-[calc(100%_-_1rem)] max-w-3xl overflow-y-auto rounded-2xl border border-border bg-surface p-0 text-warm-brown shadow-xl sm:w-[calc(100%_-_2rem)]"
+      className="baby-care-dialog m-auto max-h-[calc(100dvh_-_1rem)] w-[calc(100%_-_1rem)] max-w-3xl overflow-y-auto overscroll-contain rounded-2xl border border-border bg-surface p-0 text-warm-brown shadow-xl touch-pan-y sm:max-h-[calc(100dvh_-_2rem)] sm:w-[calc(100%_-_2rem)]"
     >
       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur">
         <div className="min-w-0">
@@ -1120,16 +1146,6 @@ export default function CaretakerImportModal({
         <div className="space-y-5 p-4 sm:p-5">
           {resumedReview && <p role="status" className="rounded-lg bg-surface-muted px-3 py-2 text-sm">Previous review resumed. Check its original care hours below.</p>}
           <section className="space-y-2 rounded-xl border border-border bg-surface-muted/45 p-3">
-            <CaretakerReviewOverview
-              date={snapshot.batch.selectedDate}
-              entrySummary={groupedRows.map(g=>`${g.rows.length} ${g.type==='bottlefeed'?'feeds':g.type==='sleep'?'naps':g.type==='diaper'?'diapers':'notes'}`).join(' · ')}
-              attentionCount={visibleRows.filter(row=>drafts[row.id]?.action==='include'&&(localBlockingIssues(row,drafts[row.id],snapshot.batch.selectedDate).length>0||row.issues.some(i=>i.blocking))).length}
-              breastmilkMl={selectedBreastmilk}
-              onCare={() => document.getElementById("caretaker-care-hours")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-              onEntries={() => document.getElementById("caretaker-entries")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-              onApproval={() => document.getElementById("caretaker-approval")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            />
-
             <details className="overflow-hidden rounded-lg border border-border bg-surface">
               <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-accent-strong">View screenshot</summary>
               <div className="border-t border-border">
@@ -1161,37 +1177,40 @@ export default function CaretakerImportModal({
               </CaretakerImportInfo>
             </div>
 
-            <p className="text-xs leading-relaxed text-muted">Screenshot naps count as sleep; gaps count as awake.</p>
+            <p className="text-xs leading-relaxed text-muted">Only the listed naps count as sleep during care.</p>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care start
-                <input
-                  type="time"
-                  required
-                  min="00:00"
-                  max="23:59"
-                  value={careStartedAt.slice(11, 16)}
-                  disabled={Boolean(busy) || Boolean(snapshot.childcareSession)}
-                  onChange={event => updateSleepPlan({ careStartedAt: event.target.value ? `${snapshot.batch.selectedDate}T${event.target.value}` : '', napsChecked: false })}
-                  className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
-                />
-              </label>
-              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care end
-                <input
-                  type="time"
-                  required
-                  min="00:00"
-                  max="23:59"
-                  value={careEndedAt.slice(11, 16)}
-                  disabled={Boolean(busy) || Boolean(snapshot.childcareSession)}
-                  onChange={event => updateSleepPlan({ careEndedAt: event.target.value ? `${snapshot.batch.selectedDate}T${event.target.value}` : '', napsChecked: false })}
-                  className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
-                />
-              </label>
-            </div>
-
-            {snapshot.childcareSession && (
-              <p className="text-xs leading-relaxed text-muted">From childcare check-in/out.</p>
+            {linkedCoverage ? (
+              <div className="rounded-lg border border-border bg-surface px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong">From childcare check-in/out</p>
+                <p className="mt-1 text-sm font-medium tabular-nums text-warm-brown">{formatSingaporeCoverage(linkedCoverage)}</p>
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="min-w-0 text-xs font-semibold text-warm-brown">Care start
+                  <input
+                    type="time"
+                    required
+                    min="00:00"
+                    max="23:59"
+                    value={careStartedAt.slice(11, 16)}
+                    disabled={Boolean(busy)}
+                    onChange={event => updateSleepPlan({ careStartedAt: event.target.value ? `${snapshot.batch.selectedDate}T${event.target.value}` : '' })}
+                    className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
+                  />
+                </label>
+                <label className="min-w-0 text-xs font-semibold text-warm-brown">Care end
+                  <input
+                    type="time"
+                    required
+                    min="00:00"
+                    max="23:59"
+                    value={careEndedAt.slice(11, 16)}
+                    disabled={Boolean(busy)}
+                    onChange={event => updateSleepPlan({ careEndedAt: event.target.value ? `${snapshot.batch.selectedDate}T${event.target.value}` : '' })}
+                    className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
+                  />
+                </label>
+              </div>
             )}
 
             {!snapshot.batch.napSectionDetected && (
@@ -1213,29 +1232,12 @@ export default function CaretakerImportModal({
               </p>
             )}
 
-            <label className="flex min-h-12 items-start gap-3 rounded-xl border border-border bg-surface p-3 text-sm leading-relaxed">
-              <input
-                type="checkbox"
-                checked={napsChecked}
-                disabled={Boolean(busy)}
-                onChange={event => updateSleepPlan({ napsChecked: event.target.checked })}
-                className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark"
-              />
-              I checked every nap; the gaps were awake.
-            </label>
-
             {sleepPlanErrors.length > 0 && (
               <div role="status" className="space-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-warning">
                 {sleepPlanErrors.map(message => <p key={message}>{message}</p>)}
               </div>
             )}
 
-            {savedSleepPlan && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-warm-brown">
-                <p className="flex items-center gap-2 font-semibold text-success"><CheckCircle2 aria-hidden="true" className="h-4 w-4" />Care hours saved</p>
-                <p className="mt-1.5 font-medium">{formatSingaporeCoverage(savedSleepPlan.coverage)}</p>
-              </div>
-            )}
           </section>
 
           {householdRows.length > 0 && (
@@ -1249,11 +1251,6 @@ export default function CaretakerImportModal({
               </div>
             </details>
           )}
-
-          <div id="caretaker-entries" className="scroll-mt-24 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted">Check the entries below; blue and duplicate entries stay excluded.</p>
-            <button type="button" disabled={Boolean(busy)} onClick={importNonDuplicates} className="min-h-9 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-accent-strong disabled:opacity-50">Exclude duplicates</button>
-          </div>
 
           {visibleRows.length === 0 ? (
             <p className="rounded-xl border border-border bg-surface-muted p-4 text-sm text-muted">No additional infant-care activity rows are available. You can still apply the reviewed sleep schedule for this care period.</p>
@@ -1274,16 +1271,21 @@ export default function CaretakerImportModal({
           )}
 
           <div id="caretaker-approval" className="scroll-mt-24 -mx-4 space-y-3 border-t border-border bg-surface/95 px-4 pb-4 pt-3 backdrop-blur sm:-mx-5 sm:px-5 sm:pb-5">
-            <button type="button" disabled={Boolean(busy) || stale || !napsChecked || sleepPlanErrors.length > 0} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
+            <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm leading-relaxed">
+              <input type="checkbox" checked={reviewConfirmed} disabled={Boolean(busy)} onChange={event => updateReviewConfirmation(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark" />
+              <span className="space-y-1">
+                <span className="block font-medium">I checked the entries and approve this care log.</span>
+              </span>
+            </label>
+            {selectedBreastmilk > 0 && (
+              <ul className="list-disc pl-5 text-sm text-warm-brown">
+                <li>Deduct {selectedBreastmilk} ml from breastmilk bank</li>
+              </ul>
+            )}
+            <button type="button" disabled={Boolean(busy) || !reviewConfirmed || sleepPlanErrors.length > 0} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
               {busy === "save" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-4 w-4" />}
               {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Care review saved" : "Save care review"}
             </button>
-            <label className={`flex items-start gap-3 rounded-xl border p-3 text-sm leading-relaxed ${hasSavedReview && !reviewDirty && !stale ? "border-border" : "border-border bg-surface-muted text-muted"}`}>
-              <input type="checkbox" checked={reviewConfirmed} disabled={!hasSavedReview || reviewDirty || stale || Boolean(busy) || localBlockers.length > 0 || serverBlockers.length > 0 || sleepPlanErrors.length > 0} onChange={event => setReviewConfirmed(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark" />
-              <span>
-                I checked the entries and approve updating sleep for these care hours.{selectedBreastmilk > 0 ? ` Deduct ${selectedBreastmilk} ml from the breastmilk bank.` : ""}
-              </span>
-            </label>
             <div role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${canCommit ? "bg-emerald-50 text-success" : "bg-amber-50 text-warning"}`}>
               {canCommit ? (
                 <p>Ready to apply.</p>

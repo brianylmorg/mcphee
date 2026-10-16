@@ -35,6 +35,7 @@ import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type Med
 import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 import { mutateSickMode } from "@/lib/sick-mode-client";
 import { applyMilkActivityChangeToTotals, sameTimeMilkMedianReference, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
+import { sgtDateKey as sgtDateKeyForTimestamp } from "@/lib/milk-volumes";
 import { aggregateDashboardRefreshResults, runSingleFlight, shouldSkipForManualRefresh, type DashboardRefreshResult, type RefreshTaskResult } from "@/lib/dashboard-refresh";
 import { useDashboardRefreshBlocked, useStandalonePullToRefresh } from "@/hooks/use-standalone-pull-to-refresh";
 import type { ChildcareModeCommandResponse, ChildcareModeState, ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
@@ -1062,7 +1063,10 @@ export default function DashboardPage() {
     setMedicationEntry(null);
     setShowLeaveConfirm(false);
     setShowMilkHistoryChart(false);
-    setCaretakerImportSession(session ?? childcareMode.activeSession);
+    const latestPendingForToday = childcareMode.pendingSessions
+      .filter((pendingSession) => pendingSession.pendingImport && sgtDateKeyForTimestamp(pendingSession.checkedInAt) === todayDateKey)
+      .sort((left, right) => (right.checkedOutAt ?? right.checkedInAt) - (left.checkedOutAt ?? left.checkedInAt))[0] ?? null;
+    setCaretakerImportSession(session ?? childcareMode.activeSession ?? latestPendingForToday);
     setShowCaretakerImport(true);
   };
 
