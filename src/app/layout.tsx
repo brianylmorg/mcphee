@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { HouseholdProvider } from "@/lib/context/household-context";
 import { createDB } from "@/db";
 import CareModeTheme from "@/components/CareModeTheme";
+import AppUpdateWatcher from "@/components/AppUpdateWatcher";
 import { cache } from "react";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme-preference";
 
@@ -88,6 +89,7 @@ export default async function RootLayout({
           initialUserId={userId}
           initialUserName={userName}
         >
+          <AppUpdateWatcher />
           <CareModeTheme initialHouseholdId={householdId} initialBabyId={initialBabyId} initialActive={initialCareMode} />
           {children}
         </HouseholdProvider>

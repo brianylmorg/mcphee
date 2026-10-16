@@ -37,6 +37,7 @@ import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 import { mutateSickMode } from "@/lib/sick-mode-client";
 import { applyMilkActivityChangeToTotals, sameTimeMilkMedianReference, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
 import { sgtDateKey as sgtDateKeyForTimestamp } from "@/lib/milk-volumes";
+import { isNewReleaseLive } from "@/lib/app-version";
 import { aggregateDashboardRefreshResults, runSingleFlight, shouldSkipForManualRefresh, type DashboardRefreshResult, type RefreshTaskResult } from "@/lib/dashboard-refresh";
 import { useDashboardRefreshBlocked, useStandalonePullToRefresh } from "@/hooks/use-standalone-pull-to-refresh";
 import type { ChildcareModeCommandResponse, ChildcareModeState, ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
@@ -690,6 +691,14 @@ export default function DashboardPage() {
       }
       manualRefreshActiveRef.current = true;
       setRefreshFeedback({ kind: "refreshing", message: "Refreshing dashboard…" });
+
+      // A refresh in the installed app also picks up a new release: the data
+      // refresh alone would keep running the old code.
+      if (await isNewReleaseLive()) {
+        setRefreshFeedback({ kind: "refreshing", message: "Updating to the latest version…" });
+        window.location.reload();
+        return { kind: "success", message: "Updating to the latest version…" };
+      }
 
       let result: DashboardRefreshResult;
       try {
