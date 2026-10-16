@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -1949,21 +1949,12 @@ export default function DashboardPage() {
 
         {/* Recent activity */}
         <section>
-          <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
             <h2 className="glance-card-title text-warm-brown-light">Recent activity</h2>
-            <div className="flex items-center gap-2">
-              {baby?.id && (
-                <a
-                  href={`/api/activities/export?babyId=${encodeURIComponent(baby.id)}`}
-                  download
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface min-h-8 whitespace-nowrap px-3 py-2 text-xs font-semibold text-accent-strong shadow-sm transition-colors hover:bg-terracotta/10"
-                >
-                  <Download aria-hidden="true" className="h-4 w-4" />
-                  Export CSV
-                </a>
-              )}
+            <div className="flex items-center gap-1">
               {isActivityFiltered && (
                 <button
+                  type="button"
                   onClick={() => {
                     setActivityDateFilter("");
                     setActivityTypeFilters([]);
@@ -1975,46 +1966,55 @@ export default function DashboardPage() {
                   Clear
                 </button>
               )}
+              {baby?.id && (
+                <a
+                  href={`/api/activities/export?babyId=${encodeURIComponent(baby.id)}`}
+                  download
+                  aria-label="Export CSV"
+                  title="Export CSV"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-accent-strong shadow-sm transition-colors hover:bg-terracotta/10"
+                >
+                  <Download aria-hidden="true" className="h-4 w-4" />
+                </a>
+              )}
             </div>
           </div>
-          <div className="mb-2 space-y-2 rounded-lg border border-border bg-surface p-2.5">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => shiftActivityDate(-1)}
-                disabled={!canGoToPreviousActivityDay}
-                aria-label="Show previous day activities"
-                title="Previous day"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-accent-strong transition-colors hover:bg-surface-muted disabled:opacity-30"
-              >
-                <ChevronLeft aria-hidden="true" className="h-4 w-4" />
-              </button>
-              <div className="relative min-w-0 flex-1">
-                <div className="flex min-h-8 w-full items-center justify-center rounded-lg border border-border bg-cream px-3 py-2 text-xs font-medium tabular-nums text-warm-brown">
-                  {showHistory && !activityDateFilter
-                    ? "All days"
-                    : formatFilterDate(effectiveActivityDate) + (effectiveActivityDate === todayDateKey ? " (today)" : "")}
-                </div>
-                <input
-                  aria-label="Select activity date"
-                  type="date"
-                  value={effectiveActivityDate}
-                  max={todayDateKey}
-                  onChange={(e) => selectMilkDate(e.target.value || todayDateKey)}
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                />
+          <div className="mb-2 flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+            <button
+              type="button"
+              onClick={() => shiftActivityDate(-1)}
+              disabled={!canGoToPreviousActivityDay}
+              aria-label="Show previous day activities"
+              title="Previous day"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-accent-strong transition-colors hover:bg-surface-muted disabled:opacity-30"
+            >
+              <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <div className="relative min-w-0 flex-1">
+              <div className="flex h-8 w-full items-center justify-center truncate rounded-md bg-cream px-2 text-xs font-medium tabular-nums text-warm-brown">
+                {showHistory && !activityDateFilter
+                  ? "All days"
+                  : effectiveActivityDate === todayDateKey ? "Today" : formatFilterDate(effectiveActivityDate)}
               </div>
-              <button
-                type="button"
-                onClick={() => shiftActivityDate(1)}
-                disabled={!canGoToNextActivityDay}
-                aria-label="Show next day activities"
-                title="Next day"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-accent-strong transition-colors hover:bg-surface-muted disabled:opacity-30"
-              >
-                <ChevronRight aria-hidden="true" className="h-4 w-4" />
-              </button>
+              <input
+                aria-label="Select activity date"
+                type="date"
+                value={effectiveActivityDate}
+                max={todayDateKey}
+                onChange={(e) => selectMilkDate(e.target.value || todayDateKey)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
             </div>
+            <button
+              type="button"
+              onClick={() => shiftActivityDate(1)}
+              disabled={!canGoToNextActivityDay}
+              aria-label="Show next day activities"
+              title="Next day"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-accent-strong transition-colors hover:bg-surface-muted disabled:opacity-30"
+            >
+              <ChevronRight aria-hidden="true" className="h-4 w-4" />
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -2025,19 +2025,25 @@ export default function DashboardPage() {
                   setSelectedMilkDate(todayDateKey);
                 }
               }}
-              className="mx-auto block min-h-7 px-3 text-[11px] text-muted underline decoration-border underline-offset-4 transition-colors hover:text-accent-strong"
+              aria-pressed={showHistory && !activityDateFilter}
+              className={`h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs font-semibold transition-colors ${showHistory && !activityDateFilter ? "bg-terracotta/15 text-accent-strong" : "text-muted hover:bg-surface-muted hover:text-accent-strong"}`}
             >
-              {showHistory && !activityDateFilter ? "Back to today" : "All days"}
+              All days
             </button>
-            <details className="group relative">
-              <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-border bg-cream px-3 py-2 text-left transition-colors hover:border-terracotta/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0">
-                  <span className="block text-[10px] font-medium uppercase text-muted">Activity type</span>
-                  <span className="block truncate text-sm font-medium text-warm-brown">{activityTypeFilterLabel}</span>
-                </span>
-                <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
+            <details className="group relative shrink-0">
+              <summary
+                aria-label={`Activity type: ${activityTypeFilterLabel}`}
+                title={activityTypeFilterLabel}
+                className={`relative flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden ${activityTypeFilters.length > 0 ? "bg-terracotta/15 text-accent-strong" : "text-muted hover:bg-surface-muted hover:text-accent-strong"}`}
+              >
+                <ListFilter aria-hidden="true" className="h-4 w-4" />
+                {activityTypeFilters.length > 0 && (
+                  <span aria-hidden="true" className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-terracotta-dark px-1 text-[10px] font-semibold leading-none text-white">
+                    {activityTypeFilters.length}
+                  </span>
+                )}
               </summary>
-              <fieldset className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
+              <fieldset className="absolute right-0 top-full z-30 mt-2 max-h-[60vh] w-[min(16rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-border bg-surface shadow-xl">
                 <legend className="sr-only">Filter by activity type</legend>
                 <label className="flex min-h-8 cursor-pointer items-center gap-3 border-b border-border px-3 py-2 text-sm font-medium text-warm-brown transition-colors hover:bg-surface-muted">
                   <input
@@ -2062,6 +2068,9 @@ export default function DashboardPage() {
               </fieldset>
             </details>
           </div>
+          {activityTypeFilters.length > 0 && (
+            <p className="-mt-1 mb-2 truncate px-1 text-[11px] text-muted">Showing {activityTypeFilterLabel}</p>
+          )}
           <div className="space-y-1.5">
             {(() => {
               const dateFilter = activityDateFilter || (!showHistory ? todayDateKey : "");
