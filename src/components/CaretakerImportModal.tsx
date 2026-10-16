@@ -41,6 +41,8 @@ import {
   recognizeCaretakerScreenshot,
   type CaretakerOcrProgress,
 } from "@/lib/caretaker-import-client";
+import CaretakerImportInfo from "@/components/CaretakerImportInfo";
+import CaretakerReviewOverview from "@/components/CaretakerReviewOverview";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
 type View = "select" | "scanning" | "review" | "success";
@@ -340,7 +342,7 @@ function ReviewRowCard({
   }
 
   return (
-    <article className={`rounded-xl border p-3 ${included ? "border-terracotta/35 bg-surface" : "border-border bg-surface-muted/45"}`}>
+    <article id={`caretaker-row-${row.id}`} className={`scroll-mt-24 rounded-xl border p-2.5 ${included ? "border-terracotta/35 bg-surface" : "border-border bg-surface-muted/45"}`}>
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -366,23 +368,23 @@ function ReviewRowCard({
               </span>
             ))}
           </p>
-          <details className="mt-1 text-xs text-muted">
-            <summary className="min-h-8 cursor-pointer py-1.5 underline-offset-2 hover:underline">Source text</summary>
-            <p className="break-words rounded-lg bg-surface-muted px-2.5 py-2 leading-relaxed">{row.sourceText || "No readable source text"}</p>
-          </details>
         </div>
       </div>
 
       <details
-        className="group mt-3"
+        className="group mt-1.5"
         open={editingOpen}
         onToggle={event => setEditingOpen(event.currentTarget.open)}
       >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-border bg-surface-muted/60 px-3 text-xs font-semibold text-warm-brown focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden">
-          <span>Edit entry</span>
+        <summary className="inline-flex w-fit min-h-9 cursor-pointer list-none items-center gap-2 rounded-md bg-surface-muted/50 px-2.5 text-xs font-semibold text-warm-brown focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden">
+          <span>Edit</span>
           <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180 motion-reduce:transition-none" />
         </summary>
-        <div className={`mt-3 grid gap-3 ${included ? "" : "opacity-65"}`}>
+        <div className={`mt-1.5 grid gap-3 ${included ? "" : "opacity-65"}`}>
+          <details className="text-xs text-muted">
+            <summary className="inline-flex min-h-9 cursor-pointer list-none items-center underline-offset-2 hover:underline [&::-webkit-details-marker]:hidden">Source text</summary>
+            <p className="mt-1 break-words rounded-lg bg-surface-muted px-2.5 py-2 leading-relaxed">{row.sourceText || "No readable source text"}</p>
+          </details>
           <label className="text-xs font-medium text-warm-brown">Activity
             <select value={draft.type} disabled={disabled || !included} onChange={event => onChange({ type: event.target.value as ReviewDraft["type"] })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm">
               <option value="bottlefeed">Feed</option>
@@ -475,12 +477,14 @@ export default function CaretakerImportModal({
   babyName,
   onClose,
   onImported,
+  onFinishChildcare,
   childcareSession = null,
 }: {
   babyId: string;
   babyName: string;
   onClose: () => void;
   onImported: () => Promise<void>;
+  onFinishChildcare?: (session: ChildcareSessionSummary, checkedOutAt: number) => Promise<ChildcareSessionSummary | null>;
   childcareSession?: ChildcareSessionSummary | null;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -491,6 +495,7 @@ export default function CaretakerImportModal({
   const [view, setView] = useState<View>("select");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [linkedSession, setLinkedSession] = useState<ChildcareSessionSummary | null>(childcareSession);
   const [selectedDate, setSelectedDate] = useState(() => childcareSession
     ? singaporeDate(new Date(childcareSession.checkedInAt))
     : singaporeDate());
@@ -508,6 +513,7 @@ export default function CaretakerImportModal({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<CaretakerCommitResponse | null>(null);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const needsCareEnd = Boolean(linkedSession && linkedSession.checkedOutAt == null);
 
   useEffect(() => {
     const previousFocus = document.activeElement;
@@ -591,11 +597,11 @@ export default function CaretakerImportModal({
     commitAttemptRef.current = null;
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    if (!keepDate) setSelectedDate(childcareSession ? singaporeDate(new Date(childcareSession.checkedInAt)) : singaporeDate());
+    if (!keepDate) setSelectedDate(linkedSession ? singaporeDate(new Date(linkedSession.checkedInAt)) : singaporeDate());
     setSnapshot(null);
     setDrafts({});
-    setCareStartedAt(singaporeDateTimeInput(childcareSession?.checkedInAt ?? null));
-    setCareEndedAt(singaporeDateTimeInput(childcareSession?.checkedOutAt ?? null));
+    setCareStartedAt(singaporeDateTimeInput(linkedSession?.checkedInAt ?? null));
+    setCareEndedAt(singaporeDateTimeInput(linkedSession?.checkedOutAt ?? null));
     setNapsChecked(false);
     setReviewDirty(false);
     setHasSavedReview(false);
@@ -668,11 +674,25 @@ export default function CaretakerImportModal({
 
   const stageScreenshot = async () => {
     if (!file || !selectedDate || view === "scanning") return;
-    const signature = `${file.name}:${file.size}:${file.lastModified}:${selectedDate}:${childcareSession?.id ?? ""}`;
-    let attempt = stageAttemptRef.current;
-    if (!attempt || attempt.signature !== signature) {
-      attempt = { signature, requestId: crypto.randomUUID(), file, date: selectedDate, lines: null };
-      stageAttemptRef.current = attempt;
+    let sessionForStage = linkedSession;
+    if (sessionForStage && sessionForStage.checkedOutAt == null) {
+      const checkedOutAt = parseSingaporeDateTime(careEndedAt);
+      if (checkedOutAt == null || !careEndedAt.startsWith(`${selectedDate}T`)) {
+        setError("Enter a valid care end time for this date.");
+        return;
+      }
+      if (checkedOutAt <= sessionForStage.checkedInAt) {
+        setError("Care end must be after childcare check-in.");
+        return;
+      }
+      if (checkedOutAt > Date.now()) {
+        setError("Care end cannot be in the future.");
+        return;
+      }
+      if (!onFinishChildcare) {
+        setError("Childcare must be checked out before this screenshot can be read.");
+        return;
+      }
     }
 
     const controller = new AbortController();
@@ -681,6 +701,26 @@ export default function CaretakerImportModal({
     setError(null);
     setProgress({ status: "loading", progress: 0 });
     try {
+      if (sessionForStage && sessionForStage.checkedOutAt == null) {
+        const expectedSession = sessionForStage;
+        const checkedOutAt = parseSingaporeDateTime(careEndedAt)!;
+        const completed = await onFinishChildcare!(expectedSession, checkedOutAt);
+        if (!completed
+            || completed.id !== expectedSession.id
+            || completed.checkedOutAt !== checkedOutAt) {
+          throw new Error("Could not end this childcare session. Refresh and try again.");
+        }
+        sessionForStage = completed;
+        setLinkedSession(completed);
+        setCareStartedAt(singaporeDateTimeInput(completed.checkedInAt));
+      }
+
+      const signature = `${file.name}:${file.size}:${file.lastModified}:${selectedDate}:${sessionForStage?.id ?? ""}`;
+      let attempt = stageAttemptRef.current;
+      if (!attempt || attempt.signature !== signature) {
+        attempt = { signature, requestId: crypto.randomUUID(), file, date: selectedDate, lines: null };
+        stageAttemptRef.current = attempt;
+      }
       if (!attempt.lines) {
         attempt.lines = await recognizeCaretakerScreenshot(attempt.file, {
           signal: controller.signal,
@@ -694,7 +734,7 @@ export default function CaretakerImportModal({
       form.set("requestId", attempt.requestId);
       form.set("lines", JSON.stringify(attempt.lines));
       form.set("image", attempt.file);
-      if (childcareSession) form.set("childcareSessionId", childcareSession.id);
+      if (sessionForStage) form.set("childcareSessionId", sessionForStage.id);
       const staged = await requestJson<CaretakerStageResponse>("/api/caretaker-import/stage", {
         method: "POST",
         body: form,
@@ -940,18 +980,39 @@ export default function CaretakerImportModal({
 
       {view === "select" && (
         <div className="space-y-4 p-4 sm:p-5">
-          <div className="rounded-xl border border-terracotta/25 bg-terracotta/10 p-3 text-sm leading-relaxed text-warm-brown">
-            <p className="flex items-start gap-2"><ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-accent-strong" /><span>The screenshot is read on this device. Screenshots and extracted drafts are kept privately for up to 7 days so your household can finish the review.</span></p>
-            <p className="mt-2 flex items-start gap-2"><ScanLine aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-accent-strong" /><span>No paid service or external AI is used. Every entry must be reviewed. Blue household entries are always skipped, and imported breastmilk feeds reduce the breastmilk bank.</span></p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-warm-brown">Choose screenshot</h2>
+              <p className="mt-1 text-sm text-muted">Next: check care hours and entries, then approve.</p>
+            </div>
+            <CaretakerImportInfo label="About screenshot imports">
+              <p>The screenshot is read on this device with local OCR. No paid service or external AI is used. Screenshots and extracted drafts are kept privately for up to 7 days so your household can finish the review.</p>
+              <p className="mt-2">Every entry must be reviewed. Blue household entries are always skipped, and imported breastmilk feeds reduce the breastmilk bank.</p>
+            </CaretakerImportInfo>
           </div>
 
-          <label className="block text-sm font-semibold">Activity date (Singapore)
-            <span className="mt-1 block text-xs font-normal text-muted">Use the date covered by this screenshot.</span>
-            <span className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-surface px-3 focus-within:ring-2 focus-within:ring-accent-strong/45">
+          <label className="block text-sm font-semibold">Date (Singapore)
+            <span className="mt-1 flex items-center gap-2">
               <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-accent-strong" />
-              <input autoFocus type="date" required max={singaporeDate()} value={selectedDate} disabled={Boolean(childcareSession)} onChange={event => { setSelectedDate(event.target.value); stageAttemptRef.current = null; setError(null); }} className="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none disabled:opacity-70" />
+              <input autoFocus type="date" required max={singaporeDate()} value={selectedDate} disabled={Boolean(linkedSession)} onChange={event => { setSelectedDate(event.target.value); stageAttemptRef.current = null; setError(null); }} className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-sm outline-none focus:ring-2 focus:ring-accent-strong/45 disabled:opacity-70" />
             </span>
           </label>
+
+          {linkedSession && (
+            <div className="rounded-xl border border-border bg-surface-muted p-3 text-sm">
+              <p className="text-muted">Care start <span className="font-semibold text-warm-brown">{singaporeDateTimeInput(linkedSession.checkedInAt).slice(11, 16)}</span> · From check-in</p>
+              {needsCareEnd ? (
+                <>
+                  <label className="mt-2 block text-sm font-semibold">Care end (Singapore)
+                    <input type="time" required value={careEndedAt.slice(11, 16)} onChange={event => setCareEndedAt(event.target.value ? `${selectedDate}T${event.target.value}` : "")} className="mt-1 block min-h-11 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-sm outline-none focus:ring-2 focus:ring-accent-strong/45" />
+                  </label>
+                  <p className="mt-1 text-xs text-muted">Reading will also check out of childcare.</p>
+                </>
+              ) : (
+                <p className="mt-1 text-muted">Care end <span className="font-semibold text-warm-brown">{singaporeDateTimeInput(linkedSession.checkedOutAt).slice(11, 16)}</span></p>
+              )}
+            </div>
+          )}
 
           <div>
             <label htmlFor="caretaker-screenshot" className="block text-sm font-semibold">Screenshot</label>
@@ -960,17 +1021,18 @@ export default function CaretakerImportModal({
           </div>
 
           {previewUrl && (
-            <div className="overflow-hidden rounded-xl border border-border bg-surface-muted">
+            <details className="overflow-hidden rounded-xl border border-border bg-surface-muted">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold">View screenshot</summary>
               {/* Blob URLs are local previews and cannot use Next's image optimizer. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewUrl} alt="Selected caretaker screenshot" className="max-h-72 w-full object-contain" />
-              <p className="truncate border-t border-border px-3 py-2 text-xs text-muted">{file?.name}</p>
-            </div>
+              <img src={previewUrl} alt="Selected caretaker screenshot" className="max-h-48 w-full object-contain" />
+              {file?.name && <p className="truncate border-t border-border px-3 py-2 text-xs text-muted">{file.name}</p>}
+            </details>
           )}
 
           {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">{error}</p>}
-          <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || !selectedDate} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
-            <ImageUp aria-hidden="true" className="h-5 w-5" />{stageAttemptRef.current?.lines ? "Retry preparing review" : "Read screenshot"}
+          <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || !selectedDate || (needsCareEnd && !careEndedAt)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
+            <ImageUp aria-hidden="true" className="h-5 w-5" />{needsCareEnd ? "End care & read screenshot" : (stageAttemptRef.current?.lines ? "Retry preparing review" : "Read screenshot")}
           </button>
         </div>
       )}
@@ -993,82 +1055,97 @@ export default function CaretakerImportModal({
 
       {view === "review" && snapshot && (
         <div className="space-y-5 p-4 sm:p-5">
-          <section className="grid gap-3 rounded-xl border border-border bg-surface-muted/45 p-3 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
-            <div className="overflow-hidden rounded-lg border border-border bg-surface">
-              {previewUrl ? <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={previewUrl} alt="Source caretaker screenshot" className="max-h-64 w-full object-contain" />
-              </> : <div className="flex min-h-40 items-center justify-center text-xs text-muted">Source image unavailable</div>}
-            </div>
-            <div className="flex flex-col justify-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent-strong">Review before importing</p>
-              <h3 className="mt-1 font-display text-lg font-semibold">{snapshot.batch.selectedDate} · Singapore time</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">Check every included entry against the image. Exclude anything incomplete or incorrect. Blue entries remain skipped.</p>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full bg-surface px-2.5 py-1 font-semibold">{selectedRows.length} selected</span>
-                {selectedBreastmilk > 0 && <span className="rounded-full bg-surface px-2.5 py-1 font-semibold">{selectedBreastmilk} ml from bank</span>}
-                <span className="rounded-full bg-surface px-2.5 py-1 font-semibold">Kept up to 7 days</span>
+          <section className="space-y-2 rounded-xl border border-border bg-surface-muted/45 p-3">
+            <CaretakerReviewOverview
+              date={snapshot.batch.selectedDate}
+              entrySummary={groupedRows.map(g=>`${g.rows.length} ${g.type==='bottlefeed'?'feeds':g.type==='sleep'?'naps':g.type==='diaper'?'diapers':'notes'}`).join(' · ')}
+              attentionCount={visibleRows.filter(row=>drafts[row.id]?.action==='include'&&(localBlockingIssues(row,drafts[row.id],snapshot.batch.selectedDate).length>0||row.issues.some(i=>i.blocking))).length}
+              breastmilkMl={selectedBreastmilk}
+              onCare={() => document.getElementById("caretaker-care-hours")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              onEntries={() => document.getElementById("caretaker-entries")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              onApproval={() => document.getElementById("caretaker-approval")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            />
+
+            <details className="overflow-hidden rounded-lg border border-border bg-surface">
+              <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-accent-strong">View screenshot</summary>
+              <div className="border-t border-border">
+                {previewUrl ? <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={previewUrl} alt="Source caretaker screenshot" className="max-h-48 w-full object-contain" />
+                </> : <div className="flex min-h-24 items-center justify-center text-xs text-muted">Source image unavailable</div>}
               </div>
-            </div>
+            </details>
           </section>
 
-          <section className="space-y-3 rounded-xl border border-terracotta/30 bg-terracotta/5 p-3 sm:p-4" aria-labelledby="care-sleep-period-title">
-            <div>
+          <section id="caretaker-care-hours" className="scroll-mt-24 space-y-2 rounded-xl border border-terracotta/30 bg-terracotta/5 p-3" aria-labelledby="care-hours-title">
+            <div className="flex items-start justify-between gap-2">
               <SectionHeading icon={<Moon className="h-4 w-4" />}>
-                <span id="care-sleep-period-title">Infant-care sleep period</span>
+                <span id="care-hours-title">Care hours</span>
               </SectionHeading>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted">
-                Enter the exact period covered by infant care. Within this period, only the reviewed non-blue naps count as sleep; every gap counts as awake. Completed sleep outside the period is kept. A timer left running before or during care is stopped and will not resume afterward. Later sleep recorded at home is kept.
-              </p>
+              <CaretakerImportInfo label="How sleep is updated">
+                <p>
+                  Within this period, only the reviewed non-blue naps count as sleep; every gap counts as awake. Completed sleep outside the period is kept. A timer left running before or during care is stopped and will not resume afterward. Later sleep recorded at home is kept.
+                </p>
+                {snapshot.childcareSession && (
+                  <p>These times come from childcare check-in and check-out. They stay fixed for this linked import.</p>
+                )}
+                {savedSleepPlan && (
+                  <p>
+                    {savedSleepPlan.authoritativeNapCount} reviewed {savedSleepPlan.authoritativeNapCount === 1 ? "nap defines" : "naps define"} sleep in this period. All other time in the period will be awake. {savedSleepPlan.retainedExactCount} retained · {savedSleepPlan.removedCount} removed · {savedSleepPlan.trimmedCount} trimmed · {savedSleepPlan.splitCount} split · {savedSleepPlan.insertedCount} inserted.
+                  </p>
+                )}
+              </CaretakerImportInfo>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care start (Singapore)
+            <p className="text-xs leading-relaxed text-muted">Screenshot naps count as sleep; gaps count as awake.</p>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care start
                 <input
-                  type="datetime-local"
+                  type="time"
                   required
-                  min={`${snapshot.batch.selectedDate}T00:00`}
-                  max={`${snapshot.batch.selectedDate}T23:59`}
-                  value={careStartedAt}
+                  min="00:00"
+                  max="23:59"
+                  value={careStartedAt.slice(11, 16)}
                   disabled={Boolean(busy) || Boolean(snapshot.childcareSession)}
-                  onChange={event => updateSleepPlan({ careStartedAt: event.target.value, napsChecked: false })}
+                  onChange={event => updateSleepPlan({ careStartedAt: event.target.value ? `${snapshot.batch.selectedDate}T${event.target.value}` : '', napsChecked: false })}
                   className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
                 />
               </label>
-              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care end (Singapore)
+              <label className="min-w-0 text-xs font-semibold text-warm-brown">Care end
                 <input
-                  type="datetime-local"
+                  type="time"
                   required
-                  min={`${snapshot.batch.selectedDate}T00:00`}
-                  max={`${snapshot.batch.selectedDate}T23:59`}
-                  value={careEndedAt}
+                  min="00:00"
+                  max="23:59"
+                  value={careEndedAt.slice(11, 16)}
                   disabled={Boolean(busy) || Boolean(snapshot.childcareSession)}
-                  onChange={event => updateSleepPlan({ careEndedAt: event.target.value, napsChecked: false })}
+                  onChange={event => updateSleepPlan({ careEndedAt: event.target.value ? `${snapshot.batch.selectedDate}T${event.target.value}` : '', napsChecked: false })}
                   className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
                 />
               </label>
             </div>
 
             {snapshot.childcareSession && (
-              <p className="text-xs leading-relaxed text-muted">These times come from childcare check-in and check-out. They stay fixed for this linked import.</p>
+              <p className="text-xs leading-relaxed text-muted">From childcare check-in/out.</p>
             )}
 
             {!snapshot.batch.napSectionDetected && (
               <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-                No complete nap-history section was detected. Do not treat this period as awake unless the screenshot genuinely covers the full nap history. Use a complete screenshot if it was cropped.
+                Full nap history was not detected. Check the screenshot covers every nap.
               </p>
             )}
             {snapshot.batch.napSectionDetected && sourceNapRows.length === 0 && (
               <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-                The nap section contains no detected naps. Confirm only if {babyName} stayed awake for the whole care period.
+                No naps detected. Confirm only if baby was awake throughout care.
               </p>
             )}
             {sourceNapRows.length > 0 && selectedNaps.length === 0 && (
               <p role="status" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-                No naps are currently included. Applying this plan records the entire care period as awake.
+                No naps included: the whole care period will be recorded as awake.
               </p>
             )}
 
@@ -1080,7 +1157,7 @@ export default function CaretakerImportModal({
                 onChange={event => updateSleepPlan({ napsChecked: event.target.checked })}
                 className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark"
               />
-              I checked the complete nap history for this care period. Only these naps were sleep; the gaps were awake.
+              I checked every nap; the gaps were awake.
             </label>
 
             {sleepPlanErrors.length > 0 && (
@@ -1091,18 +1168,8 @@ export default function CaretakerImportModal({
 
             {savedSleepPlan && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-warm-brown">
-                <p className="flex items-center gap-2 font-semibold text-success"><CheckCircle2 aria-hidden="true" className="h-4 w-4" />Saved sleep replacement</p>
+                <p className="flex items-center gap-2 font-semibold text-success"><CheckCircle2 aria-hidden="true" className="h-4 w-4" />Care hours saved</p>
                 <p className="mt-1.5 font-medium">{formatSingaporeCoverage(savedSleepPlan.coverage)}</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted">
-                  {savedSleepPlan.authoritativeNapCount} reviewed {savedSleepPlan.authoritativeNapCount === 1 ? "nap defines" : "naps define"} sleep in this period. All other time in the period will be awake.
-                </p>
-                <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-5">
-                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.retainedExactCount}</strong> retained</span>
-                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.removedCount}</strong> removed</span>
-                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.trimmedCount}</strong> trimmed</span>
-                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.splitCount}</strong> split</span>
-                  <span className="rounded-lg bg-surface px-2 py-1.5"><strong>{savedSleepPlan.insertedCount}</strong> inserted</span>
-                </div>
               </div>
             )}
           </section>
@@ -1119,9 +1186,9 @@ export default function CaretakerImportModal({
             </details>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted">Your other include/exclude choices stay unchanged. Incomplete and uncertain rows still need review.</p>
-            <button type="button" disabled={Boolean(busy)} onClick={importNonDuplicates} className="min-h-9 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-accent-strong disabled:opacity-50">Import non-duplicates only</button>
+          <div id="caretaker-entries" className="scroll-mt-24 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted">Check the entries below; blue and duplicate entries stay excluded.</p>
+            <button type="button" disabled={Boolean(busy)} onClick={importNonDuplicates} className="min-h-9 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-accent-strong disabled:opacity-50">Exclude duplicates</button>
           </div>
 
           {visibleRows.length === 0 ? (
@@ -1142,7 +1209,7 @@ export default function CaretakerImportModal({
             </button>
           )}
 
-          <div className="sticky bottom-0 -mx-4 space-y-3 border-t border-border bg-surface/95 px-4 pb-4 pt-3 backdrop-blur sm:-mx-5 sm:px-5 sm:pb-5">
+          <div id="caretaker-approval" className="scroll-mt-24 -mx-4 space-y-3 border-t border-border bg-surface/95 px-4 pb-4 pt-3 backdrop-blur sm:-mx-5 sm:px-5 sm:pb-5">
             <button type="button" disabled={Boolean(busy) || stale || !napsChecked || sleepPlanErrors.length > 0} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
               {busy === "save" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-4 w-4" />}
               {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Care review saved" : "Save care review"}
@@ -1150,10 +1217,10 @@ export default function CaretakerImportModal({
             <label className={`flex items-start gap-3 rounded-xl border p-3 text-sm leading-relaxed ${hasSavedReview && !reviewDirty && !stale ? "border-border" : "border-border bg-surface-muted text-muted"}`}>
               <input type="checkbox" checked={reviewConfirmed} disabled={!hasSavedReview || reviewDirty || stale || Boolean(busy) || localBlockers.length > 0 || serverBlockers.length > 0 || sleepPlanErrors.length > 0} onChange={event => setReviewConfirmed(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark" />
               <span>
-                I approve replacing McPhee sleep during {savedSleepPlan ? formatSingaporeCoverage(savedSleepPlan.coverage) : "the reviewed care period"} with the reviewed infant-care naps. I reviewed every included row against the screenshot; included breastmilk feeds will deduct their consumed amounts from the breastmilk bank.
+                I checked the entries and approve updating sleep for these care hours.{selectedBreastmilk > 0 ? ` Deduct ${selectedBreastmilk} ml from the breastmilk bank.` : ""}
               </span>
             </label>
-            {(localBlockers.length > 0 || serverBlockers.length > 0 || sleepPlanErrors.length > 0 || !napsChecked) && <p className="flex items-start gap-2 text-xs leading-relaxed text-warning"><AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Complete the care period and nap-history check, then fix or exclude every highlighted entry before saving.</p>}
+            {(localBlockers.length > 0 || serverBlockers.length > 0 || sleepPlanErrors.length > 0 || !napsChecked) && <p className="flex items-start gap-2 text-xs leading-relaxed text-warning"><AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Check care hours and naps, then fix or exclude highlighted entries.</p>}
             <button type="button" disabled={!canCommit} onClick={() => { void commit(); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
               {busy === "commit" ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin motion-reduce:animate-none" /> : <ImageUp aria-hidden="true" className="h-5 w-5" />}
               {busy === "commit" ? "Applying…" : selectedRows.length === 0 ? "Apply sleep schedule" : "Apply reviewed care log"}

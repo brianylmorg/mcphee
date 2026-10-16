@@ -31,7 +31,7 @@ function render(props: Partial<ChildcareModePanelProps> = {}): string {
       pendingSessions: [],
       busy: false,
       error: null,
-      onCheckIn: () => {}, onCheckOut: () => {}, onImport: () => {},
+      onCheckIn: () => {}, onCheckOut: () => {}, onEditCheckIn: async () => true, onImport: () => {},
       ...props,
     }),
   );

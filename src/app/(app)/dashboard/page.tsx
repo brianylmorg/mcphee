@@ -1062,23 +1062,31 @@ export default function DashboardPage() {
     setMedicationEntry(null);
     setShowLeaveConfirm(false);
     setShowMilkHistoryChart(false);
-    setCaretakerImportSession(session);
+    setCaretakerImportSession(session ?? childcareMode.activeSession);
     setShowCaretakerImport(true);
   };
 
-  const mutateChildcareMode = async (action: "checkIn" | "checkOut" | "editCheckIn", recordedAt?: number): Promise<boolean> => {
-    if (!baby?.id || childcareBusy) return false;
+  const mutateChildcareMode = async (
+    action: "checkIn" | "checkOut" | "editCheckIn",
+    recordedAt?: number,
+    options: { expectedSessionId?: string; suppressImportPrompt?: boolean } = {},
+  ): Promise<ChildcareModeCommandResponse | null> => {
+    if (!baby?.id || childcareBusy) return null;
+    const expectedSessionId = action === "checkOut" || action === "editCheckIn"
+      ? options.expectedSessionId ?? childcareMode.activeSession?.id
+      : undefined;
     let attempt = childcareCommandRef.current;
     if (
       !attempt ||
       attempt.action !== action ||
-      (recordedAt !== undefined && attempt.at !== recordedAt)
+      (recordedAt !== undefined && attempt.at !== recordedAt) ||
+      attempt.sessionId !== expectedSessionId
     ) {
       attempt = {
         action,
         requestId: crypto.randomUUID(),
         at: recordedAt ?? Date.now(),
-        ...(action === "checkOut" || action === "editCheckIn" ? { sessionId: childcareMode.activeSession?.id } : {}),
+        ...(expectedSessionId ? { sessionId: expectedSessionId } : {}),
         ...(action === "editCheckIn" ? { expectedCheckedInAt: childcareMode.activeSession?.checkedInAt } : {}),
       };
       childcareCommandRef.current = attempt;
@@ -1086,7 +1094,7 @@ export default function DashboardPage() {
     if ((action === "checkOut" || action === "editCheckIn") && !attempt.sessionId) {
       childcareCommandRef.current = null;
       await fetchData({ refreshMilkHistory: false });
-      return false;
+      return null;
     }
     if (
       action === "editCheckIn" &&
@@ -1094,7 +1102,7 @@ export default function DashboardPage() {
     ) {
       childcareCommandRef.current = null;
       await fetchData({ refreshMilkHistory: false });
-      return false;
+      return null;
     }
     setChildcareBusy(true);
     setChildcareError(null);
@@ -1117,23 +1125,26 @@ export default function DashboardPage() {
         Object.assign(error, { status: response.status });
         throw error;
       }
-      setChildcareMode({
+      const result: ChildcareModeCommandResponse = {
         schemaReady: Boolean(payload.schemaReady),
         activeSession: payload.activeSession ?? null,
         pendingSessions: Array.isArray(payload.pendingSessions) ? payload.pendingSessions : [],
-      });
+        session: payload.session,
+        idempotent: Boolean(payload.idempotent),
+      };
+      setChildcareMode(result);
       childcareCommandRef.current = null;
-      if (action === "checkOut" && window.confirm("Childcare check-out saved. Import the childcare screenshot now?")) {
+      if (action === "checkOut" && !options.suppressImportPrompt && window.confirm("Childcare check-out saved. Import the childcare screenshot now?")) {
         openCaretakerImport(payload.session);
       }
       setActivityFilterRefresh((value) => value + 1);
-      return true;
+      return result;
     } catch (caught) {
       const status = (caught as { status?: number }).status;
       if (status != null && status >= 400 && status < 500) childcareCommandRef.current = null;
       setChildcareError(caught instanceof Error ? caught.message : "Could not update childcare status.");
       await fetchData({ refreshMilkHistory: false });
-      return false;
+      return null;
     } finally {
       setChildcareBusy(false);
     }
@@ -1528,7 +1539,7 @@ export default function DashboardPage() {
                   error={childcareError}
                   onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}
                   onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
-                  onEditCheckIn={(at) => mutateChildcareMode("editCheckIn", at)}
+                  onEditCheckIn={async (at) => Boolean(await mutateChildcareMode("editCheckIn", at))}
                   onImport={(session) => openCaretakerImport(session)}
                   importOpen={showCaretakerImport}
                 />
@@ -2304,6 +2315,13 @@ export default function DashboardPage() {
           babyId={baby.id}
           babyName={baby.name || "Baby"}
           childcareSession={caretakerImportSession}
+          onFinishChildcare={async (session, checkedOutAt) => {
+            const result = await mutateChildcareMode("checkOut", checkedOutAt, {
+              expectedSessionId: session.id,
+              suppressImportPrompt: true,
+            });
+            return result?.session ?? null;
+          }}
           onClose={() => { setShowCaretakerImport(false); setCaretakerImportSession(null); }}
           onImported={async () => {
             await Promise.all([
