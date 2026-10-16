@@ -42,6 +42,7 @@ import {
   type CaretakerOcrProgress,
 } from "@/lib/caretaker-import-client";
 import CaretakerImportInfo from "@/components/CaretakerImportInfo";
+import { resolveCaretakerCareWindow } from "@/lib/caretaker-care-window";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
 type View = "select" | "scanning" | "review" | "success";
@@ -578,20 +579,24 @@ export default function CaretakerImportModal({
   }, 0);
   const localBlockers = selectedRows.flatMap(row => localBlockingIssues(row, drafts[row.id], snapshot?.batch.selectedDate ?? selectedDate));
   const serverBlockers = selectedRows.flatMap(row => row.issues.filter(issue => issue.blocking));
-  const careStart = parseSingaporeDateTime(careStartedAt);
-  const careEnd = parseSingaporeDateTime(careEndedAt);
   const linkedCareSession = snapshot?.childcareSession ?? null;
-  const linkedCoverage = linkedCareSession && linkedCareSession.checkedOutAt != null
-    ? { startedAt: linkedCareSession.checkedInAt, endedAt: linkedCareSession.checkedOutAt }
+  const careWindow = resolveCaretakerCareWindow(
+    linkedCareSession,
+    parseSingaporeDateTime(careStartedAt),
+    parseSingaporeDateTime(careEndedAt),
+  );
+  const careStart = careWindow.startedAt;
+  const careEnd = careWindow.endedAt;
+  const linkedCoverage = careWindow.linked && careStart != null && careEnd != null
+    ? { startedAt: careStart, endedAt: careEnd }
     : null;
   const sleepPlanErrors = (() => {
     if (!snapshot) return [];
     const errors: string[] = [];
-    const datePrefix = `${snapshot.batch.selectedDate}T`;
     if (careStart == null) errors.push("Enter a valid care start time.");
-    else if (!careStartedAt.startsWith(datePrefix)) errors.push("Care start must be on the selected date.");
+    else if (singaporeDate(new Date(careStart)) !== snapshot.batch.selectedDate) errors.push("Care start must be on the selected date.");
     if (careEnd == null) errors.push("Enter a valid care end time.");
-    else if (!careEndedAt.startsWith(datePrefix)) errors.push("Care end must be on the selected date.");
+    else if (singaporeDate(new Date(careEnd)) !== snapshot.batch.selectedDate) errors.push("Care end must be on the selected date.");
     if (careStart != null && careEnd != null) {
       if (careStart >= careEnd) errors.push("Care end must be after care start.");
       if (careStart > Date.now() || careEnd > Date.now()) errors.push("The care period cannot be in the future.");
@@ -915,7 +920,7 @@ export default function CaretakerImportModal({
       return;
     }
     if (sleepPlanErrors.length > 0 || careStart == null || careEnd == null) {
-      setError("Fix the care period and keep every included nap inside it before saving the review.");
+      setError(sleepPlanErrors.join(" ") || "Enter a valid care start and end before saving the review.");
       return;
     }
     if (!reviewConfirmed) {
@@ -1282,7 +1287,7 @@ export default function CaretakerImportModal({
                 <li>Deduct {selectedBreastmilk} ml from breastmilk bank</li>
               </ul>
             )}
-            <button type="button" disabled={Boolean(busy) || !reviewConfirmed || sleepPlanErrors.length > 0} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
+            <button type="button" disabled={Boolean(busy) || !reviewConfirmed} onClick={() => { void saveReview(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 text-sm font-semibold text-accent-strong disabled:opacity-45">
               {busy === "save" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-4 w-4" />}
               {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Care review saved" : "Save care review"}
             </button>
