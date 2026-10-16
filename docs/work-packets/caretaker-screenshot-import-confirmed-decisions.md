@@ -387,3 +387,41 @@ log, and screenshot-created activities authored as exactly `childcare`.
   intercepted synthetic APIs, zero browser errors and zero live API writes.
 - No Git push, new provider, credential export, billing change or migration.
   Work packet remains local because it contains private source references.
+
+
+## Rolling same-time median — clarified rule 2026-10-16
+
+Normal mode, including after ending sick mode, now uses the latest seven
+completed non-sick days with milk logs. Selection looks further back through
+available history to replace sick/no-log days, excludes today/future/invalid
+dates, deduplicates calendar dates, and returns chronological days. As healthy
+logged days accrue, they replace older reference days. If fewer than seven are
+available in the existing 180-day history, use the available count; if none,
+show unavailable. Each eligible day's intake is compared at current Singapore
+time. Active sick-mode saved reference and baseline calculation are unchanged.
+
+- Code revision `fd75beb2`: normal selection in
+  `src/lib/dashboard-milk-state.ts`, meaningful regression cases in its test
+  file, and normal-mode tooltip/comment in the dashboard page.
+- DeepSeek Flash produced the three-file implementation as a tool-free patch
+  from supplied source because the worker shell sandbox remains unavailable.
+  Main applied/reviewed it and made a small copy clarification. Native Sol
+  independently reviewed the final diff and found no material blocker.
+- Focused milk-state tests: 19/19 passed. Full suite: 200/200 passed. Local
+  webpack production build, including TypeScript, passed. A real browser at
+  320/390px with intercepted synthetic APIs showed a post-sick median of 70 ml
+  from seven eligible days across the sick-day gap; the old seven-calendar-day
+  approach would have produced 120 ml, and a fixed archived reference 40 ml.
+  No browser errors, horizontal overflow, or live API writes occurred.
+- No API/schema/migration change, no activity rewrite, no Git push or provider
+  configuration change. Existing 180-day history limits remain in force.
+
+- Final production deployment `dpl_2LnsWco8rH1aV5zuUiapxB4t19fM`
+  (https://mcphee-awqb5743p-brianylms-projects.vercel.app) passed remote build
+  and TypeScript. Candidate homepage returned 200; milk-history scope probe
+  rejected a nonexistent baby with 404; unauthenticated history was empty.
+  Promoted to https://mcphee.vercel.app after checking for no intervening
+  deployment, and verified primary alias points to final READY deployment.
+- Final live browser also passed the same post-sick 70 ml median and 320/390px
+  checks using intercepted synthetic APIs, with zero page errors or live writes.
+  Work packet remains local; no private-source Git history was pushed.
