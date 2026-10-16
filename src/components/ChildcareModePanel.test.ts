@@ -171,7 +171,7 @@ test("unimported rows offer import, dismiss and remove while imported rows never
   assert.equal((html.match(/Import screenshot/g) ?? []).length, 1);
   assert.equal((html.match(/Dismiss import/g) ?? []).length, 1);
   // All three closed rows can be corrected.
-  assert.equal((html.match(/Edit times/g) ?? []).length, 3);
+  assert.equal((html.match(/aria-label="Edit times"/g) ?? []).length, 3);
   // Remove is offered for the unimported rows only, never for the imported one.
   assert.equal((html.match(/Remove session/g) ?? []).length, 2);
 });
@@ -184,7 +184,7 @@ test("history rows still render for SSR callers that omit the optional callbacks
   assert.doesNotMatch(html, /Edit times|Dismiss import|Remove session/);
 });
 
-test("approved sleep window is shown only when it differs from the attendance window", () => {
+test("approved sleep window is never shown on history rows", () => {
   const sameAsAttendance = render({
     historySessions: [
       session({
@@ -213,7 +213,7 @@ test("approved sleep window is shown only when it differs from the attendance wi
       }),
     ],
   });
-  assert.match(reviewedDifferently, /Approved sleep 13:00 - 15:30 SGT/);
+  assert.doesNotMatch(reviewedDifferently, /Approved sleep|13:00 - 15:30/);
 });
 
 test("busy disables every visible control and shows the escaped parent error", () => {
@@ -289,7 +289,7 @@ test("attendance editor labels start and end and flags imported rows as attendan
   assert.ok(html.includes("End time (Singapore)"));
   assert.ok(
     html.includes(
-      "Changes attendance times only. Imported activities and the approved sleep window stay unchanged.",
+      "Changes check-in and check-out times only. Imported activities stay unchanged.",
     ),
   );
   assert.match(html, />Save times</);

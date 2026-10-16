@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Baby, ImageUp, LogIn, LogOut, Pencil, Trash2 } from "lucide-react";
+import { Baby, Check, ImageUp, LogIn, LogOut, Pencil, Trash2 } from "lucide-react";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
 export interface ChildcareSessionTimes {
@@ -133,8 +133,7 @@ const SESSION_STATUS_LABEL: Record<SessionImportStatus, string> = {
   none: "No import needed",
 };
 
-const SESSION_STATUS_BADGE_CLASS: Record<SessionImportStatus, string> = {
-  imported: "border-success/30 bg-success/10 text-success",
+const SESSION_STATUS_BADGE_CLASS: Record<Exclude<SessionImportStatus, "imported">, string> = {
   pending: "border-terracotta/40 bg-terracotta/10 text-accent-strong",
   none: "border-border bg-surface-muted text-muted",
 };
@@ -218,7 +217,7 @@ export function ChildcareTimesEditor({
       </div>
       <p className="mt-1 text-xs text-muted">
         {isImported
-          ? "Changes attendance times only. Imported activities and the approved sleep window stay unchanged."
+          ? "Changes check-in and check-out times only. Imported activities stay unchanged."
           : "Updates the recorded care window for this session."}
       </p>
       {error && (
@@ -664,11 +663,6 @@ export default function ChildcareModePanel({
               const isPending = status === "pending";
               const isEditing = editingId === session.id;
               const rowBusy = busy || savingTimes || rowAction?.id === session.id;
-              const reviewed = session.reviewedCareWindow;
-              const showsReviewedWindow =
-                reviewed != null &&
-                (reviewed.startedAt !== session.checkedInAt ||
-                  reviewed.endedAt !== session.checkedOutAt);
 
               return (
                 <li key={session.id} className="min-w-0 rounded-lg border border-border bg-surface p-2">
@@ -678,20 +672,22 @@ export default function ChildcareModePanel({
                         <p className="break-words text-sm font-medium text-warm-brown">
                           {formatSgDate(session.checkedInAt)}
                         </p>
-                        <span
-                          className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${SESSION_STATUS_BADGE_CLASS[status]}`}
-                        >
-                          {SESSION_STATUS_LABEL[status]}
-                        </span>
+                        {status === "imported" ? (
+                          <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-success">
+                            <Check aria-hidden="true" className="h-3 w-3 shrink-0" />
+                            {SESSION_STATUS_LABEL[status]}
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${SESSION_STATUS_BADGE_CLASS[status]}`}
+                          >
+                            {SESSION_STATUS_LABEL[status]}
+                          </span>
+                        )}
                       </div>
                       <p className="break-words text-xs tabular-nums text-warm-brown-light">
                         {formatCareWindow(session)} SGT
                       </p>
-                      {showsReviewedWindow && reviewed && (
-                        <p className="mt-0.5 break-words text-xs tabular-nums text-muted">
-                          Approved sleep {formatSgWindow(reviewed.startedAt, reviewed.endedAt)} SGT
-                        </p>
-                      )}
                     </div>
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                       {onEditSession && (
@@ -700,10 +696,11 @@ export default function ChildcareModePanel({
                           onClick={() => (isEditing ? closeTimesEditor() : openTimesEditor(session))}
                           disabled={rowBusy}
                           aria-expanded={isEditing}
-                          className={compactSecondaryButtonClass}
+                          aria-label="Edit times"
+                          title="Edit times"
+                          className={`${compactSecondaryButtonClass} h-8 w-8`}
                         >
-                          <Pencil aria-hidden="true" className="h-3 w-3 shrink-0" />
-                          Edit times
+                          <Pencil aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                         </button>
                       )}
                       {isPending && (
