@@ -805,3 +805,121 @@ body {
     animation: none;
   }
 }
+
+/* ---------- Painted storybook scenes (public/storybook) ---------- */
+.sb-painted {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: block;
+}
+.sb-layer {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
+}
+.sb-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center bottom;
+}
+.sb-pos {
+  position: absolute;
+  display: block;
+}
+/* Night: deepen the painted dusk so light text reads, without losing the wash. */
+.sb-night-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(38 42 88 / 0.62), rgb(52 54 102 / 0.42) 70%, rgb(40 44 84 / 0.5));
+  mix-blend-mode: multiply;
+}
+:root:not([data-theme="light"]) .sb-painted-day {
+  filter: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sb-painted-day { filter: brightness(0.86) saturate(0.95); }
+}
+:root[data-theme="dark"] .sb-painted-day { filter: brightness(0.86) saturate(0.95); }
+
+.sb-sun-glow {
+  animation: sb-sun-breathe 6s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgb(255 214 140 / 0.55));
+}
+.sb-cloud-drift { animation: sb-cloud-wander ease-in-out infinite alternate; }
+.sb-cloud-a { animation-duration: 16s; }
+.sb-cloud-b { animation-duration: 22s; animation-delay: -7s; }
+.sb-cloud-c { animation-duration: 19s; animation-delay: -12s; }
+.sb-cloud-sleepy { animation-duration: 24s; animation-delay: -5s; }
+
+/* The bee flies a lazy figure-of-eight; two painted poses flap its wings. */
+.sb-bee-path { animation: sb-bee-fly 11s ease-in-out infinite; }
+.sb-bee-frame { position: absolute; top: 0; left: 0; }
+.sb-bee-frame-a { position: relative; animation: sb-flap-a 0.32s steps(1) infinite; }
+.sb-bee-frame-b { animation: sb-flap-b 0.32s steps(1) infinite; }
+
+.sb-moon-rock { transform-origin: 60% 40%; animation: sb-moon-sway 7s ease-in-out infinite; filter: drop-shadow(0 0 8px rgb(255 236 190 / 0.45)); }
+.sb-star-twinkle { animation: sb-star-glint 3.2s ease-in-out infinite; }
+.sb-zz {
+  position: absolute;
+  left: -14%;
+  top: 6%;
+  font-family: Manrope, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: rgb(255 238 200 / 0.9);
+  opacity: 0;
+  animation: sb-zz-float 4s ease-out infinite;
+}
+.sb-zz-2 { left: -30%; top: -8%; font-size: 8px; animation-delay: -2s; }
+
+.sb-home-wrap .sb-home { height: 100%; width: auto; }
+.sb-smoke-rise { animation: sb-smoke-curl 5s ease-out infinite; transform-origin: 50% 100%; }
+
+@keyframes sb-sun-breathe {
+  0%, 100% { transform: scale(1) rotate(-3deg); }
+  50% { transform: scale(1.05) rotate(3deg); }
+}
+@keyframes sb-cloud-wander {
+  from { transform: translateX(-14px); }
+  to { transform: translateX(26px); }
+}
+@keyframes sb-bee-fly {
+  0%, 100% { transform: translate(-30px, 4px) rotate(-6deg); }
+  20% { transform: translate(10px, -10px) rotate(4deg); }
+  40% { transform: translate(52px, 0) rotate(8deg); }
+  60% { transform: translate(18px, 8px) scaleX(-1) rotate(-4deg); }
+  80% { transform: translate(-20px, -6px) scaleX(-1) rotate(4deg); }
+}
+@keyframes sb-flap-a { 0% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes sb-flap-b { 0% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes sb-moon-sway {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg) translateY(1.5px); }
+}
+@keyframes sb-star-glint {
+  0%, 100% { opacity: 0.35; transform: scale(0.75) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.1) rotate(12deg); }
+}
+@keyframes sb-zz-float {
+  0% { opacity: 0; transform: translate(0, 6px); }
+  25% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(-8px, -14px); }
+}
+@keyframes sb-smoke-curl {
+  0% { opacity: 0; transform: translateY(6px) scale(0.7); }
+  30% { opacity: 0.85; }
+  100% { opacity: 0; transform: translate(4px, -8px) scale(1.15); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise { animation: none; }
+  .sb-bee-frame-a { animation: none; opacity: 1; }
+  .sb-bee-frame-b { animation: none; opacity: 0; }
+  .sb-zz { animation: none; opacity: 0.7; }
+  .sb-smoke-rise { opacity: 0.7; }
+}

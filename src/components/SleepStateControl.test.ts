@@ -36,10 +36,14 @@ test("both scenes stay mounted (for the crossfade) and are hidden from assistive
   const html = renderToStaticMarkup(createElement(SleepStateControl, { state: "awake", elapsedLabel: "0:05", disabled: false, onSelect: () => undefined }));
   assert.match(html, /aria-hidden="true" class="sleep-scene sleep-scene-day"/);
   assert.match(html, /aria-hidden="true" class="sleep-scene sleep-scene-night"/);
-  assert.match(html, /class="sb-sun-arc"/);
-  assert.match(html, /class="sb-moon-arc"/);
-  assert.match(html, /class="sb-bee"/);
-  assert.equal((html.match(/class="sb-sparkle"/g) ?? []).length, 8);
+  assert.match(html, /class="sb-sun-arc sb-pos"/);
+  assert.match(html, /class="sb-moon-arc sb-pos"/);
+  assert.match(html, /sb-bee-path/);
+  assert.equal((html.match(/sb-bee-frame /g) ?? []).length, 2);
+  assert.equal((html.match(/sb-star-twinkle/g) ?? []).length, 6);
+  // Painted layers are decorative: empty alt text.
+  assert.ok((html.match(/<img /g) ?? []).length > 10);
+  assert.doesNotMatch(html, /<img [^>]*alt="[^"]/);
 });
 
 test("an untimed state shows the hint in small text", () => {
