@@ -178,5 +178,6 @@ export type CaretakerCommitResponse = {
 export type CaretakerImportError = {
   error: string;
   code: string;
+  existingBatchId?: string;
   issues?: CaretakerImportIssue[];
 };

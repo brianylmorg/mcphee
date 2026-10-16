@@ -10,6 +10,7 @@ import { POST as createActivity } from "@/app/api/activities/route";
 import { DELETE as stopTimer } from "@/app/api/active-timers/route";
 import { GET as getActivities } from "@/app/api/activities/route";
 import { POST as stageImport } from "@/app/api/caretaker-import/stage/route";
+import { GET as getImport } from "@/app/api/caretaker-import/route";
 import { PATCH as reviewImport } from "@/app/api/caretaker-import/review/route";
 import { POST as commitImport } from "@/app/api/caretaker-import/commit/route";
 import type { CaretakerOcrLine } from "@/lib/caretaker-import-contract";
@@ -306,6 +307,53 @@ test("a linked screenshot keeps canonical session bounds, clears pending atomica
     `childcare-care:${session.id}:end`, `childcare-care:${session.id}:start`,
   ]);
   assert.equal(timeline.activities.some((row: Record<string, unknown>) => String(row.id).startsWith("caretaker-care:")), false);
+}));
+
+test("an abandoned screenshot offers its original unfinished review without relinking sessions", async () => fixture(async db => {
+  const original = await closedSession("08:00", "13:00");
+  const source = ocrLines(["Past Nap Times", "11:00 a.m. Nap End", "10:00 a.m. Nap Start"]);
+  const staged = await json(await stageLinked(original.id, source, "first"));
+  const other = await closedSession("14:00", "17:00");
+  for (const [sessionId, suffix] of [[other.id, "again"], ["", "plain"]]) {
+    const retry = await stageLinked(sessionId, source, suffix);
+    assert.equal(retry.status, 409);
+    const conflict = await json(retry);
+    assert.equal(conflict.code, "SCREENSHOT_SESSION_CONFLICT");
+    assert.equal(conflict.existingBatchId, staged.batch.id);
+  }
+  const resumed = await json(await getImport(request(`/api/caretaker-import?batchId=${staged.batch.id}`)));
+  assert.equal(resumed.childcareSession.id, original.id);
+  assert.equal(resumed.batch.expiresAt, staged.batch.expiresAt);
+  assert.equal(resumed.batch.revision, staged.batch.revision);
+  assert.equal(Number((await db.execute("SELECT COUNT(*) AS n FROM paper_log_import_batches")).rows[0].n), 1);
+  assert.equal(Number((await db.execute("SELECT COUNT(*) AS n FROM activities")).rows[0].n), 0);
+  const saved = await json(await reviewImport(request("/api/caretaker-import/review", "PATCH", {
+    batchId: resumed.batch.id, expectedRevision: resumed.batch.revision,
+    rows: resumed.rows.map((row: Record<string, unknown>) => ({ id: row.id, action: "include" })),
+    sleepCoverage: { startedAt: at("08:00"), endedAt: at("13:00"), napsChecked: true },
+  })));
+  const applied = await commitImport(request("/api/caretaker-import/commit", "POST", {
+    batchId: saved.batch.id, expectedRevision: saved.batch.revision, requestId: "resumed-review-commit",
+  }));
+  assert.equal(applied.status, 200, await applied.clone().text());
+  const sessions = (await db.execute("SELECT id, pending_import, import_batch_id FROM childcare_sessions")).rows;
+  assert.equal(sessions.find(row => row.id === original.id)?.import_batch_id, staged.batch.id);
+  assert.equal(sessions.find(row => row.id === other.id)?.pending_import, 1);
+  const alreadyApplied = await json(await stageLinked(other.id, source, "later"));
+  assert.equal(alreadyApplied.code, "SCREENSHOT_SESSION_CONFLICT");
+  assert.equal(alreadyApplied.existingBatchId, undefined);
+}));
+
+test("an unlinked abandoned review can be reopened without attaching it to a new session", async () => fixture(async db => {
+  const source = ocrLines(["Past Nap Times", "11:00 a.m. Nap End", "10:00 a.m. Nap Start"]);
+  const staged = await json(await stageLinked("", source, "free"));
+  const session = await closedSession();
+  const retry = await stageLinked(session.id, source, "link");
+  assert.equal(retry.status, 409);
+  assert.equal((await json(retry)).existingBatchId, staged.batch.id);
+  const resumed = await json(await getImport(request(`/api/caretaker-import?batchId=${staged.batch.id}`)));
+  assert.equal(resumed.childcareSession, null);
+  assert.equal((await db.execute({ sql: "SELECT childcare_session_id FROM paper_log_import_batches WHERE id = ?", args: [staged.batch.id] })).rows[0].childcare_session_id, null);
 }));
 
 test("a failed linked milk commit leaves the care log pending and all sleep/activity data untouched", async () => fixture(async db => {

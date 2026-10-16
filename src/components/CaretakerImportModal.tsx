@@ -79,6 +79,7 @@ class CaretakerRequestError extends Error {
   status: number;
   code: string;
   issues: CaretakerImportError["issues"];
+  existingBatchId: string | undefined;
 
   constructor(status: number, payload: CaretakerImportError) {
     super(payload.error || "Something went wrong. Try again.");
@@ -86,6 +87,7 @@ class CaretakerRequestError extends Error {
     this.status = status;
     this.code = payload.code || "UNKNOWN";
     this.issues = payload.issues;
+    this.existingBatchId = payload.existingBatchId;
   }
 }
 
@@ -513,6 +515,8 @@ export default function CaretakerImportModal({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<CaretakerCommitResponse | null>(null);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
+  const [resumeBatchId, setResumeBatchId] = useState<string | null>(null);
+  const [resumedReview, setResumedReview] = useState(false);
   const needsCareEnd = Boolean(linkedSession && linkedSession.checkedOutAt == null);
 
   useEffect(() => {
@@ -627,6 +631,8 @@ export default function CaretakerImportModal({
     setBusy(null);
     setSuccess(null);
     setRefreshWarning(null);
+    setResumeBatchId(null);
+    setResumedReview(false);
     setView("select");
   };
 
@@ -646,6 +652,7 @@ export default function CaretakerImportModal({
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     const next = event.target.files?.[0] ?? null;
     setError(null);
+    setResumeBatchId(null);
     stageAttemptRef.current = null;
     if (!next) return setFile(null);
     if (!CARETAKER_IMPORT_IMAGE_TYPES.includes(next.type as (typeof CARETAKER_IMPORT_IMAGE_TYPES)[number])) {
@@ -690,7 +697,7 @@ export default function CaretakerImportModal({
   };
 
   const stageScreenshot = async () => {
-    if (!file || !selectedDate || view === "scanning") return;
+    if (!file || !selectedDate || view === "scanning" || busy) return;
     let sessionForStage = linkedSession;
     if (sessionForStage && sessionForStage.checkedOutAt == null) {
       const checkedOutAt = parseSingaporeDateTime(careEndedAt);
@@ -780,11 +787,49 @@ export default function CaretakerImportModal({
       if ((caught as Error).name === "AbortError") {
         setError(null);
       } else {
+        if (caught instanceof CaretakerRequestError && caught.code === "SCREENSHOT_SESSION_CONFLICT") {
+          setResumeBatchId(caught.existingBatchId ?? null);
+        }
         setError(caught instanceof Error ? caught.message : "Could not read this screenshot. Try again.");
       }
       setView("select");
     } finally {
       if (scanAbortRef.current === controller) scanAbortRef.current = null;
+    }
+  };
+
+  const resumePreviousReview = async () => {
+    if (!resumeBatchId || busy) return;
+    setBusy("refresh");
+    setError(null);
+    try {
+      const previous = await requestJson<CaretakerImportSnapshot>(`/api/caretaker-import?batchId=${encodeURIComponent(resumeBatchId)}`);
+      if (previous.batch.babyId !== babyId || previous.batch.selectedDate !== selectedDate) {
+        throw new Error("This review belongs to a different baby or date.");
+      }
+      if (previous.batch.status === "committed") {
+        await finishCommittedSnapshot(previous);
+        return;
+      }
+      if (previous.batch.status === "expired" || !previous.batch.sourceAvailable) return expireImport();
+      setSnapshot(previous);
+      setLinkedSession(previous.childcareSession);
+      setDrafts(draftsFromSnapshot(previous));
+      const sleepReview = sleepReviewFromSnapshot(previous);
+      setCareStartedAt(sleepReview.careStartedAt);
+      setCareEndedAt(sleepReview.careEndedAt);
+      setNapsChecked(sleepReview.napsChecked);
+      setHasSavedReview(sleepReview.napsChecked);
+      setReviewDirty(false);
+      setReviewConfirmed(false);
+      setStale(false);
+      setResumedReview(true);
+      commitAttemptRef.current = null;
+      setView("review");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not resume the review. Try again.");
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -1011,7 +1056,7 @@ export default function CaretakerImportModal({
           <label className="block text-sm font-semibold">Date (Singapore)
             <span className="mt-1 flex items-center gap-2">
               <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-accent-strong" />
-              <input autoFocus type="date" required max={singaporeDate()} value={selectedDate} disabled={Boolean(linkedSession)} onChange={event => { setSelectedDate(event.target.value); stageAttemptRef.current = null; setError(null); }} className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-sm outline-none focus:ring-2 focus:ring-accent-strong/45 disabled:opacity-70" />
+              <input autoFocus type="date" required max={singaporeDate()} value={selectedDate} disabled={Boolean(linkedSession) || Boolean(busy)} onChange={event => { setSelectedDate(event.target.value); stageAttemptRef.current = null; setResumeBatchId(null); setError(null); }} className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-sm outline-none focus:ring-2 focus:ring-accent-strong/45 disabled:opacity-70" />
             </span>
           </label>
 
@@ -1034,7 +1079,7 @@ export default function CaretakerImportModal({
           <div>
             <label htmlFor="caretaker-screenshot" className="block text-sm font-semibold">Screenshot</label>
             <p className="mt-1 text-xs text-muted">PNG, JPEG, or WebP · maximum 3 MiB · one image</p>
-            <input ref={fileInputRef} id="caretaker-screenshot" type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseFile} className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-terracotta/45 bg-terracotta/5 p-3 text-sm file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-terracotta-dark file:px-3 file:text-sm file:font-semibold file:text-white" />
+            <input ref={fileInputRef} id="caretaker-screenshot" type="file" accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={chooseFile} className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-terracotta/45 bg-terracotta/5 p-3 text-sm file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-terracotta-dark file:px-3 file:text-sm file:font-semibold file:text-white" />
           </div>
 
           {previewUrl && (
@@ -1048,6 +1093,7 @@ export default function CaretakerImportModal({
           )}
 
           {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">{error}</p>}
+          {resumeBatchId && <button type="button" disabled={Boolean(busy)} onClick={() => { void resumePreviousReview(); }} className="min-h-12 w-full rounded-xl border border-terracotta px-4 py-3 text-sm font-semibold text-accent-strong disabled:opacity-45">{busy === "refresh" ? "Opening review…" : "Resume previous review"}</button>}
           <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || !selectedDate || (needsCareEnd && !careEndedAt)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
             <ImageUp aria-hidden="true" className="h-5 w-5" />{needsCareEnd ? "End care & read screenshot" : (stageAttemptRef.current?.lines ? "Retry preparing review" : "Read screenshot")}
           </button>
@@ -1072,6 +1118,7 @@ export default function CaretakerImportModal({
 
       {view === "review" && snapshot && (
         <div className="space-y-5 p-4 sm:p-5">
+          {resumedReview && <p role="status" className="rounded-lg bg-surface-muted px-3 py-2 text-sm">Previous review resumed. Check its original care hours below.</p>}
           <section className="space-y-2 rounded-xl border border-border bg-surface-muted/45 p-3">
             <CaretakerReviewOverview
               date={snapshot.batch.selectedDate}

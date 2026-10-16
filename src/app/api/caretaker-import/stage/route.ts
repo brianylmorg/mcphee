@@ -79,6 +79,27 @@ async function existingResponse(
   return NextResponse.json({ ...snapshot, idempotent: true });
 }
 
+async function sessionConflictResponse(
+  db: ReturnType<typeof createDB>, batchId: string, householdId: string, date: string, now: number,
+) {
+  const batch = await loadOwnedCaretakerBatch(db, batchId, householdId);
+  const originalSession = batch?.childcare_session_id
+    ? await loadPendingChildcareSession(db, householdId, batch.baby_id, batch.childcare_session_id)
+    : null;
+  const canResume = batch?.status === "staged" && batch.selected_date === date
+    && batch.purged_at == null && Number(batch.expires_at) > now && Boolean(batch.source_available)
+    && (!batch.childcare_session_id || (originalSession?.checkedOutAt != null
+      && singaporeDateKey(originalSession.checkedInAt) === date
+      && singaporeDateKey(originalSession.checkedOutAt) === date));
+  return NextResponse.json({
+    code: "SCREENSHOT_SESSION_CONFLICT",
+    error: canResume
+      ? "This screenshot has an unfinished review. Resume it using its original care hours."
+      : "This screenshot is already linked to a different care session.",
+    ...(canResume ? { existingBatchId: batch.id } : {}),
+  }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
+}
+
 async function readBoundedRequestBody(request: NextRequest): Promise<Uint8Array | null> {
   if (!request.body) return new Uint8Array();
   const reader = request.body.getReader();
@@ -223,7 +244,7 @@ export async function POST(request: NextRequest) {
   });
   if (byHash.rows.length > 0) {
     if (String(byHash.rows[0].childcare_session_id ?? "") !== childcareSessionId) {
-      return caretakerError(409, "SCREENSHOT_SESSION_CONFLICT", "This screenshot is already linked to a different care session.");
+      return sessionConflictResponse(db, String(byHash.rows[0].id), member.householdId, date, now);
     }
     const existing = await loadOwnedCaretakerBatch(db, String(byHash.rows[0].id), member.householdId);
     if (existing?.selected_date !== date) {
@@ -312,7 +333,7 @@ export async function POST(request: NextRequest) {
     });
     if (raced.rows.length > 0) {
       if (String(raced.rows[0].childcare_session_id ?? "") !== childcareSessionId) {
-        return caretakerError(409, "SCREENSHOT_SESSION_CONFLICT", "This screenshot is already linked to a different care session.");
+        return sessionConflictResponse(db, String(raced.rows[0].id), member.householdId, date, now);
       }
       const existing = await loadOwnedCaretakerBatch(db, String(raced.rows[0].id), member.householdId);
       if (existing?.selected_date !== date) {
