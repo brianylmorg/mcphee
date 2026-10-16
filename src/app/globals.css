@@ -366,74 +366,6 @@ body header,
 
 /* A calm, compact care overview: section gaps are deliberately larger than
    row gaps. Content grows for long prescriptions, warnings, or editors. */
-[data-care-overview="true"] .dashboard-header {
-  padding: 5px 12px;
-}
-[data-care-overview="true"] .dashboard-header-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  column-gap: 4px;
-}
-[data-care-overview="true"] .dashboard-header-refresh {
-  position: static;
-  grid-column: 3;
-  grid-row: 1;
-}
-[data-care-overview="true"] .dashboard-baby-name {
-  padding-left: 0;
-  padding-right: 0;
-}
-[data-care-overview="true"] .dashboard-baby-identity {
-  display: contents;
-}
-[data-care-overview="true"] .dashboard-baby-identity h1 {
-  display: flex;
-  text-align: left;
-  font-size: 18px;
-}
-[data-care-overview="true"] .dashboard-baby-identity h1 > button {
-  padding: 0;
-  gap: 4px;
-}
-[data-care-overview="true"] .dashboard-baby-identity > p {
-  justify-content: flex-start;
-  grid-column: 1 / -1;
-  grid-row: 2;
-  margin-top: 0;
-  text-align: left;
-  font-size: 11px;
-  line-height: 16px;
-}
-[data-care-overview="true"] .dashboard-header-tools {
-  grid-column: 2;
-  grid-row: 1;
-  margin-top: 0;
-  gap: 4px;
-}
-[data-care-overview="true"] .dashboard-header-tools > a {
-  width: 32px;
-  height: 32px;
-  justify-content: center;
-  overflow: hidden;
-  padding: 0;
-  font-size: 0;
-  gap: 0;
-}
-[data-care-overview="true"] .dashboard-header-tools > div {
-  flex-direction: column;
-  align-items: start;
-  gap: 0;
-  padding: 2px 6px;
-}
-[data-care-overview="true"] .dashboard-header-tools > div > span:first-child {
-  font-size: 9px;
-  line-height: 12px;
-}
-[data-care-overview="true"] .dashboard-header-tools > div > span:last-child {
-  font-size: 12px;
-  line-height: 16px;
-}
 [data-care-overview="true"] .dashboard-overview {
   padding-top: 6px;
   padding-bottom: 8px;
@@ -516,40 +448,12 @@ body header,
 }
 /* Only the header controls (history/prev/next) are fixed 28px squares. The
    latest-feeds disclosure and other card buttons keep their natural size. */
-[data-care-overview="true"] .milk-consumption-card > div:first-child button {
-  width: 28px;
-  height: 28px;
-}
 [data-care-overview="true"] .milk-consumption-card > div:first-child {
   gap: 4px;
-}
-[data-care-overview="true"] .milk-consumption-card > div:first-child > div:first-child:has(.care-milk-total) {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  column-gap: 8px;
-}
-.care-milk-total {
-  white-space: nowrap;
 }
 [data-care-overview="true"] .milk-consumption-card > div:first-child > div:last-child {
   margin-top: -2px;
   gap: 0;
-}
-[data-care-overview="true"] .milk-amounts {
-  margin-top: 0;
-  align-items: center;
-}
-[data-care-overview="true"] .milk-amounts > div:last-child {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding-left: 8px;
-}
-[data-care-overview="true"] .milk-breakdown {
-  margin-top: 0;
-  font-size: var(--type-secondary-size);
-  line-height: var(--type-secondary-line);
 }
 [data-care-overview="true"] .milk-progress {
   margin-top: 5px;
@@ -569,20 +473,6 @@ body header,
 [data-care-overview="true"] .milk-comparison {
   margin-top: 4px;
   gap: 4px;
-}
-[data-care-overview="true"] .milk-comparison p,
-[data-care-overview="true"] .milk-median p {
-  font-size: var(--type-secondary-size);
-  line-height: var(--type-secondary-line);
-}
-[data-care-overview="true"] .milk-comparison button {
-  height: 24px;
-  width: 24px;
-}
-[data-care-overview="true"] :is(.milk-comparison, .milk-median) span[title] {
-  padding-top: 0;
-  padding-bottom: 0;
-  line-height: var(--type-metadata-line);
 }
 [data-care-overview="true"] .milk-median {
   margin-top: 0;
@@ -805,19 +695,9 @@ body {
   font-size: clamp(14px, 4.2vw, 16px);
   line-height: 22px;
 }
-[data-care-overview="true"] .baby-face img {
-  height: 44px;
-  width: 40px;
-}
-[data-care-overview="true"] .baby-identity-row {
-  gap: 8px;
-}
-[data-care-overview="true"] .baby-identity-row {
-  justify-content: flex-start;
-}
 /* Narrow phones: a slightly smaller face and name keep the full name visible. */
 @media (max-width: 359px) {
-  :root:not([data-care-overview]) .baby-face img {
+   .baby-face img {
     height: 52px;
     width: 46px;
   }

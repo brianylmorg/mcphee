@@ -1758,7 +1758,6 @@ export default function DashboardPage() {
         )}
         <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none"} aria-label="Sleep status">
           <SleepStateControl
-            compact={Boolean(sickMode?.activeEpisode)}
             state={sleepState.state}
             since={sleepState.since}
             disabled={isChangingSleepState}
@@ -1815,9 +1814,8 @@ export default function DashboardPage() {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 aria-label={isSelectedMilkToday ? "Today’s milk consumption" : "Milk consumption"} className="glance-card-title text-accent-strong">
-                {isSelectedMilkToday ? activeSickSummary ? "Today’s milk" : "Today’s milk consumption" : "Milk consumption"}
+                {isSelectedMilkToday ? "Today’s milk consumption" : "Milk consumption"}
               </h2>
-              {activeSickSummary && isSelectedMilkToday && <p className="care-milk-total glance-primary-value text-warm-brown">{selectedMilkSummary.totalMl} <span className="glance-value-unit text-muted">ml</span></p>}
               {!isSelectedMilkToday && (
                 <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted">
                   <span>{selectedMilkDateLabel}</span>
@@ -1863,7 +1861,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {!(activeSickSummary && isSelectedMilkToday) && <div className="milk-amounts mt-2 flex items-end justify-between gap-4">
+          <div className="milk-amounts mt-2 flex items-end justify-between gap-4">
             <div className="flex items-baseline gap-2">
               <span className="glance-primary-value text-warm-brown">
                 {selectedMilkSummary.totalMl}
@@ -1876,7 +1874,7 @@ export default function DashboardPage() {
                 {selectedExpectedMilkMl ? selectedExpectedMilkMl + " ml" : "-- ml"}
               </p>
             </div>
-          </div>}
+          </div>
 
           <p className="milk-breakdown mt-1 text-sm leading-snug text-muted">
             {selectedMilkSummary.breastmilkMl}ml breastmilk ({breastmilkPercent}%) + {selectedMilkSummary.formulaMl}ml formula ({formulaPercent}%){activeSickSummary && isSelectedMilkToday ? "" : " consumed"}
