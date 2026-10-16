@@ -589,6 +589,23 @@ export default function CaretakerImportModal({
     && reviewConfirmed
     && !busy,
   );
+  const applyRequirements = [
+    ...(!hasSavedReview || reviewDirty
+      ? [reviewDirty ? "Save your latest care review." : "Save the care review."]
+      : []),
+    ...sleepPlanErrors,
+    ...selectedRows.flatMap(row => [
+      ...localBlockingIssues(row, drafts[row.id], snapshot?.batch.selectedDate ?? selectedDate)
+        .map(message => `Entry ${row.rowIndex + 1} (${rowLabel(drafts[row.id].type)}): ${message}`),
+      ...row.issues.filter(issue => issue.blocking)
+        .map(issue => `Entry ${row.rowIndex + 1} (${rowLabel(drafts[row.id].type)}): ${issue.message}`),
+    ]),
+    ...(!napsChecked ? ["Confirm that you checked every nap and that the gaps were awake."] : []),
+    ...(hasSavedReview && !reviewDirty && !reviewConfirmed
+      ? ["Check the approval box above to apply the reviewed care log."]
+      : []),
+    ...(stale ? ["Load the latest review before applying."] : []),
+  ];
 
   const resetImport = (keepDate = true) => {
     scanAbortRef.current?.abort();
@@ -1220,7 +1237,19 @@ export default function CaretakerImportModal({
                 I checked the entries and approve updating sleep for these care hours.{selectedBreastmilk > 0 ? ` Deduct ${selectedBreastmilk} ml from the breastmilk bank.` : ""}
               </span>
             </label>
-            {(localBlockers.length > 0 || serverBlockers.length > 0 || sleepPlanErrors.length > 0 || !napsChecked) && <p className="flex items-start gap-2 text-xs leading-relaxed text-warning"><AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />Check care hours and naps, then fix or exclude highlighted entries.</p>}
+            <div role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${canCommit ? "bg-emerald-50 text-success" : "bg-amber-50 text-warning"}`}>
+              {canCommit ? (
+                <p>Ready to apply.</p>
+              ) : (
+                <>
+                  <p className="font-semibold">To apply, complete:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                    {applyRequirements.map((requirement, index) => <li key={`${index}:${requirement}`}>{requirement}</li>)}
+                    {busy && <li>Wait for the current action to finish.</li>}
+                  </ul>
+                </>
+              )}
+            </div>
             <button type="button" disabled={!canCommit} onClick={() => { void commit(); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
               {busy === "commit" ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin motion-reduce:animate-none" /> : <ImageUp aria-hidden="true" className="h-5 w-5" />}
               {busy === "commit" ? "Applying…" : selectedRows.length === 0 ? "Apply sleep schedule" : "Apply reviewed care log"}
