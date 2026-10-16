@@ -34,6 +34,7 @@ import {
 } from "@/lib/caretaker-import-server";
 import { assertMilkLedgerMutation, MilkLedgerError } from "@/lib/milk-bank-ledger";
 import { generateId } from "@/lib/utils";
+import { loadPendingChildcareSession } from "@/lib/childcare-mode-server";
 
 export const runtime = "nodejs";
 
@@ -128,6 +129,19 @@ export async function POST(request: NextRequest) {
     }
 
     const coverage = savedSleepPreview.coverage;
+    if (batch.childcare_session_id) {
+      const session = await loadPendingChildcareSession(
+        tx, member.householdId, batch.baby_id, batch.childcare_session_id,
+      );
+      if (!session || session.checkedOutAt == null) {
+        await tx.rollback();
+        return caretakerError(409, "CHILDCARE_SESSION_UNAVAILABLE", "This childcare session was already imported or is no longer pending.");
+      }
+      if (coverage.startedAt !== session.checkedInAt || coverage.endedAt !== session.checkedOutAt) {
+        await tx.rollback();
+        return caretakerError(409, "CHILDCARE_SESSION_CHANGED", "The linked childcare session changed. Reload and review it again.");
+      }
+    }
     const authoritativeNaps = included
       .filter((row) => row.draft.type === "sleep" && row.draft.endedAt != null)
       .map((row) => ({ rowId: row.id, startedAt: row.draft.startedAt, endedAt: row.draft.endedAt! }));
@@ -277,6 +291,15 @@ export async function POST(request: NextRequest) {
       ],
     });
     if (updated.rowsAffected !== 1) throw new Error("COMMIT_RACE");
+    if (batch.childcare_session_id) {
+      const linked = await tx.execute({
+        sql: `UPDATE childcare_sessions
+              SET pending_import = 0, import_batch_id = ?, import_completed_at = ?, updated_at = ?
+              WHERE id = ? AND baby_id = ? AND pending_import = 1 AND import_batch_id IS NULL`,
+        args: [batch.id, now, now, batch.childcare_session_id, batch.baby_id],
+      });
+      if (linked.rowsAffected !== 1) throw new Error("CHILDCARE_SESSION_RACE");
+    }
     await tx.commit();
     return NextResponse.json(result);
   } catch (error) {
@@ -289,6 +312,9 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof Error && error.message === "COMMIT_RACE") {
       return caretakerError(409, "COMMIT_RACE", "The import changed while committing. Reload before retrying.");
+    }
+    if (error instanceof Error && error.message === "CHILDCARE_SESSION_RACE") {
+      return caretakerError(409, "CHILDCARE_SESSION_CHANGED", "The linked childcare session changed while importing. Reload before retrying.");
     }
     if (error instanceof Error && error.message.startsWith("INVALID_")) {
       return caretakerError(409, "SLEEP_REVIEW_INCOMPLETE", "The reviewed sleep replacement is invalid. Reload and review it again.");

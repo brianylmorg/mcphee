@@ -7,6 +7,8 @@ import { replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledge
 import { selectRecentMilkFeeds, type RecentMilkFeedActivity } from "@/lib/recent-milk-feeds";
 import { caretakerSleepCoverageFromAudit } from "@/lib/caretaker-sleep-audit";
 import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
+import { isChildcareModeSchemaReady } from "@/db/childcare-mode-schema";
+import { loadChildcareModeState } from "@/lib/childcare-mode-server";
 
 const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Singapore",
@@ -113,6 +115,9 @@ export async function GET(request: NextRequest) {
 
     const householdRow = household.rows[0];
     const selectedBabyId = babies.rows[0]?.id;
+    const childcareMode = selectedBabyId
+      ? await loadChildcareModeState(db, householdId, String(selectedBabyId))
+      : { schemaReady: await isChildcareModeSchemaReady(db), activeSession: null, pendingSessions: [] };
     const recentMilkFeeds = selectRecentMilkFeeds(
       pumpedLedger.rows as unknown as RecentMilkFeedActivity[],
       selectedBabyId,
@@ -178,6 +183,7 @@ export async function GET(request: NextRequest) {
             createdAt: householdRow.created_at,
           }
         : null,
+      childcareMode,
       timers: timers.rows,
       sleepActivities: sleepActivities.rows,
       sleepCoverages: caretakerSleepAudits.rows.flatMap((row) => {

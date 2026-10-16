@@ -146,6 +146,27 @@ export const sickModeEpisodes = sqliteTable("sick_mode_episodes", {
   index("idx_sick_mode_episodes_baby_started").on(table.babyId, table.startedAt, table.createdAt),
 ]);
 
+export const childcareSessions = sqliteTable("childcare_sessions", {
+  id: text("id").primaryKey(),
+  babyId: text("baby_id").notNull().references(() => babies.id),
+  checkedInAt: integer("checked_in_at", { mode: "timestamp_ms" }).notNull(),
+  checkedOutAt: integer("checked_out_at", { mode: "timestamp_ms" }),
+  checkedInBy: text("checked_in_by"),
+  checkedOutBy: text("checked_out_by"),
+  checkInRequestId: text("check_in_request_id").notNull(),
+  checkOutRequestId: text("check_out_request_id"),
+  pendingImport: integer("pending_import", { mode: "boolean" }).notNull().default(false),
+  importBatchId: text("import_batch_id").references(() => paperLogImportBatches.id),
+  importCompletedAt: integer("import_completed_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  uniqueIndex("idx_childcare_sessions_one_active").on(table.babyId).where(sql`${table.checkedOutAt} IS NULL`),
+  uniqueIndex("idx_childcare_sessions_check_in_request").on(table.babyId, table.checkInRequestId),
+  uniqueIndex("idx_childcare_sessions_check_out_request").on(table.babyId, table.checkOutRequestId).where(sql`${table.checkOutRequestId} IS NOT NULL`),
+  index("idx_childcare_sessions_pending").on(table.babyId, table.pendingImport, table.checkedOutAt),
+]);
+
 export const sickModeMedications = sqliteTable("sick_mode_medications", {
   id: text("id").primaryKey(),
   episodeId: text("episode_id").notNull().references(() => sickModeEpisodes.id),

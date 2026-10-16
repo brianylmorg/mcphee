@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
+import { childcareCreationGuard } from "@/lib/childcare-mode-server";
 
 export const runtime = "nodejs";
 
@@ -69,18 +70,30 @@ export async function POST(request: NextRequest) {
     const now = Date.now();
     const startedBy = request.cookies.get("mcphee_user")?.value ?? null;
 
-    await db.batch([
-      {
+    const tx = await db.transaction("write");
+    try {
+      const childcareGuard = await childcareCreationGuard(tx, householdId, body.babyId, body.childcareOverride);
+      if (childcareGuard) {
+        await tx.rollback();
+        return childcareGuard;
+      }
+      await tx.execute({
         sql: `DELETE FROM active_timers
               WHERE baby_id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
         args: [body.babyId, householdId],
-      },
-      {
+      });
+      await tx.execute({
         sql: `INSERT INTO active_timers (id, baby_id, type, started_at, current_side, side_switches, started_by)
               VALUES (?, ?, ?, ?, ?, ?, ?)`,
         args: [timerId, body.babyId, body.type, now, side, JSON.stringify([]), startedBy],
-      },
-    ], "write");
+      });
+      await tx.commit();
+    } catch (error) {
+      try { await tx.rollback(); } catch {}
+      throw error;
+    } finally {
+      tx.close();
+    }
 
     return NextResponse.json({ id: timerId, startedAt: now, side });
   } catch (error) {
@@ -164,6 +177,7 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const timerId = searchParams.get("id");
     const babyId = searchParams.get("babyId");
+    const childcareOverride = searchParams.get("childcareOverride") === "true";
     if (!babyId) {
       return NextResponse.json({ error: "Baby ID required" }, { status: 400 });
     }
@@ -185,6 +199,12 @@ export async function DELETE(request: NextRequest) {
       if (timerResult.rows.length === 0) {
         await tx.rollback();
         return NextResponse.json({ error: "Timer not found" }, { status: 404 });
+      }
+
+      const childcareGuard = await childcareCreationGuard(tx, householdId, babyId, childcareOverride);
+      if (childcareGuard) {
+        await tx.rollback();
+        return childcareGuard;
       }
 
       const timer = timerResult.rows[0] as Record<string, unknown>;

@@ -3,6 +3,7 @@ import type { Client } from "@libsql/client";
 import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
 import type { TimelineRecord } from "@/lib/activity-timeline";
 import { caretakerSleepCoverageFromAudit } from "@/lib/caretaker-sleep-audit";
+import { isChildcareModeSchemaReady } from "@/db/childcare-mode-schema";
 
 /** Imports are shown as childcare; the stored uploader is never changed. */
 const CARETAKER_CREATED_BY = "childcare";
@@ -24,6 +25,7 @@ type CaretakerBatchRow = {
   committed_at: unknown;
   audit_metadata: unknown;
   baby_name: unknown;
+  childcare_session_id: unknown;
 };
 
 /**
@@ -100,6 +102,7 @@ export async function projectCaretakerActivityLog(
 
   if (!await isCaretakerImportSchemaReady(db)) return capToLimit(activities);
 
+  const childcareSchemaReady = await isChildcareModeSchemaReady(db);
   const batchArgs: string[] = [householdId, householdId];
   let batchWhere =
     "cb.household_id = ? AND b.household_id = ?"
@@ -113,7 +116,8 @@ export async function projectCaretakerActivityLog(
   let batches: CaretakerBatchRow[];
   try {
     const result = await db.execute({
-      sql: `SELECT cb.id, cb.baby_id, cb.committed_at, cb.audit_metadata, b.name AS baby_name
+      sql: `SELECT cb.id, cb.baby_id, cb.committed_at, cb.audit_metadata, b.name AS baby_name,
+                   ${childcareSchemaReady ? "cb.childcare_session_id" : "NULL"} AS childcare_session_id
         FROM paper_log_import_batches cb
         JOIN babies b ON b.id = cb.baby_id
         WHERE ${batchWhere}
@@ -154,7 +158,7 @@ export async function projectCaretakerActivityLog(
       importedByBaby.set(babyKey, existing);
     }
 
-    if (!includeMarkers) continue;
+    if (!includeMarkers || batch.childcare_session_id != null) continue;
 
     const coverage = caretakerSleepCoverageFromAudit(metadata);
     if (!coverage) continue;

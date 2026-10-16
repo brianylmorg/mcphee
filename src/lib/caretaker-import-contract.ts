@@ -137,6 +137,7 @@ export type CaretakerImportSnapshot = {
   batch: CaretakerImportBatch;
   rows: CaretakerImportRow[];
   sleepReconciliation: CaretakerSleepReconciliationPreview | null;
+  childcareSession: import("./childcare-mode-contract").ChildcareSessionSummary | null;
 };
 
 export type CaretakerStageResponse = CaretakerImportSnapshot & { idempotent: boolean };

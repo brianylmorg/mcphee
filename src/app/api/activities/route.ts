@@ -10,6 +10,8 @@ import { readActivityTimeline, TIMELINE_TYPES } from "@/lib/activity-timeline";
 import { projectCaretakerActivityLog } from "@/lib/caretaker-activity-log";
 import { parseHistoricalMedicationDetails } from "@/lib/historical-medication";
 import { milkLedgerForHousehold, validateActivityInput } from "@/lib/activity-input";
+import { childcareCreationGuard } from "@/lib/childcare-mode-server";
+import { projectChildcareSessionLog } from "@/lib/childcare-activity-log";
 
 export const runtime = "nodejs";
 
@@ -52,7 +54,10 @@ export async function GET(request: NextRequest) {
     const timeline = await readActivityTimeline(db, householdId, {
       babyId, types, date, limit: null,
     });
-    const activities = await projectCaretakerActivityLog(db, householdId, timeline, {
+    const importedTimeline = await projectCaretakerActivityLog(db, householdId, timeline, {
+      babyId, types, date, limit: null,
+    });
+    const activities = await projectChildcareSessionLog(db, householdId, importedTimeline, {
       babyId, types, date, limit: unlimited ? null : limit,
     });
     return NextResponse.json({ activities }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
@@ -137,6 +142,11 @@ export async function POST(request: NextRequest) {
     if (isBottlefeed) {
       const tx = await db.transaction("write");
       try {
+        const childcareGuard = await childcareCreationGuard(tx, householdId, body.babyId, body.childcareOverride);
+        if (childcareGuard) {
+          await tx.rollback();
+          return childcareGuard;
+        }
         const ledgerEvents = await milkLedgerForHousehold(tx, householdId);
         const requestedBreastmilkMl = bottleBreastmilkLibraryDeduction(parseActivityDetails(body.details));
         if (requestedBreastmilkMl > 0) {
@@ -171,23 +181,35 @@ export async function POST(request: NextRequest) {
     }
 
     const activityId = generateId();
-
-    await db.execute({
-      sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        activityId,
-        body.babyId,
-        body.type,
-        body.startedAt,
-        body.endedAt || null,
-        JSON.stringify(body.details || {}),
-        Date.now(),
-        createdBy,
-      ],
-    });
-
-    return NextResponse.json({ id: activityId });
+    const tx = await db.transaction("write");
+    try {
+      const childcareGuard = await childcareCreationGuard(tx, householdId, body.babyId, body.childcareOverride);
+      if (childcareGuard) {
+        await tx.rollback();
+        return childcareGuard;
+      }
+      await tx.execute({
+        sql: `INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          activityId,
+          body.babyId,
+          body.type,
+          body.startedAt,
+          body.endedAt || null,
+          JSON.stringify(body.details || {}),
+          Date.now(),
+          createdBy,
+        ],
+      });
+      await tx.commit();
+      return NextResponse.json({ id: activityId });
+    } catch (error) {
+      try { await tx.rollback(); } catch {}
+      throw error;
+    } finally {
+      tx.close();
+    }
   } catch (error) {
     console.error("Create activity error:", error);
     return NextResponse.json(

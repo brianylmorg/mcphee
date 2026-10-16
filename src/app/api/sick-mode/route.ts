@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 
 import { createDB } from "@/db";
+import { childcareCreationGuard } from "@/lib/childcare-mode-server";
 import { isSickModeSchemaReady } from "@/db/sick-mode-schema";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { bottleVolumes, parseActivityDetails, sgtDateKey } from "@/lib/milk-volumes";
@@ -808,6 +809,11 @@ export async function POST(request: NextRequest) {
             throw new SickModeApiError(409, "requestId was already used for a different dose", "REQUEST_ID_CONFLICT");
           }
         } else {
+          const childcareGuard = await childcareCreationGuard(executor, householdId, babyId, body.childcareOverride);
+          if (childcareGuard) {
+            await tx.rollback();
+            return childcareGuard;
+          }
           if (Object.prototype.hasOwnProperty.call(body, "expectedLatestDoseId")) {
             const latest = await executor.execute({
               sql: `SELECT id FROM sick_mode_doses WHERE medication_id = ? AND deleted_at IS NULL

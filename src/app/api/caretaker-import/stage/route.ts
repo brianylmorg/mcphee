@@ -5,6 +5,7 @@ import { createDB } from "@/db";
 import { purgeExpiredCaretakerImports } from "@/db/caretaker-import-schema";
 import { babyBelongsToHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
+import { loadPendingChildcareSession } from "@/lib/childcare-mode-server";
 import {
   canonicalCaretakerActivity,
   isRealDateKey,
@@ -142,6 +143,7 @@ export async function POST(request: NextRequest) {
   const babyId = String(form.get("babyId") ?? "");
   const date = String(form.get("date") ?? "");
   const requestId = String(form.get("requestId") ?? "");
+  const childcareSessionId = String(form.get("childcareSessionId") ?? "").trim();
   const rawLines = String(form.get("lines") ?? "");
   const image = form.get("image");
   if (!babyId || !isRealDateKey(date) || date > String(singaporeDateKey(now))) {
@@ -150,8 +152,26 @@ export async function POST(request: NextRequest) {
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestId)) {
     return caretakerError(400, "INVALID_REQUEST_ID", "requestId must be 8–128 safe characters.");
   }
+  if (childcareSessionId && !/^[A-Za-z0-9._:-]{8,128}$/.test(childcareSessionId)) {
+    return caretakerError(400, "INVALID_CHILDCARE_SESSION", "The childcare session identifier is invalid.");
+  }
   if (!(await babyBelongsToHousehold(db, babyId, member.householdId))) {
     return caretakerError(404, "BABY_NOT_FOUND", "Baby not found.");
+  }
+  const childcareSession = childcareSessionId
+    ? await loadPendingChildcareSession(db, member.householdId, babyId, childcareSessionId)
+    : null;
+  if (childcareSessionId && !childcareSession) {
+    return caretakerError(409, "CHILDCARE_SESSION_UNAVAILABLE", "This childcare session is no longer pending an import.");
+  }
+  if (childcareSession && (childcareSession.checkedOutAt == null
+      || singaporeDateKey(childcareSession.checkedInAt) !== date
+      || singaporeDateKey(childcareSession.checkedOutAt) !== date)) {
+    return caretakerError(
+      409,
+      "CHILDCARE_SESSION_DATE_MISMATCH",
+      "This childcare session crosses Singapore dates and cannot be linked to a single-day screenshot import.",
+    );
   }
   if (!(image instanceof File)) return caretakerError(400, "IMAGE_REQUIRED", "A screenshot is required.");
   if (!(CARETAKER_IMPORT_IMAGE_TYPES as readonly string[]).includes(image.type)) {
@@ -183,24 +203,28 @@ export async function POST(request: NextRequest) {
   const sourceHash = createHash("sha256").update(bytes).digest("hex");
 
   const byRequest = await db.execute({
-    sql: `SELECT id, source_hash, baby_id, selected_date FROM paper_log_import_batches
+    sql: `SELECT id, source_hash, baby_id, selected_date, childcare_session_id FROM paper_log_import_batches
           WHERE household_id = ? AND stage_request_id = ? AND source_kind = 'caretaker_screenshot' LIMIT 1`,
     args: [member.householdId, requestId],
   });
   if (byRequest.rows.length > 0) {
     const prior = byRequest.rows[0];
-    if (String(prior.source_hash) !== sourceHash || String(prior.baby_id) !== babyId || String(prior.selected_date) !== date) {
+    if (String(prior.source_hash) !== sourceHash || String(prior.baby_id) !== babyId || String(prior.selected_date) !== date
+        || String(prior.childcare_session_id ?? "") !== childcareSessionId) {
       return caretakerError(409, "REQUEST_ID_CONFLICT", "This requestId was already used for a different upload.");
     }
     return (await existingResponse(db, String(prior.id), member.householdId, now))!;
   }
   const byHash = await db.execute({
-    sql: `SELECT id FROM paper_log_import_batches
+    sql: `SELECT id, childcare_session_id FROM paper_log_import_batches
           WHERE household_id = ? AND baby_id = ? AND source_hash = ?
             AND source_kind = 'caretaker_screenshot' LIMIT 1`,
     args: [member.householdId, babyId, sourceHash],
   });
   if (byHash.rows.length > 0) {
+    if (String(byHash.rows[0].childcare_session_id ?? "") !== childcareSessionId) {
+      return caretakerError(409, "SCREENSHOT_SESSION_CONFLICT", "This screenshot is already linked to a different care session.");
+    }
     const existing = await loadOwnedCaretakerBatch(db, String(byHash.rows[0].id), member.householdId);
     if (existing?.selected_date !== date) {
       return NextResponse.json({
@@ -242,8 +266,8 @@ export async function POST(request: NextRequest) {
     sql: `INSERT INTO paper_log_import_batches
           (id, household_id, baby_id, status, source_note, created_at, created_by,
            source_kind, source_hash, source_image, source_mime, expires_at, revision,
-           stage_request_id, selected_date, draft_metadata, audit_metadata)
-          VALUES (?, ?, ?, 'staged', NULL, ?, ?, 'caretaker_screenshot', ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+           stage_request_id, selected_date, draft_metadata, audit_metadata, childcare_session_id)
+          VALUES (?, ?, ?, 'staged', NULL, ?, ?, 'caretaker_screenshot', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
     args: [
       batchId, member.householdId, babyId, now, member.name, sourceHash, bytes,
       image.type, expiresAt, requestId, date,
@@ -254,6 +278,7 @@ export async function POST(request: NextRequest) {
         sleepReconciliation: null,
       }),
       JSON.stringify(auditMetadata(rows)),
+      childcareSessionId || null,
     ],
   }];
   for (const row of rows) {
@@ -280,12 +305,15 @@ export async function POST(request: NextRequest) {
     await db.batch(statements, "write");
   } catch (error) {
     const raced = await db.execute({
-      sql: `SELECT id FROM paper_log_import_batches
+      sql: `SELECT id, childcare_session_id FROM paper_log_import_batches
             WHERE household_id = ? AND baby_id = ? AND source_hash = ?
               AND source_kind = 'caretaker_screenshot' LIMIT 1`,
       args: [member.householdId, babyId, sourceHash],
     });
     if (raced.rows.length > 0) {
+      if (String(raced.rows[0].childcare_session_id ?? "") !== childcareSessionId) {
+        return caretakerError(409, "SCREENSHOT_SESSION_CONFLICT", "This screenshot is already linked to a different care session.");
+      }
       const existing = await loadOwnedCaretakerBatch(db, String(raced.rows[0].id), member.householdId);
       if (existing?.selected_date !== date) {
         return NextResponse.json({

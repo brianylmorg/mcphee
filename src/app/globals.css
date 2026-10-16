@@ -491,3 +491,8 @@ body {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Entries remain clickable so a household member can confirm an exception. */
+[data-childcare-active="true"] .health-log-action {
+  opacity: 0.55;
+}

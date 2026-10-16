@@ -1,3 +1,5 @@
+import { fetchWithChildcareConfirmation } from "./childcare-mode-client";
+
 export function sgtDateTimeInput(timestamp = Date.now(), includeSeconds = false): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Singapore", year: "numeric", month: "2-digit", day: "2-digit",
@@ -12,11 +14,14 @@ export function parseSgtDateTime(value: string): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-export async function mutateSickMode(payload: Record<string, unknown>): Promise<{ ok: boolean; data: Record<string, unknown> }> {
-  const response = await fetch("/api/sick-mode", {
+export async function mutateSickMode(payload: Record<string, unknown>, options: { confirmChildcare?: () => boolean } = {}): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+  const request = {
     method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
     body: JSON.stringify(payload),
-  });
+  } satisfies RequestInit;
+  const response = options.confirmChildcare
+    ? await fetchWithChildcareConfirmation("/api/sick-mode", request, options.confirmChildcare)
+    : await fetch("/api/sick-mode", request);
   const data = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
     const error = new Error(typeof data.error === "string" ? data.error : "Could not update sick mode.");

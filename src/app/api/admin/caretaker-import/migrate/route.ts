@@ -6,6 +6,7 @@ import {
   applyCaretakerImportSchema,
   isCaretakerImportSchemaReady,
 } from "@/db/caretaker-import-schema";
+import { applyChildcareModeSchema, isChildcareModeSchemaReady } from "@/db/childcare-mode-schema";
 
 export const runtime = "nodejs";
 
@@ -35,9 +36,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const db = createDB();
+    await applyChildcareModeSchema(db);
     await applyCaretakerImportSchema(db);
     const schemaReady = await isCaretakerImportSchemaReady(db);
-    if (!schemaReady) {
+    const childcareSchemaReady = await isChildcareModeSchemaReady(db);
+    if (!schemaReady || !childcareSchemaReady) {
       return NextResponse.json(
         { error: "Caretaker import schema did not pass its readiness check." },
         { status: 500 },
@@ -47,6 +50,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       schemaReady: true,
+      childcareSchemaReady: true,
       purgeCronConfigured: Boolean(process.env.CRON_SECRET),
     });
   } catch {

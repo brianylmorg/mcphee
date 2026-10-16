@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { applySickModeSchema } from "./sick-mode-schema";
 import { applyCaretakerImportSchema } from "./caretaker-import-schema";
+import { applyChildcareModeSchema } from "./childcare-mode-schema";
 
 const client = createClient({
   url: process.env.TURSO_DATABASE_URL!,
@@ -120,6 +121,7 @@ async function migrate() {
       await client.execute(statement);
     }
     await applySickModeSchema(client);
+    await applyChildcareModeSchema(client);
     await applyCaretakerImportSchema(client);
     console.log("Migrations completed successfully.");
   } catch (error) {

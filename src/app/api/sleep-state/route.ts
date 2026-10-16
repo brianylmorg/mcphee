@@ -4,6 +4,7 @@ import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 import { canUndoSleepTransition, isSleepUndoToken } from "@/lib/sleep-transition";
+import { childcareCreationGuard } from "@/lib/childcare-mode-server";
 
 export const runtime = "nodejs";
 
@@ -90,6 +91,12 @@ export async function POST(request: NextRequest) {
         }
         await tx.commit();
         return NextResponse.json({ success: true, state: token.kind === "started-sleep" ? "awake" : "sleeping" });
+      }
+
+      const childcareGuard = await childcareCreationGuard(tx, householdId, body.babyId, body.childcareOverride);
+      if (childcareGuard) {
+        await tx.rollback();
+        return childcareGuard;
       }
 
       const open = await tx.execute({

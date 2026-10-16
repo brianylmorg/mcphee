@@ -18,6 +18,7 @@ import {
   type CaretakerSleepReconciliationPreview,
 } from "./caretaker-import-contract";
 import type { ExistingSleepActivity } from "./caretaker-sleep-reconciliation";
+import { loadChildcareSessionById } from "./childcare-mode-server";
 
 type Executor = Pick<Client, "execute">;
 
@@ -47,6 +48,7 @@ export type CaretakerBatchDb = {
   source_available: number;
   draft_metadata: string | null;
   audit_metadata: string | null;
+  childcare_session_id: string | null;
 };
 
 export type CaretakerDraftMetadata = {
@@ -293,6 +295,7 @@ export async function loadOwnedCaretakerBatch(
                  source_hash, source_mime, expires_at, revision, stage_request_id,
                  selected_date, commit_request_id, commit_result, committed_at,
                  purged_at, draft_metadata, audit_metadata,
+                 childcare_session_id,
                  CASE WHEN source_image IS NULL THEN 0 ELSE 1 END AS source_available
           FROM paper_log_import_batches
           WHERE id = ? AND household_id = ? AND source_kind = 'caretaker_screenshot'
@@ -328,6 +331,9 @@ export async function loadCaretakerSnapshot(
     batch: serializedBatch,
     rows,
     sleepReconciliation: parseCaretakerDraftMetadata(batch.draft_metadata).sleepReconciliation,
+    childcareSession: batch.childcare_session_id
+      ? await loadChildcareSessionById(db, batch.household_id, batch.baby_id, batch.childcare_session_id)
+      : null,
   };
 }
 

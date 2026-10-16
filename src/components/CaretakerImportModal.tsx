@@ -41,6 +41,7 @@ import {
   recognizeCaretakerScreenshot,
   type CaretakerOcrProgress,
 } from "@/lib/caretaker-import-client";
+import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
 type View = "select" | "scanning" | "review" | "success";
 type RowAction = "include" | "exclude";
@@ -168,7 +169,10 @@ function draftsFromSnapshot(snapshot: CaretakerImportSnapshot): Record<string, R
 }
 
 function sleepReviewFromSnapshot(snapshot: CaretakerImportSnapshot) {
-  const coverage = snapshot.batch.sleepCoverage ?? snapshot.sleepReconciliation?.coverage ?? null;
+  const linked = snapshot.childcareSession;
+  const coverage = linked?.checkedOutAt != null
+    ? { startedAt: linked.checkedInAt, endedAt: linked.checkedOutAt }
+    : snapshot.batch.sleepCoverage ?? snapshot.sleepReconciliation?.coverage ?? null;
   return {
     careStartedAt: singaporeDateTimeInput(coverage?.startedAt ?? null),
     careEndedAt: singaporeDateTimeInput(coverage?.endedAt ?? null),
@@ -471,11 +475,13 @@ export default function CaretakerImportModal({
   babyName,
   onClose,
   onImported,
+  childcareSession = null,
 }: {
   babyId: string;
   babyName: string;
   onClose: () => void;
   onImported: () => Promise<void>;
+  childcareSession?: ChildcareSessionSummary | null;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -485,12 +491,14 @@ export default function CaretakerImportModal({
   const [view, setView] = useState<View>("select");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [selectedDate, setSelectedDate] = useState(() => singaporeDate());
+  const [selectedDate, setSelectedDate] = useState(() => childcareSession
+    ? singaporeDate(new Date(childcareSession.checkedInAt))
+    : singaporeDate());
   const [progress, setProgress] = useState<CaretakerOcrProgress>({ status: "loading", progress: 0 });
   const [snapshot, setSnapshot] = useState<CaretakerImportSnapshot | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
-  const [careStartedAt, setCareStartedAt] = useState("");
-  const [careEndedAt, setCareEndedAt] = useState("");
+  const [careStartedAt, setCareStartedAt] = useState(() => singaporeDateTimeInput(childcareSession?.checkedInAt ?? null));
+  const [careEndedAt, setCareEndedAt] = useState(() => singaporeDateTimeInput(childcareSession?.checkedOutAt ?? null));
   const [napsChecked, setNapsChecked] = useState(false);
   const [reviewDirty, setReviewDirty] = useState(false);
   const [hasSavedReview, setHasSavedReview] = useState(false);
@@ -583,11 +591,11 @@ export default function CaretakerImportModal({
     commitAttemptRef.current = null;
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    if (!keepDate) setSelectedDate(singaporeDate());
+    if (!keepDate) setSelectedDate(childcareSession ? singaporeDate(new Date(childcareSession.checkedInAt)) : singaporeDate());
     setSnapshot(null);
     setDrafts({});
-    setCareStartedAt("");
-    setCareEndedAt("");
+    setCareStartedAt(singaporeDateTimeInput(childcareSession?.checkedInAt ?? null));
+    setCareEndedAt(singaporeDateTimeInput(childcareSession?.checkedOutAt ?? null));
     setNapsChecked(false);
     setReviewDirty(false);
     setHasSavedReview(false);
@@ -660,7 +668,7 @@ export default function CaretakerImportModal({
 
   const stageScreenshot = async () => {
     if (!file || !selectedDate || view === "scanning") return;
-    const signature = `${file.name}:${file.size}:${file.lastModified}:${selectedDate}`;
+    const signature = `${file.name}:${file.size}:${file.lastModified}:${selectedDate}:${childcareSession?.id ?? ""}`;
     let attempt = stageAttemptRef.current;
     if (!attempt || attempt.signature !== signature) {
       attempt = { signature, requestId: crypto.randomUUID(), file, date: selectedDate, lines: null };
@@ -686,6 +694,7 @@ export default function CaretakerImportModal({
       form.set("requestId", attempt.requestId);
       form.set("lines", JSON.stringify(attempt.lines));
       form.set("image", attempt.file);
+      if (childcareSession) form.set("childcareSessionId", childcareSession.id);
       const staged = await requestJson<CaretakerStageResponse>("/api/caretaker-import/stage", {
         method: "POST",
         body: form,
@@ -940,7 +949,7 @@ export default function CaretakerImportModal({
             <span className="mt-1 block text-xs font-normal text-muted">Use the date covered by this screenshot.</span>
             <span className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-surface px-3 focus-within:ring-2 focus-within:ring-accent-strong/45">
               <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0 text-accent-strong" />
-              <input autoFocus type="date" required max={singaporeDate()} value={selectedDate} onChange={event => { setSelectedDate(event.target.value); stageAttemptRef.current = null; setError(null); }} className="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+              <input autoFocus type="date" required max={singaporeDate()} value={selectedDate} disabled={Boolean(childcareSession)} onChange={event => { setSelectedDate(event.target.value); stageAttemptRef.current = null; setError(null); }} className="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none disabled:opacity-70" />
             </span>
           </label>
 
@@ -1021,7 +1030,7 @@ export default function CaretakerImportModal({
                   min={`${snapshot.batch.selectedDate}T00:00`}
                   max={`${snapshot.batch.selectedDate}T23:59`}
                   value={careStartedAt}
-                  disabled={Boolean(busy)}
+                  disabled={Boolean(busy) || Boolean(snapshot.childcareSession)}
                   onChange={event => updateSleepPlan({ careStartedAt: event.target.value, napsChecked: false })}
                   className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
                 />
@@ -1033,12 +1042,16 @@ export default function CaretakerImportModal({
                   min={`${snapshot.batch.selectedDate}T00:00`}
                   max={`${snapshot.batch.selectedDate}T23:59`}
                   value={careEndedAt}
-                  disabled={Boolean(busy)}
+                  disabled={Boolean(busy) || Boolean(snapshot.childcareSession)}
                   onChange={event => updateSleepPlan({ careEndedAt: event.target.value, napsChecked: false })}
                   className="mt-1 min-h-11 min-w-0 w-full rounded-lg border border-border bg-surface px-3 text-sm tabular-nums"
                 />
               </label>
             </div>
+
+            {snapshot.childcareSession && (
+              <p className="text-xs leading-relaxed text-muted">These times come from childcare check-in and check-out. They stay fixed for this linked import.</p>
+            )}
 
             {!snapshot.batch.napSectionDetected && (
               <p role="alert" className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">

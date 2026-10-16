@@ -10,6 +10,7 @@ import {
   validateCaretakerDraft,
 } from "@/lib/caretaker-import";
 import { planCaretakerSleepReconciliation } from "@/lib/caretaker-sleep-reconciliation";
+import { loadPendingChildcareSession } from "@/lib/childcare-mode-server";
 import {
   CARETAKER_IMPORT_LOW_CONFIDENCE,
   type CaretakerActivityDraft,
@@ -98,6 +99,21 @@ export async function PATCH(request: NextRequest) {
       "INVALID_SLEEP_COVERAGE",
       "Refresh McPhee, then confirm a valid, non-future care start and end on the selected Singapore date.",
     );
+  }
+  if (batch.childcare_session_id) {
+    const session = await loadPendingChildcareSession(
+      db, member.householdId, batch.baby_id, batch.childcare_session_id,
+    );
+    if (!session || session.checkedOutAt == null) {
+      return caretakerError(409, "CHILDCARE_SESSION_UNAVAILABLE", "This childcare session is no longer pending an import.");
+    }
+    if (coverage.startedAt !== session.checkedInAt || coverage.endedAt !== session.checkedOutAt) {
+      return caretakerError(
+        409,
+        "CHILDCARE_SESSION_BOUNDS_LOCKED",
+        "A linked screenshot must use its recorded childcare check-in and check-out times.",
+      );
+    }
   }
 
   const stored = await loadCaretakerRows(db, batch.id);
@@ -241,6 +257,16 @@ export async function PATCH(request: NextRequest) {
   const nextRevision = Number(batch.revision) + 1;
   const tx = await db.transaction("write");
   try {
+    if (batch.childcare_session_id) {
+      const session = await loadPendingChildcareSession(
+        tx, member.householdId, batch.baby_id, batch.childcare_session_id,
+      );
+      if (!session || session.checkedOutAt == null
+          || coverage.startedAt !== session.checkedInAt || coverage.endedAt !== session.checkedOutAt) {
+        await tx.rollback();
+        return caretakerError(409, "CHILDCARE_SESSION_CHANGED", "The linked childcare session changed. Reload before reviewing.");
+      }
+    }
     const authoritativeNaps = reviewed
       .filter((row) => row.status === "reviewed" && row.draft.type === "sleep" && row.draft.endedAt != null)
       .map((row) => ({ rowId: row.id, startedAt: row.draft.startedAt, endedAt: row.draft.endedAt! }));

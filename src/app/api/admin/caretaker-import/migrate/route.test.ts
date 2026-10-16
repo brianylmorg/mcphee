@@ -99,6 +99,7 @@ test("caretaker migration endpoint is bearer-protected, additive, idempotent, an
     assert.deepEqual(await migrated.json(), {
       success: true,
       schemaReady: true,
+      childcareSchemaReady: true,
       purgeCronConfigured: false,
     });
     assert.equal(await isCaretakerImportSchemaReady(db), true);
@@ -110,6 +111,7 @@ test("caretaker migration endpoint is bearer-protected, additive, idempotent, an
     assert.deepEqual(await repeated.json(), {
       success: true,
       schemaReady: true,
+      childcareSchemaReady: true,
       purgeCronConfigured: true,
     });
     assert.deepEqual(await legacyState(db), before, "repeating the migration remains data-preserving");

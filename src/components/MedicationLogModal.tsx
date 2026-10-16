@@ -6,17 +6,19 @@ import type { SickMedication } from "@/lib/sick-mode";
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatTime } from "@/lib/utils";
 import { mutateSickMode, parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
+import { ChildcareConfirmationDeclinedError } from "@/lib/childcare-mode-client";
 
 export function initialDoseTime(episodeStartedAt: number, now = Date.now()): string {
   // Preserve seconds so a dose can be recorded in the episode's first minute.
   return sgtDateTimeInput(Math.max(now, Math.ceil(episodeStartedAt / 1_000) * 1_000), true);
 }
 
-export function buildLogDosePayload({ babyId, episodeId, medicationId, givenAt, doseText, requestId, expectedLatestDoseId }: {
+export function buildLogDosePayload({ babyId, episodeId, medicationId, givenAt, doseText, requestId, expectedLatestDoseId, childcareOverride = false }: {
   babyId: string; episodeId: string; medicationId: string; givenAt: number; doseText: string;
   requestId: string; expectedLatestDoseId: string | null;
+  childcareOverride?: boolean;
 }): Record<string, unknown> {
-  return { action: "logDose", babyId, episodeId, medicationId, givenAt, doseText: doseText.trim(), requestId, expectedLatestDoseId };
+  return { action: "logDose", babyId, episodeId, medicationId, givenAt, doseText: doseText.trim(), requestId, expectedLatestDoseId, ...(childcareOverride ? { childcareOverride: true } : {}) };
 }
 
 export function isMedicationLogDirty({
@@ -35,9 +37,9 @@ export function isMedicationLogDirty({
   return Boolean(doseText.trim() || medicationId !== initialMedicationId || givenAt !== initialGivenAt);
 }
 
-export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt, medications, initialMedicationId, isStale, onClose, onRefresh }: {
+export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt, medications, initialMedicationId, childcareOverride = false, isStale, onClose, onRefresh }: {
   babyId: string; episodeId: string; episodeStartedAt: number; medications: SickMedication[];
-  initialMedicationId?: string; isStale: boolean; onClose: () => void; onRefresh: () => Promise<void>;
+  initialMedicationId?: string; childcareOverride?: boolean; isStale: boolean; onClose: () => void; onRefresh: () => Promise<void>;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
@@ -87,11 +89,15 @@ export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt
     setBusy(true);
     setError(null);
     try {
-      await mutateSickMode(buildLogDosePayload({ babyId, episodeId, medicationId: selected.id, givenAt: timestamp, doseText, ...attempt.current }));
+      await mutateSickMode(
+        buildLogDosePayload({ babyId, episodeId, medicationId: selected.id, givenAt: timestamp, doseText, childcareOverride, ...attempt.current }),
+        { confirmChildcare: () => window.confirm("This child is currently checked in to childcare. Add this medication dose anyway?") },
+      );
       // Close after the confirmed write; a failed refresh must not offer another dose.
       onClose();
       await onRefresh();
     } catch (caught) {
+      if (caught instanceof ChildcareConfirmationDeclinedError) return;
       const status = (caught as { status?: number }).status;
       if (status === 409) {
         setNeedsReview(true);

@@ -15,6 +15,9 @@ export const CARETAKER_IMPORT_BATCH_COLUMNS = {
   commit_result: "TEXT",
   committed_at: "INTEGER",
   purged_at: "INTEGER",
+  // Intentionally not a database FK: caretaker schema can be applied on old
+  // installations before the additive childcare table exists.
+  childcare_session_id: "TEXT",
 } as const;
 
 export const CARETAKER_IMPORT_ROW_COLUMNS = {

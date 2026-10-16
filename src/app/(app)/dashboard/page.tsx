@@ -19,6 +19,7 @@ import ActivityTimelineCard from "@/components/ActivityTimelineCard";
 import SickModePanel from "@/components/SickModePanel";
 import MedicationLogModal from "@/components/MedicationLogModal";
 import CaretakerImportModal from "@/components/CaretakerImportModal";
+import ChildcareModePanel from "@/components/ChildcareModePanel";
 import MedicationDoseEditModal from "@/components/MedicationDoseEditModal";
 import MedicationPrescriptionModal from "@/components/MedicationPrescriptionModal";
 import SickMilkProgress from "@/components/SickMilkProgress";
@@ -36,6 +37,8 @@ import { mutateSickMode } from "@/lib/sick-mode-client";
 import { applyMilkActivityChangeToTotals, sameTimeMilkMedianReference, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
 import { aggregateDashboardRefreshResults, runSingleFlight, shouldSkipForManualRefresh, type DashboardRefreshResult, type RefreshTaskResult } from "@/lib/dashboard-refresh";
 import { useDashboardRefreshBlocked, useStandalonePullToRefresh } from "@/hooks/use-standalone-pull-to-refresh";
+import type { ChildcareModeCommandResponse, ChildcareModeState, ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
+import { ChildcareConfirmationDeclinedError, fetchWithChildcareConfirmation } from "@/lib/childcare-mode-client";
 
 interface Baby {
   id: string;
@@ -151,6 +154,12 @@ export default function DashboardPage() {
   const [showLogModal, setShowLogModal] = useState(false);
   const [showActivityMenu, setShowActivityMenu] = useState(false);
   const [showCaretakerImport, setShowCaretakerImport] = useState(false);
+  const [caretakerImportSession, setCaretakerImportSession] = useState<ChildcareSessionSummary | null>(null);
+  const [childcareMode, setChildcareMode] = useState<ChildcareModeState>({ schemaReady: false, activeSession: null, pendingSessions: [] });
+  const [childcareBusy, setChildcareBusy] = useState(false);
+  const [childcareError, setChildcareError] = useState<string | null>(null);
+  const [childcareOverride, setChildcareOverride] = useState(false);
+  const childcareCommandRef = useRef<{ action: "checkIn" | "checkOut"; requestId: string; at: number; sessionId?: string } | null>(null);
   const [logType, setLogType] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editingDose, setEditingDose] = useState<Activity | null>(null);
@@ -468,6 +477,9 @@ export default function DashboardPage() {
             });
       }
       setActivities(data.activities || []);
+      setChildcareMode(data.childcareMode && typeof data.childcareMode === "object"
+        ? data.childcareMode as ChildcareModeState
+        : { schemaReady: false, activeSession: null, pendingSessions: [] });
       if (data.household?.inviteCode) {
         setInviteCode(data.household.inviteCode);
       }
@@ -824,15 +836,20 @@ export default function DashboardPage() {
     }
   };
 
-  const handleStartTimer = async (type: string, side?: string) => {
+  const confirmChildcareOverride = (): boolean => window.confirm(
+    `${baby?.name || "Baby"} is currently checked in to childcare. Add this activity anyway?`,
+  );
+  const confirmChildcareEntry = (): boolean => !childcareMode.activeSession || confirmChildcareOverride();
+
+  const handleStartTimer = async (type: string, side?: string, confirmedChildcareOverride = false) => {
     if (!baby?.id) return null;
     const requestedSide = side || "L";
     try {
-      const res = await fetch("/api/active-timers", {
+      const res = await fetchWithChildcareConfirmation("/api/active-timers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ babyId: baby.id, type, side: requestedSide }),
-      });
+        body: JSON.stringify({ babyId: baby.id, type, side: requestedSide, childcareOverride: confirmedChildcareOverride }),
+      }, confirmChildcareOverride);
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.id) throw new Error(data.error || "Failed to start timer");
       return {
@@ -842,6 +859,7 @@ export default function DashboardPage() {
         current_side: typeof data.side === "string" ? data.side : requestedSide,
       };
     } catch (error) {
+      if (error instanceof ChildcareConfirmationDeclinedError) return null;
       console.error("Start timer error:", error);
       return null;
     }
@@ -863,17 +881,21 @@ export default function DashboardPage() {
 
   const handleStopTimer = async () => {
     if (!activeTimer || !baby?.id || isStoppingTimer) return;
+    const confirmedChildcareOverride = childcareMode.activeSession ? confirmChildcareEntry() : false;
+    if (childcareMode.activeSession && !confirmedChildcareOverride) return;
     setIsStoppingTimer(true);
     try {
       const params = new URLSearchParams({ babyId: baby.id });
       if (activeTimer.id != null) params.set("id", String(activeTimer.id));
-      const res = await fetch(`/api/active-timers?${params.toString()}`, { method: "DELETE" });
+      if (confirmedChildcareOverride) params.set("childcareOverride", "true");
+      const res = await fetchWithChildcareConfirmation(`/api/active-timers?${params.toString()}`, { method: "DELETE" }, confirmChildcareOverride);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to stop timer");
       setActiveTimer(null);
       await fetchData();
       setActivityFilterRefresh((value) => value + 1);
     } catch (error) {
+      if (error instanceof ChildcareConfirmationDeclinedError) return;
       console.error("Stop timer error:", error);
       alert(error instanceof Error ? error.message : "Could not stop and log the timer. Try again.");
     } finally {
@@ -897,13 +919,15 @@ export default function DashboardPage() {
 
   const handleSleepTransition = async (target: "awake" | "sleeping") => {
     if (!baby?.id || isChangingSleepState || target === sleepState.state) return;
+    const confirmedChildcareOverride = childcareMode.activeSession ? confirmChildcareEntry() : false;
+    if (childcareMode.activeSession && !confirmedChildcareOverride) return;
     setIsChangingSleepState(true);
     try {
-      const res = await fetch("/api/sleep-state", {
+      const res = await fetchWithChildcareConfirmation("/api/sleep-state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ babyId: baby.id, action: target === "sleeping" ? "sleep" : "wake" }),
-      });
+        body: JSON.stringify({ babyId: baby.id, action: target === "sleeping" ? "sleep" : "wake", childcareOverride: confirmedChildcareOverride }),
+      }, confirmChildcareOverride);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not update sleep state");
       if (data.undoToken) {
@@ -912,6 +936,7 @@ export default function DashboardPage() {
       await fetchData();
       setActivityFilterRefresh((value) => value + 1);
     } catch (error) {
+      if (error instanceof ChildcareConfirmationDeclinedError) return;
       alert(error instanceof Error ? error.message : "Could not update sleep state. Try again.");
       await fetchData();
     } finally {
@@ -989,6 +1014,9 @@ export default function DashboardPage() {
 
   const handleActivityAction = async (type: string) => {
     setEditingDose(null);
+    const confirmedChildcareOverride = childcareMode.activeSession ? confirmChildcareEntry() : false;
+    if (childcareMode.activeSession && !confirmedChildcareOverride) return;
+    setChildcareOverride(confirmedChildcareOverride);
     if (type === "medication") {
       if (!activeSickEpisodeId || sickModeIsStale) return;
       setShowActivityMenu(false);
@@ -1005,7 +1033,7 @@ export default function DashboardPage() {
       setIsStartingTimer(true);
       setBreastfeedPromptShown(false);
       setShowActivityMenu(false);
-      const timer = await handleStartTimer("breastfeed", "L");
+      const timer = await handleStartTimer("breastfeed", "L", confirmedChildcareOverride);
       if (timer) {
         setActiveTimer(timer);
         // Refresh immediately: aborts any in-flight poll whose stale
@@ -1025,7 +1053,7 @@ export default function DashboardPage() {
     setShowActivityMenu(false);
   };
 
-  const openCaretakerImport = () => {
+  const openCaretakerImport = (session: ChildcareSessionSummary | null = null) => {
     setShowActivityMenu(false);
     setShowLogModal(false);
     setEditingActivity(null);
@@ -1034,7 +1062,69 @@ export default function DashboardPage() {
     setMedicationEntry(null);
     setShowLeaveConfirm(false);
     setShowMilkHistoryChart(false);
+    setCaretakerImportSession(session);
     setShowCaretakerImport(true);
+  };
+
+  const mutateChildcareMode = async (action: "checkIn" | "checkOut", recordedAt?: number) => {
+    if (!baby?.id || childcareBusy) return;
+    let attempt = childcareCommandRef.current;
+    if (
+      !attempt ||
+      attempt.action !== action ||
+      (recordedAt !== undefined && attempt.at !== recordedAt)
+    ) {
+      attempt = {
+        action,
+        requestId: crypto.randomUUID(),
+        at: recordedAt ?? Date.now(),
+        ...(action === "checkOut" ? { sessionId: childcareMode.activeSession?.id } : {}),
+      };
+      if (action === "checkOut" && !attempt.sessionId) {
+        childcareCommandRef.current = null;
+        await fetchData({ refreshMilkHistory: false });
+        return;
+      }
+      childcareCommandRef.current = attempt;
+    }
+    setChildcareBusy(true);
+    setChildcareError(null);
+    try {
+      const response = await fetch("/api/childcare-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          babyId: baby.id,
+          requestId: attempt.requestId,
+          at: attempt.at,
+          ...(action === "checkOut" ? { sessionId: attempt.sessionId } : {}),
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as Partial<ChildcareModeCommandResponse> & { error?: string };
+      if (!response.ok || !payload.session) {
+        const error = new Error(payload.error || "Could not update childcare status.");
+        Object.assign(error, { status: response.status });
+        throw error;
+      }
+      setChildcareMode({
+        schemaReady: Boolean(payload.schemaReady),
+        activeSession: payload.activeSession ?? null,
+        pendingSessions: Array.isArray(payload.pendingSessions) ? payload.pendingSessions : [],
+      });
+      childcareCommandRef.current = null;
+      if (action === "checkOut" && window.confirm("Childcare check-out saved. Import the childcare screenshot now?")) {
+        openCaretakerImport(payload.session);
+      }
+      setActivityFilterRefresh((value) => value + 1);
+    } catch (caught) {
+      const status = (caught as { status?: number }).status;
+      if (status != null && status >= 400 && status < 500) childcareCommandRef.current = null;
+      setChildcareError(caught instanceof Error ? caught.message : "Could not update childcare status.");
+      await fetchData({ refreshMilkHistory: false });
+    } finally {
+      setChildcareBusy(false);
+    }
   };
 
 
@@ -1405,6 +1495,7 @@ export default function DashboardPage() {
   return (
     <main
       data-care-overview={Boolean(sickMode?.activeEpisode)}
+      data-childcare-active={Boolean(childcareMode.activeSession)}
       data-dashboard-refresh-blocked={refreshExplicitlyBlocked ? "true" : undefined}
       className="min-h-dvh bg-cream pb-24"
     >
@@ -1489,7 +1580,19 @@ export default function DashboardPage() {
       )}
 
       <div className="dashboard-overview max-w-lg mx-auto px-3 py-3 sm:px-5 sm:py-4 space-y-2">
-        <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45")} aria-label="Sleep status">
+        {baby?.id && childcareMode.schemaReady && (
+          <ChildcareModePanel
+            babyName={baby.name || "Baby"}
+            activeSession={childcareMode.activeSession}
+            pendingSessions={childcareMode.pendingSessions}
+            busy={childcareBusy}
+            error={childcareError}
+            onCheckIn={(at) => { void mutateChildcareMode("checkIn", at); }}
+            onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
+            onImport={(session) => openCaretakerImport(session)}
+          />
+        )}
+        <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none " + (sleepState.state === "awake" ? "border-amber-200/70 bg-amber-50/35" : "border-sky-200/80 bg-sky-50/45") + (childcareMode.activeSession ? " opacity-60" : "")} aria-label="Sleep status">
           <SleepStateControl
             compact={Boolean(sickMode?.activeEpisode)}
             state={sleepState.state}
@@ -1526,7 +1629,15 @@ export default function DashboardPage() {
             data={sickMode}
             isStale={sickModeIsStale}
             onLogActivity={type => { void handleActivityAction(type); }}
-            onLogMedication={medicationId => { if (!sickModeIsStale && activeSickEpisodeId) { setShowActivityMenu(false); setEditingDose(null); setMedicationEntry(medicationLogEntry(activeSickEpisodeId, medicationId)); } }}
+            onLogMedication={medicationId => {
+              if (sickModeIsStale || !activeSickEpisodeId) return;
+              const confirmed = childcareMode.activeSession ? confirmChildcareEntry() : false;
+              if (childcareMode.activeSession && !confirmed) return;
+              setChildcareOverride(confirmed);
+              setShowActivityMenu(false);
+              setEditingDose(null);
+              setMedicationEntry(medicationLogEntry(activeSickEpisodeId, medicationId));
+            }}
             onAddMedication={(drafts?: MedicationPrescriptionDraftInput[], episodeId?: string) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { setShowActivityMenu(false); setEditingDose(null); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }}
             onRefresh={async () => {
               await fetchSickMode(baby.id);
@@ -2036,7 +2147,7 @@ export default function DashboardPage() {
           <div className="activity-picker flex max-h-[calc(100dvh-7rem)] w-[min(320px,calc(100vw-2.5rem))] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
             <button
               type="button"
-              onClick={openCaretakerImport}
+              onClick={() => openCaretakerImport(null)}
               className="mb-1 flex min-h-11 w-full shrink-0 items-center justify-between gap-3 rounded-lg border border-terracotta/25 bg-terracotta/10 px-3 py-2 text-left text-warm-brown transition-colors hover:bg-terracotta/15"
             >
               <span className="flex min-w-0 items-center gap-3">
@@ -2067,7 +2178,7 @@ export default function DashboardPage() {
                   key={type}
                   onClick={() => handleActivityAction(type)}
                   disabled={(isBreastfeed && isStartingTimer) || (type === "medication" && sickModeIsStale)}
-                  className={"flex min-h-9 w-full shrink-0 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors " + (overdue ? "bg-terracotta-dark text-white" : "hover:bg-cream text-warm-brown") + " disabled:opacity-60"}
+                  className={"flex min-h-9 w-full shrink-0 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors " + (overdue ? "bg-terracotta-dark text-white" : "hover:bg-cream text-warm-brown") + (childcareMode.activeSession ? " opacity-55" : "") + " disabled:opacity-60"}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <ActivityIcon aria-hidden="true" className="h-5 w-5 shrink-0" />
@@ -2087,7 +2198,7 @@ export default function DashboardPage() {
           onClick={() => setShowActivityMenu((value) => !value)}
           aria-label={showActivityMenu ? "Close activity menu" : "Add activity"}
           aria-expanded={showActivityMenu}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-terracotta-dark text-white shadow-lg transition-colors hover:bg-warm-brown"
+          className={"flex h-12 w-12 items-center justify-center rounded-full bg-terracotta-dark text-white shadow-lg transition-colors hover:bg-warm-brown " + (childcareMode.activeSession ? "opacity-55" : "")}
         >
           {showActivityMenu ? <X aria-hidden="true" className="h-6 w-6" /> : <Plus aria-hidden="true" className="h-6 w-6" />}
         </button>
@@ -2175,7 +2286,8 @@ export default function DashboardPage() {
         <CaretakerImportModal
           babyId={baby.id}
           babyName={baby.name || "Baby"}
-          onClose={() => setShowCaretakerImport(false)}
+          childcareSession={caretakerImportSession}
+          onClose={() => { setShowCaretakerImport(false); setCaretakerImportSession(null); }}
           onImported={async () => {
             await Promise.all([
               fetchData({ refreshMilkHistory: false }),
@@ -2227,8 +2339,9 @@ export default function DashboardPage() {
           episodeStartedAt={sickMode.activeEpisode.startedAt}
           medications={sickMode.medications}
           initialMedicationId={medicationEntry.medicationId}
+          childcareOverride={childcareOverride}
           isStale={sickModeIsStale}
-          onClose={() => setMedicationEntry(null)}
+          onClose={() => { setMedicationEntry(null); setChildcareOverride(false); }}
           onRefresh={async () => {
             await fetchSickMode(baby.id);
             setActivityFilterRefresh((value) => value + 1);
@@ -2280,9 +2393,11 @@ export default function DashboardPage() {
           breastmilkLibraryMl={breastmilkLibraryMl}
           lastPumpedMl={lastPumpedMl}
           lastPumpedAt={lastPumpedAt}
+          childcareOverride={childcareOverride}
           onClose={() => {
             setShowLogModal(false);
             setEditingActivity(null);
+            setChildcareOverride(false);
           }}
           onSuccess={(saved) => {
             const previous = editingActivity
@@ -2337,6 +2452,7 @@ export default function DashboardPage() {
             });
             setShowLogModal(false);
             setEditingActivity(null);
+            setChildcareOverride(false);
             void fetchData();
             if (baby?.id) void fetchSickMode(baby.id);
             setActivityFilterRefresh((value) => value + 1);
@@ -2387,6 +2503,7 @@ function LogModal({
   breastmilkLibraryMl,
   lastPumpedMl,
   lastPumpedAt,
+  childcareOverride,
   onClose,
   onSuccess,
 }: {
@@ -2398,6 +2515,7 @@ function LogModal({
   breastmilkLibraryMl: number;
   lastPumpedMl: number;
   lastPumpedAt: number | null;
+  childcareOverride: boolean;
   onClose: () => void;
   onSuccess: (saved: { id: string; type: string; startedAt: number; details: Record<string, unknown> }) => void;
 }) {
@@ -2689,12 +2807,13 @@ function LogModal({
           startedAt,
           ...(type === "sleep" && isEditing ? { endedAt } : {}),
           details,
+          ...(!isEditing && childcareOverride ? { childcareOverride: true } : {}),
       };
-      const res = await fetch("/api/activities", {
+      const res = await fetchWithChildcareConfirmation("/api/activities", {
         method: isEditing && activity ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(activityPayload),
-      });
+      }, () => window.confirm("This child is currently checked in to childcare. Add this activity anyway?"));
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save activity");
@@ -2708,6 +2827,7 @@ function LogModal({
         details,
       });
     } catch (error) {
+      if (error instanceof ChildcareConfirmationDeclinedError) return;
       console.error("Log error:", error);
       alert(error instanceof Error ? error.message : "Could not save activity. Try again.");
     } finally {
