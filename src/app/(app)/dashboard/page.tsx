@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId, type CSSProperties } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Sparkles, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -1901,11 +1901,10 @@ export default function DashboardPage() {
 
           <div className="milk-amounts mt-2 flex items-end justify-between gap-4">
             <div className="flex items-baseline gap-2">
-              <span className={`glance-primary-value ${milkOverExpected ? "text-success" : "text-warm-brown"}`}>
+              <span className="glance-primary-value text-warm-brown">
                 {selectedMilkSummary.totalMl}
               </span>
-              <span className={`glance-value-unit ${milkOverExpected ? "text-success" : "text-warm-brown-light"}`}>ml</span>
-              {milkOverExpected && <Sparkles role="img" aria-label="Above expected" className="h-5 w-5 self-start text-success" />}
+              <span className="glance-value-unit text-warm-brown-light">ml</span>
             </div>
             <div className="border-l border-border pl-4 text-right">
               <p className="text-sm text-muted">{activeSickSummary && isSelectedMilkToday ? "Usual daily" : "Expected"}</p>
