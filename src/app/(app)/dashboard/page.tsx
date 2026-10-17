@@ -1893,7 +1893,7 @@ export default function DashboardPage() {
                 {selectedMilkSummary.totalMl}
               </span>
               <span className={`glance-value-unit ${milkOverExpected ? "text-success" : "text-warm-brown-light"}`}>ml</span>
-              {milkOverExpected && <Sparkles role="img" aria-label="Above expected" className="milk-over-sparkle h-5 w-5 self-start text-success" />}
+              {milkOverExpected && <Sparkles role="img" aria-label="Above expected" className="h-5 w-5 self-start text-success" />}
             </div>
             <div className="border-l border-border pl-4 text-right">
               <p className="text-sm text-muted">{activeSickSummary && isSelectedMilkToday ? "Usual daily" : "Expected"}</p>
@@ -1913,11 +1913,12 @@ export default function DashboardPage() {
           {activeSickSummary && isSelectedMilkToday && sickMode?.activeEpisode ? (
             <SickMilkProgress consumedMl={selectedMilkSummary.totalMl} baselineMl={sickMode.activeEpisode.baselineDailyMl} expectedMl={selectedExpectedMilkMl} baselineKind={sickMode.activeEpisode.baselineKind} />
           ) : <>
-            <div className="milk-progress relative mt-3 h-2 rounded-full bg-cream">
+            <div className={`milk-progress relative mt-3 rounded-full bg-cream ${milkOverExpected ? "h-3" : "h-2"}`}>
               {milkOverExpected ? <>
-                <div className="absolute inset-y-0 left-0 rounded-l-full bg-terracotta" style={{ width: milkExpectedMarkPercent + "%" }} />
-                <div className="milk-over-bonus absolute inset-y-0 right-0 rounded-r-full bg-success" style={{ left: milkExpectedMarkPercent + "%" }} />
-                <span aria-hidden="true" className="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-surface ring-1 ring-success/40" style={{ left: milkExpectedMarkPercent + "%" }} />
+                {/* A musou gauge: the expected amount burns orange, the excess green. */}
+                <div className="milk-fire absolute inset-y-0 left-0 rounded-l-full" style={{ width: milkExpectedMarkPercent + "%" }} />
+                <div className="milk-fire milk-fire-green absolute inset-y-0 right-0 rounded-r-full" style={{ left: milkExpectedMarkPercent + "%" }} />
+                <span aria-hidden="true" className="absolute -inset-y-1 z-10 w-0.5 -translate-x-1/2 rounded-full bg-surface ring-1 ring-success/40" style={{ left: milkExpectedMarkPercent + "%" }} />
               </> : (
                 <div className="h-full rounded-full bg-terracotta transition-[width]" style={{ width: selectedExpectedMilkMl ? milkProgress + "%" : "0%" }} />
               )}

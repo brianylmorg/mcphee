@@ -984,26 +984,78 @@ html:not([data-care-mode="sick"])[data-theme="dark"] .sb-smoke-rise { filter: no
   .baby-face-glow { animation: none; }
 }
 
-/* Milk above expected: the bonus segment shimmers and the sparkle twinkles. */
-.milk-over-bonus {
-  background-image: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.45) 50%, transparent 80%);
-  background-size: 200% 100%;
-  animation: milk-over-shimmer 2.8s ease-in-out infinite;
+/* Milk above expected: a musou-style burning gauge. The expected part burns
+   orange-gold, the excess green: heat rolls along a lit tube, the glow
+   pulses and two layers of flame tongues flicker up off the top edge. */
+.milk-fire {
+  --fire-deep: 168 48 22;
+  --fire-mid: 236 110 28;
+  --fire-hot: 255 204 84;
+  background-image:
+    linear-gradient(90deg, transparent, rgb(var(--fire-hot) / 0.7) 50%, transparent),
+    linear-gradient(180deg, rgb(var(--fire-hot)) 0%, rgb(var(--fire-mid)) 45%, rgb(var(--fire-deep)) 100%);
+  background-size: 90px 100%, 100% 100%;
+  animation: milk-fire-flow 1.2s linear infinite, milk-fire-glow 0.9s ease-in-out infinite alternate;
 }
-.milk-over-sparkle {
-  animation: milk-over-twinkle 2.4s ease-in-out infinite;
+.milk-fire-green {
+  --fire-deep: 18 104 62;
+  --fire-mid: 46 176 106;
+  --fire-hot: 180 246 164;
 }
-@keyframes milk-over-shimmer {
-  0% { background-position: 150% 0; }
-  100% { background-position: -50% 0; }
+.milk-fire::before,
+.milk-fire::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 45%;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
 }
-@keyframes milk-over-twinkle {
-  0%, 100% { opacity: 0.7; transform: scale(0.9) rotate(0deg); }
-  50% { opacity: 1; transform: scale(1.1) rotate(12deg); }
+/* Back layer: taller orange-red tongues. */
+.milk-fire::before {
+  height: 14px;
+  background: linear-gradient(0deg, rgb(var(--fire-mid)), rgb(var(--fire-hot)) 55%, rgb(var(--fire-hot) / 0.35));
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 16' preserveAspectRatio='none'%3E%3Cpath d='M1 16C0 8.5 4 9.5 5 1C6 9.5 10 8.5 9 16Z M11.5 16C10.5 11.5 14 12.5 15 7C16 12.5 19.5 11.5 18.5 16Z M21 16C20 9.5 25 10.5 26 3C27 10.5 32 9.5 31 16Z M35 16C34 12.5 37 13.5 38 9C39 13.5 42 12.5 41 16Z M44.5 16C43.5 8.0 48 9.0 49 0C50 9.0 54.5 8.0 53.5 16Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 16' preserveAspectRatio='none'%3E%3Cpath d='M1 16C0 8.5 4 9.5 5 1C6 9.5 10 8.5 9 16Z M11.5 16C10.5 11.5 14 12.5 15 7C16 12.5 19.5 11.5 18.5 16Z M21 16C20 9.5 25 10.5 26 3C27 10.5 32 9.5 31 16Z M35 16C34 12.5 37 13.5 38 9C39 13.5 42 12.5 41 16Z M44.5 16C43.5 8.0 48 9.0 49 0C50 9.0 54.5 8.0 53.5 16Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 30px 100%;
+  mask-size: 30px 100%;
+  filter: blur(0.5px);
+  animation: milk-fire-tongues 1.3s linear infinite, milk-fire-lick 0.36s ease-in-out infinite alternate;
+}
+/* Front layer: shorter, hotter tongues drifting the other way. */
+.milk-fire::after {
+  height: 10px;
+  background: linear-gradient(0deg, rgb(var(--fire-hot)), rgb(255 250 225 / 0.9) 60%, rgb(255 250 225 / 0.2));
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 16' preserveAspectRatio='none'%3E%3Cpath d='M2.5 16C1.5 11.0 5 12.0 6 6C7 12.0 10.5 11.0 9.5 16Z M16 16C15 13.0 18 14.0 19 10C20 14.0 23 13.0 22 16Z M26 16C25 10.0 29 11.0 30 4C31 11.0 35 10.0 34 16Z M37 16C36 12.5 39 13.5 40 9C41 13.5 44 12.5 43 16Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 16' preserveAspectRatio='none'%3E%3Cpath d='M2.5 16C1.5 11.0 5 12.0 6 6C7 12.0 10.5 11.0 9.5 16Z M16 16C15 13.0 18 14.0 19 10C20 14.0 23 13.0 22 16Z M26 16C25 10.0 29 11.0 30 4C31 11.0 35 10.0 34 16Z M37 16C36 12.5 39 13.5 40 9C41 13.5 44 12.5 43 16Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 22px 100%;
+  mask-size: 22px 100%;
+  filter: blur(0.4px);
+  animation: milk-fire-tongues 0.9s linear infinite reverse, milk-fire-lick 0.27s ease-in-out infinite alternate-reverse;
+}
+@keyframes milk-fire-flow {
+  0% { background-position: 90px 0, 0 0; }
+  100% { background-position: -90px 0, 0 0; }
+}
+@keyframes milk-fire-glow {
+  0% { box-shadow: 0 0 4px 0 rgb(var(--fire-mid) / 0.45); }
+  100% { box-shadow: 0 0 12px 2px rgb(var(--fire-hot) / 0.6); }
+}
+@keyframes milk-fire-tongues {
+  0% { -webkit-mask-position: 0 0; mask-position: 0 0; }
+  100% { -webkit-mask-position: -60px 0; mask-position: -60px 0; }
+}
+@keyframes milk-fire-lick {
+  0% { transform: scaleY(0.55); opacity: 0.75; }
+  100% { transform: scaleY(1.1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .milk-over-bonus,
-  .milk-over-sparkle {
+  .milk-fire,
+  .milk-fire::before,
+  .milk-fire::after {
     animation: none;
   }
 }
