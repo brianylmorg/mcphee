@@ -757,10 +757,10 @@ body {
     padding-left: 0;
   }
   .dashboard-baby-identity.baby-identity-at-home {
-    padding-left: 4rem;
+    padding-left: 3.75rem;
   }
   .baby-home-backdrop .sb-home-wrap {
-    height: 4.25rem;
+    height: 3.75rem;
   }
 }
 
@@ -797,12 +797,12 @@ body {
   mask-image: linear-gradient(to right, #000 50%, rgb(0 0 0 / 0.55) 64%, rgb(0 0 0 / 0.15) 74%, transparent 80%);
 }
 /* Behind the face, the cottage fades in a circle around it instead of a
-   straight edge. The backdrop overlaps the face by 12px and sits 12px below
+   straight edge. The backdrop overlaps the face by 12px and sits 8px below
    its chin, so the 56x64 face's centre is 16px past the cottage's right edge
-   and 44px above its bottom. */
+   and 40px above its bottom. */
 .baby-home-backdrop .sb-home {
   --face-x: calc(100% + 16px);
-  --face-y: calc(100% - 44px);
+  --face-y: calc(100% - 40px);
   --face-clear: 30px;
   --face-soft: 40px;
   --face-solid: 52px;
@@ -813,7 +813,7 @@ body {
   /* Smaller face (46x52): its centre and fade radii shrink with it. */
   .baby-home-backdrop .sb-home {
     --face-x: calc(100% + 11px);
-    --face-y: calc(100% - 38px);
+    --face-y: calc(100% - 34px);
     --face-clear: 25px;
     --face-soft: 33px;
     --face-solid: 43px;

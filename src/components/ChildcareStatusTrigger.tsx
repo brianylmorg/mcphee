@@ -20,7 +20,7 @@ export default function ChildcareStatusTrigger({ active, onOpen }: { active: boo
     >
       {active
         ? <StorybookBalloon active className="h-12 w-10 -rotate-12" />
-        : <StorybookHome className="h-[5.25rem]" />}
+        : <StorybookHome className="h-[4.5rem]" />}
     </button>
   );
 }
