@@ -757,11 +757,17 @@ body {
     padding-left: 0;
   }
   .dashboard-baby-identity.baby-identity-at-home {
-    padding-left: 4.6rem;
+    padding-left: 4rem;
   }
   .baby-home-backdrop .sb-home-wrap {
     height: 4.25rem;
   }
+}
+
+/* At home the row starts right after the cottage, so the name and weight
+   never drift under the refresh button. */
+.baby-identity-at-home .baby-identity-row {
+  justify-content: flex-start;
 }
 
 /* Home cottage: smoke drifts up from the chimney, the window glows softly. */

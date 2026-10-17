@@ -1665,7 +1665,7 @@ export default function DashboardPage() {
           >
             <RotateCw aria-hidden="true" className={`h-4 w-4 ${refreshFeedback?.kind === "refreshing" ? "animate-spin motion-reduce:animate-none" : ""}`} />
           </button>
-          <div className={"dashboard-baby-identity " + (childcareMode.activeSession ? "px-10" : "baby-identity-at-home pl-[6.25rem] pr-1")}>
+          <div className={"dashboard-baby-identity " + (childcareMode.activeSession ? "px-10" : "baby-identity-at-home pl-[5.25rem] pr-10")}>
               <BabyCareMenu
                 name={baby?.name || "Baby"}
                 active={Boolean(sickMode?.activeEpisode)}
@@ -1680,7 +1680,7 @@ export default function DashboardPage() {
                 handoffOpen={showCaretakerImport}
                 subtitle={
             <p className="baby-meta flex items-center gap-x-2 whitespace-nowrap text-sm text-warm-brown-light">
-              {baby?.birth_date && <span>{formatAge(baby.birth_date)}</span>}
+              {baby?.birth_date && <span>{formatAge(baby.birth_date, { compact: true })}</span>}
               {baby?.birth_date && <span aria-hidden="true" className="text-border">·</span>}
               <Link
                 href="/weight"

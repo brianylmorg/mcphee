@@ -28,7 +28,7 @@ export function generateInviteCode(): string {
   return code;
 }
 
-export function formatAge(birthDate: number | null): string {
+export function formatAge(birthDate: number | null, { compact = false }: { compact?: boolean } = {}): string {
   if (!birthDate) return "";
   const now = Date.now();
   const diffMs = now - birthDate;
@@ -37,18 +37,21 @@ export function formatAge(birthDate: number | null): string {
   if (diffDays === 0) return "Day 1";
   if (diffDays < 7) return `Day ${diffDays + 1}`;
 
+  // Compact units ("6 mo 3 wk") fit the dashboard header beside the cottage.
+  const unit = (count: number, long: string, short: string) =>
+    compact ? `${count} ${short}` : `${count} ${long}${count > 1 ? "s" : ""}`;
   const weeks = Math.floor(diffDays / 7);
   const remainDays = diffDays % 7;
 
   if (diffDays < 90) {
-    if (remainDays === 0) return `${weeks} week${weeks > 1 ? "s" : ""}`;
-    return `${weeks} week${weeks > 1 ? "s" : ""} ${remainDays} day${remainDays > 1 ? "s" : ""}`;
+    if (remainDays === 0) return unit(weeks, "week", "wk");
+    return `${unit(weeks, "week", "wk")} ${unit(remainDays, "day", "d")}`;
   }
 
   const months = Math.floor(diffDays / 30);
   const remainWeeks = Math.floor((diffDays % 30) / 7);
-  if (remainWeeks === 0) return `${months} month${months > 1 ? "s" : ""}`;
-  return `${months} month${months > 1 ? "s" : ""} ${remainWeeks} week${remainWeeks > 1 ? "s" : ""}`;
+  if (remainWeeks === 0) return unit(months, "month", "mo");
+  return `${unit(months, "month", "mo")} ${unit(remainWeeks, "week", "wk")}`;
 }
 
 export function timeSince(timestamp: number, now = Date.now()): string {
