@@ -173,9 +173,9 @@ export function StorybookBalloon({ active, className = "" }: { active: boolean; 
  */
 export function StorybookHome({ className = "" }: { className?: string }) {
   return (
-    <span aria-hidden="true" className={`sb-home-wrap relative block aspect-[360/232] ${className}`}>
+    <span aria-hidden="true" className={`sb-home-wrap relative block aspect-[360/296] ${className}`}>
       <Layer src="cottage.webp" className="sb-home" />
-      <span className="sb-pos sb-smoke-rise" style={{ left: "26%", bottom: "92%", width: "9%" }}><Layer src="smoke.webp" /></span>
+      <span className="sb-pos sb-smoke-rise" style={{ left: "25.3%", bottom: "92%", width: "11.5%" }}><Layer src="smoke.webp" /></span>
     </span>
   );
 }
