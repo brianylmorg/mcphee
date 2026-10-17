@@ -58,7 +58,7 @@ export default function BabyCareMenu({ name, active, accessory, accessoryPlaceme
               width so the name and weight keep their room); its base reaches
               below the chin. */}
           {accessoryNode && accessoryPlacement === "behind" && (
-            <span className="baby-home-backdrop absolute -bottom-3 right-[calc(100%-1.75rem)] z-10">{accessoryNode}</span>
+            <span className="baby-home-backdrop absolute -bottom-3 right-[calc(100%-0.75rem)] z-10">{accessoryNode}</span>
           )}
           {/* The face is a second, pointer-only way into the same menu as the name. */}
           <button type="button" tabIndex={-1} aria-hidden="true" onClick={open} className="baby-face relative z-20 block rounded-2xl transition-transform active:scale-95">

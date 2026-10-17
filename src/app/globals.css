@@ -757,7 +757,7 @@ body {
     padding-left: 0;
   }
   .dashboard-baby-identity.baby-identity-at-home {
-    padding-left: 3.6rem;
+    padding-left: 4.6rem;
   }
   .baby-home-backdrop .sb-home-wrap {
     height: 4.25rem;
@@ -789,6 +789,29 @@ body {
 .sb-home {
   -webkit-mask-image: linear-gradient(to right, #000 50%, rgb(0 0 0 / 0.55) 64%, rgb(0 0 0 / 0.15) 74%, transparent 80%);
   mask-image: linear-gradient(to right, #000 50%, rgb(0 0 0 / 0.55) 64%, rgb(0 0 0 / 0.15) 74%, transparent 80%);
+}
+/* Behind the face, the cottage fades in a circle around it instead of a
+   straight edge. The backdrop overlaps the face by 12px and sits 12px below
+   its chin, so the 56x64 face's centre is 16px past the cottage's right edge
+   and 44px above its bottom. */
+.baby-home-backdrop .sb-home {
+  --face-x: calc(100% + 16px);
+  --face-y: calc(100% - 44px);
+  --face-clear: 30px;
+  --face-soft: 40px;
+  --face-solid: 52px;
+  -webkit-mask-image: radial-gradient(circle at var(--face-x) var(--face-y), transparent var(--face-clear), rgb(0 0 0 / 0.45) var(--face-soft), #000 var(--face-solid));
+  mask-image: radial-gradient(circle at var(--face-x) var(--face-y), transparent var(--face-clear), rgb(0 0 0 / 0.45) var(--face-soft), #000 var(--face-solid));
+}
+@media (max-width: 359px) {
+  /* Smaller face (46x52): its centre and fade radii shrink with it. */
+  .baby-home-backdrop .sb-home {
+    --face-x: calc(100% + 11px);
+    --face-y: calc(100% - 38px);
+    --face-clear: 25px;
+    --face-soft: 33px;
+    --face-solid: 43px;
+  }
 }
 .sb-tree-sway {
   transform-box: fill-box;

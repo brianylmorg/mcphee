@@ -1665,7 +1665,7 @@ export default function DashboardPage() {
           >
             <RotateCw aria-hidden="true" className={`h-4 w-4 ${refreshFeedback?.kind === "refreshing" ? "animate-spin motion-reduce:animate-none" : ""}`} />
           </button>
-          <div className={"dashboard-baby-identity " + (childcareMode.activeSession ? "px-10" : "baby-identity-at-home pl-[5.25rem] pr-1")}>
+          <div className={"dashboard-baby-identity " + (childcareMode.activeSession ? "px-10" : "baby-identity-at-home pl-[6.25rem] pr-1")}>
               <BabyCareMenu
                 name={baby?.name || "Baby"}
                 active={Boolean(sickMode?.activeEpisode)}
