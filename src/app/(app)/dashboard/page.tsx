@@ -96,11 +96,16 @@ interface PumpedMilkBatch extends AvailableMilkBatch {
   isAdjustment?: boolean;
 }
 
-// Forge sparks for the milk bar's strike point: [x, y, delay ms]. Each spark
-// is a short streak that flies out along its path, then drops and fades.
-const MILK_STRIKE_SPARKS: ReadonlyArray<readonly [number, number, number]> = [
-  [-21, -15, 0], [-7, -26, 20], [3, -19, 0], [14, -27, 50], [24, -12, 10],
-  [-30, -4, 70], [31, -3, 40], [-14, -8, 110], [9, -9, 90], [-4, -13, 150], [19, 2, 30],
+// Forge sparks for the milk bar's strike point: [x, y, delay ms, duration ms].
+// Staggered timings keep a constant flurry; each spark is a short streak that
+// flies out along its path, then drops and fades.
+const MILK_STRIKE_SPARKS: ReadonlyArray<readonly [number, number, number, number]> = [
+  [18, 1, 0, 1150], [-19, -18, 649, 1050], [9, -24, 177, 750], [-2, -12, 940, 1100], [17, -16, 330, 700],
+  [4, -17, 95, 1050], [-22, -2, 779, 1100], [-9, -4, 277, 850], [7, -24, 897, 950], [-4, -26, 619, 1100],
+  [-10, -12, 126, 700], [8, -17, 719, 900], [-24, 1, 396, 950], [12, -15, 24, 700], [-23, -11, 652, 1000],
+  [-13, -8, 203, 750], [25, -10, 622, 700], [-19, -21, 355, 700], [17, 4, 143, 1150], [8, -24, 668, 900],
+  [-6, -14, 252, 700], [23, -9, 734, 750], [-19, -14, 418, 700], [-24, -10, 172, 800], [-30, -3, 666, 800],
+  [-4, -17, 451, 1000], [-3, -13, 62, 900], [24, -17, 790, 1150], [-14, -24, 259, 850], [-22, -20, 1061, 1150],
 ];
 
 type DashboardRefreshFeedback = DashboardRefreshResult | { kind: "refreshing"; message: string };
@@ -1926,8 +1931,8 @@ export default function DashboardPage() {
                 <div className="milk-bonus absolute inset-y-0 right-0 rounded-r-full" style={{ left: milkExpectedMarkPercent + "%" }} />
                 {/* Where expected meets the excess, sparks fly as if iron were being struck. */}
                 <span aria-hidden="true" className="milk-strike absolute top-1/2 z-10" style={{ left: milkExpectedMarkPercent + "%" }}>
-                  {MILK_STRIKE_SPARKS.map(([dx, dy, delay], index) => (
-                    <span key={index} className="milk-spark" style={{ "--dx": dx + "px", "--dy": dy + "px", "--rot": Math.atan2(dy, dx) + "rad", animationDelay: delay + "ms" } as CSSProperties} />
+                  {MILK_STRIKE_SPARKS.map(([dx, dy, delay, duration], index) => (
+                    <span key={index} className="milk-spark" style={{ "--dx": dx + "px", "--dy": dy + "px", "--rot": Math.atan2(dy, dx) + "rad", animationDelay: -delay + "ms", animationDuration: duration + "ms" } as CSSProperties} />
                   ))}
                 </span>
               </> : (
