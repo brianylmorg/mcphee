@@ -255,7 +255,7 @@ export function MilkBank({
       aria-labelledby="milk-bank-title"
       data-dashboard-refresh-blocked={dashboardRefreshBlocked ? "true" : undefined}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h3 id="milk-bank-title" className="glance-card-title text-muted">Breastmilk bank</h3>
           <p className="mt-0.5 flex items-baseline gap-1.5 text-warm-brown">
@@ -263,14 +263,14 @@ export function MilkBank({
             <span className="glance-value-unit">ml</span>
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => { setReconcileAvailable(String(availableMl)); setShowAvailableReconcile((shown) => !shown); }}
             aria-label="Reconcile Available milk"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-accent-strong hover:bg-surface-muted"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface text-accent-strong transition-colors hover:bg-surface-muted"
           >
-            <Scale aria-hidden="true" className="h-4 w-4" />
+            <Scale aria-hidden="true" className="h-5 w-5" />
           </button>
           <button
             type="button"
@@ -279,9 +279,9 @@ export function MilkBank({
             aria-controls="frozen-bank-details"
             aria-label={showFrozenDetails ? "Hide frozen milk details" : "Show frozen milk details"}
             title="Freezer"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-frozen-strong hover:bg-frozen/15"
+            className={`flex h-11 w-11 items-center justify-center rounded-xl border border-frozen/30 text-frozen-strong transition-colors hover:bg-frozen/15 ${showFrozenDetails ? "bg-frozen/15" : "bg-surface"}`}
           >
-            <Snowflake aria-hidden="true" className="h-4 w-4" />
+            <Snowflake aria-hidden="true" className="h-5 w-5" />
           </button>
         </div>
       </div>
