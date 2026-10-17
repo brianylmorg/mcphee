@@ -41,6 +41,7 @@ import { sgtDateKey as sgtDateKeyForTimestamp } from "@/lib/milk-volumes";
 import { isNewReleaseLive } from "@/lib/app-version";
 import { aggregateDashboardRefreshResults, runSingleFlight, shouldSkipForManualRefresh, type DashboardRefreshResult, type RefreshTaskResult } from "@/lib/dashboard-refresh";
 import { useDashboardRefreshBlocked, useStandalonePullToRefresh } from "@/hooks/use-standalone-pull-to-refresh";
+import { useSgtDayRollover } from "@/hooks/use-sgt-day-rollover";
 import type { ChildcareModeCommandResponse, ChildcareModeState, ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 import { ChildcareConfirmationDeclinedError, fetchWithChildcareConfirmation } from "@/lib/childcare-mode-client";
 
@@ -752,6 +753,20 @@ export default function DashboardPage() {
       if (refreshFeedbackTimerRef.current != null) window.clearTimeout(refreshFeedbackTimerRef.current);
     };
   }, []);
+
+  // At Singapore midnight, views showing "today" move to the new day and the
+  // dashboard refreshes; if an editor or dialog is open, it waits for it to close.
+  const [pendingDayRollover, setPendingDayRollover] = useState(false);
+  useSgtDayRollover((previousKey, nextKey) => {
+    setSelectedMilkDate((current) => (!current || current === previousKey ? nextKey : current));
+    setActivityDateFilter((current) => (current === previousKey ? "" : current));
+    setPendingDayRollover(true);
+  });
+  useEffect(() => {
+    if (!pendingDayRollover || refreshBlocked || !baby?.id) return;
+    setPendingDayRollover(false);
+    void refreshDashboard();
+  }, [pendingDayRollover, refreshBlocked, baby?.id, refreshDashboard]);
 
   const { isStandalone: standalonePullEnabled, pullDistance, pullPhase } = useStandalonePullToRefresh({
     disabled: refreshBlocked,
