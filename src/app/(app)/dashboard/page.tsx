@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useId } from "react";
+import { useState, useEffect, useCallback, useRef, useId, type CSSProperties } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
 import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Sparkles, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
@@ -95,6 +95,13 @@ interface PumpedMilkBatch extends AvailableMilkBatch {
   pumpedAt: number;
   isAdjustment?: boolean;
 }
+
+// Forge sparks for the milk bar's strike point: [x, y, delay ms]. Each spark
+// is a short streak that flies out along its path, then drops and fades.
+const MILK_STRIKE_SPARKS: ReadonlyArray<readonly [number, number, number]> = [
+  [-21, -15, 0], [-7, -26, 20], [3, -19, 0], [14, -27, 50], [24, -12, 10],
+  [-30, -4, 70], [31, -3, 40], [-14, -8, 110], [9, -9, 90], [-4, -13, 150], [19, 2, 30],
+];
 
 type DashboardRefreshFeedback = DashboardRefreshResult | { kind: "refreshing"; message: string };
 
@@ -1913,12 +1920,16 @@ export default function DashboardPage() {
           {activeSickSummary && isSelectedMilkToday && sickMode?.activeEpisode ? (
             <SickMilkProgress consumedMl={selectedMilkSummary.totalMl} baselineMl={sickMode.activeEpisode.baselineDailyMl} expectedMl={selectedExpectedMilkMl} baselineKind={sickMode.activeEpisode.baselineKind} />
           ) : <>
-            <div className={`milk-progress relative mt-3 rounded-full bg-cream ${milkOverExpected ? "h-3" : "h-2"}`}>
+            <div className={`milk-progress relative mt-3 rounded-full bg-cream ${milkOverExpected ? "h-2.5" : "h-2"}`}>
               {milkOverExpected ? <>
-                {/* A musou gauge: the expected amount burns orange, the excess green. */}
-                <div className="milk-fire absolute inset-y-0 left-0 rounded-l-full" style={{ width: milkExpectedMarkPercent + "%" }} />
-                <div className="milk-fire milk-fire-green absolute inset-y-0 right-0 rounded-r-full" style={{ left: milkExpectedMarkPercent + "%" }} />
-                <span aria-hidden="true" className="absolute -inset-y-1 z-10 w-0.5 -translate-x-1/2 rounded-full bg-surface ring-1 ring-success/40" style={{ left: milkExpectedMarkPercent + "%" }} />
+                <div className="absolute inset-y-0 left-0 rounded-l-full bg-terracotta" style={{ width: milkExpectedMarkPercent + "%" }} />
+                <div className="milk-bonus absolute inset-y-0 right-0 rounded-r-full" style={{ left: milkExpectedMarkPercent + "%" }} />
+                {/* Where expected meets the excess, sparks fly as if iron were being struck. */}
+                <span aria-hidden="true" className="milk-strike absolute top-1/2 z-10" style={{ left: milkExpectedMarkPercent + "%" }}>
+                  {MILK_STRIKE_SPARKS.map(([dx, dy, delay], index) => (
+                    <span key={index} className="milk-spark" style={{ "--dx": dx + "px", "--dy": dy + "px", "--rot": Math.atan2(dy, dx) + "rad", animationDelay: delay + "ms" } as CSSProperties} />
+                  ))}
+                </span>
               </> : (
                 <div className="h-full rounded-full bg-terracotta transition-[width]" style={{ width: selectedExpectedMilkMl ? milkProgress + "%" : "0%" }} />
               )}

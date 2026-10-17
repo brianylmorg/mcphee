@@ -984,78 +984,69 @@ html:not([data-care-mode="sick"])[data-theme="dark"] .sb-smoke-rise { filter: no
   .baby-face-glow { animation: none; }
 }
 
-/* Milk above expected: a musou-style burning gauge. The expected part burns
-   orange-gold, the excess green: heat rolls along a lit tube, the glow
-   pulses and two layers of flame tongues flicker up off the top edge. */
-.milk-fire {
-  --fire-deep: 168 48 22;
-  --fire-mid: 236 110 28;
-  --fire-hot: 255 204 84;
+/* Milk above expected: the excess glows green with a bright band sweeping
+   through it, and where it meets the expected amount sparks fly on each
+   strike like hammered iron. One strike every 1.6s drives both. */
+.milk-bonus {
   background-image:
-    linear-gradient(90deg, transparent, rgb(var(--fire-hot) / 0.7) 50%, transparent),
-    linear-gradient(180deg, rgb(var(--fire-hot)) 0%, rgb(var(--fire-mid)) 45%, rgb(var(--fire-deep)) 100%);
-  background-size: 90px 100%, 100% 100%;
-  animation: milk-fire-flow 1.2s linear infinite, milk-fire-glow 0.9s ease-in-out infinite alternate;
+    linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55) 50%, transparent),
+    linear-gradient(180deg, rgb(var(--rgb-success) / 0.75), rgb(var(--rgb-success)));
+  background-size: 40px 100%, 100% 100%;
+  background-repeat: no-repeat;
+  animation: milk-bonus-sweep 1.6s ease-in-out infinite, milk-bonus-glow 1.6s ease-out infinite;
 }
-.milk-fire-green {
-  --fire-deep: 18 104 62;
-  --fire-mid: 46 176 106;
-  --fire-hot: 180 246 164;
+.milk-strike {
+  width: 0;
+  height: 0;
 }
-.milk-fire::before,
-.milk-fire::after {
+/* The flash of the hammer blow. */
+.milk-strike::before {
   content: "";
   position: absolute;
-  left: 3px;
-  right: 3px;
-  bottom: 45%;
-  pointer-events: none;
-  transform-origin: 50% 100%;
-  -webkit-mask-repeat: repeat-x;
-  mask-repeat: repeat-x;
+  left: -9px;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgb(255 251 230) 0%, rgb(255 196 72 / 0.85) 35%, rgb(240 110 30 / 0.35) 60%, transparent 72%);
+  animation: milk-strike-flash 1.6s ease-out infinite;
 }
-/* Back layer: taller orange-red tongues. */
-.milk-fire::before {
-  height: 14px;
-  background: linear-gradient(0deg, rgb(var(--fire-mid)), rgb(var(--fire-hot)) 55%, rgb(var(--fire-hot) / 0.35));
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 16' preserveAspectRatio='none'%3E%3Cpath d='M1 16C0 8.5 4 9.5 5 1C6 9.5 10 8.5 9 16Z M11.5 16C10.5 11.5 14 12.5 15 7C16 12.5 19.5 11.5 18.5 16Z M21 16C20 9.5 25 10.5 26 3C27 10.5 32 9.5 31 16Z M35 16C34 12.5 37 13.5 38 9C39 13.5 42 12.5 41 16Z M44.5 16C43.5 8.0 48 9.0 49 0C50 9.0 54.5 8.0 53.5 16Z'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 16' preserveAspectRatio='none'%3E%3Cpath d='M1 16C0 8.5 4 9.5 5 1C6 9.5 10 8.5 9 16Z M11.5 16C10.5 11.5 14 12.5 15 7C16 12.5 19.5 11.5 18.5 16Z M21 16C20 9.5 25 10.5 26 3C27 10.5 32 9.5 31 16Z M35 16C34 12.5 37 13.5 38 9C39 13.5 42 12.5 41 16Z M44.5 16C43.5 8.0 48 9.0 49 0C50 9.0 54.5 8.0 53.5 16Z'/%3E%3C/svg%3E");
-  -webkit-mask-size: 30px 100%;
-  mask-size: 30px 100%;
-  filter: blur(0.5px);
-  animation: milk-fire-tongues 1.3s linear infinite, milk-fire-lick 0.36s ease-in-out infinite alternate;
+.milk-spark {
+  position: absolute;
+  left: -3px;
+  top: -0.75px;
+  width: 6px;
+  height: 1.5px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, rgb(240 120 30 / 0), rgb(255 222 130));
+  box-shadow: 0 0 3px rgb(232 104 24 / 0.95);
+  opacity: 0;
+  animation: milk-spark-fly 1.6s cubic-bezier(0.15, 0.75, 0.35, 1) infinite;
 }
-/* Front layer: shorter, hotter tongues drifting the other way. */
-.milk-fire::after {
-  height: 10px;
-  background: linear-gradient(0deg, rgb(var(--fire-hot)), rgb(255 250 225 / 0.9) 60%, rgb(255 250 225 / 0.2));
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 16' preserveAspectRatio='none'%3E%3Cpath d='M2.5 16C1.5 11.0 5 12.0 6 6C7 12.0 10.5 11.0 9.5 16Z M16 16C15 13.0 18 14.0 19 10C20 14.0 23 13.0 22 16Z M26 16C25 10.0 29 11.0 30 4C31 11.0 35 10.0 34 16Z M37 16C36 12.5 39 13.5 40 9C41 13.5 44 12.5 43 16Z'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 16' preserveAspectRatio='none'%3E%3Cpath d='M2.5 16C1.5 11.0 5 12.0 6 6C7 12.0 10.5 11.0 9.5 16Z M16 16C15 13.0 18 14.0 19 10C20 14.0 23 13.0 22 16Z M26 16C25 10.0 29 11.0 30 4C31 11.0 35 10.0 34 16Z M37 16C36 12.5 39 13.5 40 9C41 13.5 44 12.5 43 16Z'/%3E%3C/svg%3E");
-  -webkit-mask-size: 22px 100%;
-  mask-size: 22px 100%;
-  filter: blur(0.4px);
-  animation: milk-fire-tongues 0.9s linear infinite reverse, milk-fire-lick 0.27s ease-in-out infinite alternate-reverse;
+@keyframes milk-bonus-sweep {
+  0% { background-position: -40px 0, 0 0; }
+  70%, 100% { background-position: calc(100% + 40px) 0, 0 0; }
 }
-@keyframes milk-fire-flow {
-  0% { background-position: 90px 0, 0 0; }
-  100% { background-position: -90px 0, 0 0; }
+@keyframes milk-bonus-glow {
+  0% { box-shadow: 0 0 10px 2px rgb(var(--rgb-success) / 0.65); }
+  60%, 100% { box-shadow: 0 0 3px 0 rgb(var(--rgb-success) / 0.25); }
 }
-@keyframes milk-fire-glow {
-  0% { box-shadow: 0 0 4px 0 rgb(var(--fire-mid) / 0.45); }
-  100% { box-shadow: 0 0 12px 2px rgb(var(--fire-hot) / 0.6); }
+@keyframes milk-strike-flash {
+  0% { transform: scale(0.3); opacity: 1; }
+  12% { transform: scale(1.15); opacity: 1; }
+  35%, 100% { transform: scale(0.5); opacity: 0; }
 }
-@keyframes milk-fire-tongues {
-  0% { -webkit-mask-position: 0 0; mask-position: 0 0; }
-  100% { -webkit-mask-position: -60px 0; mask-position: -60px 0; }
-}
-@keyframes milk-fire-lick {
-  0% { transform: scaleY(0.55); opacity: 0.75; }
-  100% { transform: scaleY(1.1); opacity: 1; }
+@keyframes milk-spark-fly {
+  0% { transform: translate(0, 0) rotate(var(--rot)) scaleX(0.4); opacity: 1; }
+  28% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scaleX(1.4); opacity: 1; }
+  50% { transform: translate(calc(var(--dx) * 1.3), calc(var(--dy) * 0.55 + 9px)) rotate(var(--rot)) scaleX(0.5); opacity: 0; }
+  100% { transform: translate(calc(var(--dx) * 1.3), calc(var(--dy) * 0.55 + 9px)) rotate(var(--rot)) scaleX(0.5); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .milk-fire,
-  .milk-fire::before,
-  .milk-fire::after {
+  .milk-bonus,
+  .milk-strike::before,
+  .milk-spark {
     animation: none;
   }
+  .milk-spark { display: none; }
 }
