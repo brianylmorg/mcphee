@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Sparkles, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -1489,9 +1489,18 @@ export default function DashboardPage() {
       }
     : defaultSelectedMilkSummary;
   const selectedExpectedMilkMl = selectedMilkSummary.expectedMl;
-  const milkProgress = selectedExpectedMilkMl
-    ? Math.min(100, Math.round((selectedMilkSummary.totalMl / selectedExpectedMilkMl) * 100))
+  const milkPercent = selectedExpectedMilkMl
+    ? Math.round((selectedMilkSummary.totalMl / selectedExpectedMilkMl) * 100)
     : 0;
+  const milkProgress = Math.min(100, milkPercent);
+  // Past the expected amount the bar keeps going: it rescales so the expected
+  // mark becomes a notch and the extra shows as a green bonus segment. Sick
+  // days have their own progress bar and are left out.
+  const milkOverExpected = Boolean(selectedExpectedMilkMl)
+    && selectedMilkSummary.totalMl > (selectedExpectedMilkMl ?? 0)
+    && !(activeSickSummary && isSelectedMilkToday);
+  const milkOverMl = milkOverExpected ? Math.round(selectedMilkSummary.totalMl - (selectedExpectedMilkMl ?? 0)) : 0;
+  const milkExpectedMarkPercent = milkOverExpected ? ((selectedExpectedMilkMl ?? 0) / selectedMilkSummary.totalMl) * 100 : 100;
   // Whole percentages; when the day is only breastmilk + formula they add to 100.
   const breastmilkPercent = selectedMilkSummary.totalMl > 0
     ? Math.round(selectedMilkSummary.breastmilkMl / selectedMilkSummary.totalMl * 100)
@@ -1880,10 +1889,11 @@ export default function DashboardPage() {
 
           <div className="milk-amounts mt-2 flex items-end justify-between gap-4">
             <div className="flex items-baseline gap-2">
-              <span className="glance-primary-value text-warm-brown">
+              <span className={`glance-primary-value ${milkOverExpected ? "text-success" : "text-warm-brown"}`}>
                 {selectedMilkSummary.totalMl}
               </span>
-              <span className="glance-value-unit text-warm-brown-light">ml</span>
+              <span className={`glance-value-unit ${milkOverExpected ? "text-success" : "text-warm-brown-light"}`}>ml</span>
+              {milkOverExpected && <Sparkles role="img" aria-label="Above expected" className="milk-over-sparkle h-5 w-5 self-start text-success" />}
             </div>
             <div className="border-l border-border pl-4 text-right">
               <p className="text-sm text-muted">{activeSickSummary && isSelectedMilkToday ? "Usual daily" : "Expected"}</p>
@@ -1904,9 +1914,20 @@ export default function DashboardPage() {
             <SickMilkProgress consumedMl={selectedMilkSummary.totalMl} baselineMl={sickMode.activeEpisode.baselineDailyMl} expectedMl={selectedExpectedMilkMl} baselineKind={sickMode.activeEpisode.baselineKind} />
           ) : <>
             <div className="milk-progress relative mt-3 h-2 rounded-full bg-cream">
-              <div className="h-full rounded-full bg-terracotta transition-[width]" style={{ width: selectedExpectedMilkMl ? milkProgress + "%" : "0%" }} />
+              {milkOverExpected ? <>
+                <div className="absolute inset-y-0 left-0 rounded-l-full bg-terracotta" style={{ width: milkExpectedMarkPercent + "%" }} />
+                <div className="milk-over-bonus absolute inset-y-0 right-0 rounded-r-full bg-success" style={{ left: milkExpectedMarkPercent + "%" }} />
+                <span aria-hidden="true" className="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-surface ring-1 ring-success/40" style={{ left: milkExpectedMarkPercent + "%" }} />
+              </> : (
+                <div className="h-full rounded-full bg-terracotta transition-[width]" style={{ width: selectedExpectedMilkMl ? milkProgress + "%" : "0%" }} />
+              )}
             </div>
-            <div className="mt-2 flex items-center justify-between text-sm text-muted"><span>Total for day</span><span>{selectedExpectedMilkMl ? milkProgress + "%" : "Target pending"}</span></div>
+            <div className="mt-2 flex items-center justify-between text-sm text-muted">
+              <span>Total for day</span>
+              {milkOverExpected
+                ? <span className="font-semibold tabular-nums text-success">{milkPercent}% · +{milkOverMl} ml</span>
+                : <span>{selectedExpectedMilkMl ? milkProgress + "%" : "Target pending"}</span>}
+            </div>
           </>}
 
           <div className="milk-comparison mt-2 flex items-center justify-between gap-3">

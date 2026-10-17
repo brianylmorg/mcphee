@@ -983,3 +983,27 @@ html:not([data-care-mode="sick"])[data-theme="dark"] .sb-smoke-rise { filter: no
 @media (prefers-reduced-motion: reduce) {
   .baby-face-glow { animation: none; }
 }
+
+/* Milk above expected: the bonus segment shimmers and the sparkle twinkles. */
+.milk-over-bonus {
+  background-image: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.45) 50%, transparent 80%);
+  background-size: 200% 100%;
+  animation: milk-over-shimmer 2.8s ease-in-out infinite;
+}
+.milk-over-sparkle {
+  animation: milk-over-twinkle 2.4s ease-in-out infinite;
+}
+@keyframes milk-over-shimmer {
+  0% { background-position: 150% 0; }
+  100% { background-position: -50% 0; }
+}
+@keyframes milk-over-twinkle {
+  0%, 100% { opacity: 0.7; transform: scale(0.9) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.1) rotate(12deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .milk-over-bonus,
+  .milk-over-sparkle {
+    animation: none;
+  }
+}
