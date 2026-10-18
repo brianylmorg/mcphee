@@ -1817,7 +1817,7 @@ export default function DashboardPage() {
             onSelect={handleSleepTransition}
           />
           <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={sleepState.since != null && sleepState.activity && !isEditingSleepSince ? (
-            <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
           ) : undefined} />
           {sleepState.since != null && sleepState.activity && isEditingSleepSince && (
               <div className="mt-3 flex flex-wrap items-end gap-2">
@@ -1831,8 +1831,8 @@ export default function DashboardPage() {
                     className="mt-1 min-h-8 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-warm-brown outline-none focus:border-accent-strong"
                   />
                 </label>
-                <button type="button" onClick={saveSleepSince} disabled={isChangingSleepState} className="min-h-8 rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-on-accent disabled:opacity-60">Save</button>
-                <button type="button" onClick={() => setIsEditingSleepSince(false)} className="min-h-8 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-warm-brown">Cancel</button>
+                <button type="button" onClick={saveSleepSince} disabled={isChangingSleepState} className="min-h-11 rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-on-accent disabled:opacity-60">Save</button>
+                <button type="button" onClick={() => setIsEditingSleepSince(false)} className="min-h-11 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-warm-brown">Cancel</button>
               </div>
           )}
           {sleepState.since == null && (

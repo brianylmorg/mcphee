@@ -281,7 +281,7 @@ export function MedicationFields({
           />
         </label>
         {removable && onRemove && (
-          <button type="button" onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger">
+          <button type="button" onClick={onRemove} aria-label="Remove medication" className="hit-44 mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger">
             <X aria-hidden="true" className="h-4 w-4" />
           </button>
         )}
@@ -504,10 +504,10 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
   }
 
   return (
-    <div className="medication-history-row flex items-center gap-2 border-b border-border/60 py-1 last:border-b-0">
+    <div className="medication-history-row flex items-center gap-3 border-b border-border/60 py-1 last:border-b-0">
       <p className="min-w-0 flex-1 text-warm-brown"><span className="medication-history-meta font-semibold tabular-nums">{formatDate(dose.givenAt)} · {formatTime(dose.givenAt)}</span> · {dose.doseText}{dose.givenBy && <span className="medication-history-meta block break-words text-muted">Given by {dose.givenBy}</span>}</p>
-      <button type="button" disabled={disabled} onClick={beginEdit} className="min-h-8 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
-      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
+      <button type="button" disabled={disabled} onClick={beginEdit} className="hit-44 min-h-8 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
+      <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="hit-44 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
     </div>
   );
 }

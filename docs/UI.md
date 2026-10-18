@@ -59,7 +59,11 @@ sizes.
 
 - Native `<details>`/`<summary>` handle keyboard Enter/Space; keep the visible
   `:focus-visible` ring.
-- Interactive targets are at least 32px; compact row controls are 24-32px.
+- Touch targets are at least 44px. Compact row controls may draw at 24-32px but
+  add `.hit-44` so the tappable area is still 44px; keep neighbours far enough
+  apart that expanded areas do not overlap.
+- Hover styles apply only on hover-capable devices (Tailwind
+  `hoverOnlyWhenSupported`, or `@media (hover: hover)` in CSS).
 - Respect reduced motion (`prefers-reduced-motion`) and keep sufficient
   contrast.
 - No external dependencies, services, or costs.

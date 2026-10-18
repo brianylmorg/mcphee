@@ -455,8 +455,10 @@ body header,
 .health-check-in .health-log-action {
   text-decoration-line: none;
 }
-.health-check-in .health-log-action:hover {
-  text-decoration-line: underline;
+@media (hover: hover) {
+  .health-check-in .health-log-action:hover {
+    text-decoration-line: underline;
+  }
 }
 .medication-dose-elapsed {
   font-weight: 400;
@@ -682,8 +684,24 @@ body {
   border-radius: 6px;
   pointer-events: none;
 }
-.medication-row-control:hover:not(:disabled)::before {
-  background-color: var(--color-surface-muted);
+@media (hover: hover) {
+  .medication-row-control:hover:not(:disabled)::before {
+    background-color: var(--color-surface-muted);
+  }
+}
+
+/* Compact row controls keep their drawn size but get a 44px touch area. */
+.hit-44 {
+  position: relative;
+}
+.hit-44::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
 }
 .activity-picker > button:focus-visible,
 [data-medication-row] > div:first-child button:focus-visible {

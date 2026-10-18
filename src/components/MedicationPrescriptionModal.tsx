@@ -111,7 +111,7 @@ function MedicationFields({
           />
         </label>
         {removable && onRemove && (
-          <button type="button" disabled={disabled} onClick={onRemove} aria-label="Remove medication" className="mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50">
+          <button type="button" disabled={disabled} onClick={onRemove} aria-label="Remove medication" className="hit-44 mt-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50">
             <X aria-hidden="true" className="h-4 w-4" />
           </button>
         )}
