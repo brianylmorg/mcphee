@@ -4,6 +4,16 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { SleepStateControl } from "./SleepStateControl";
+import { calculateNapZones } from "@/lib/sleep-windows";
+
+const napHintInput = {
+  current: { index: 1, awakeSince: Date.now() },
+  normal: calculateNapZones([1, 2, 3].map((n) => ({
+    date: `2026-10-0${n}`, wakeWindowCount: 1, wakeWindowTotalMs: (60 + n) * 60_000,
+    napCount: 0, napTotalMs: 0, napDurationsMs: [],
+    wakeWindows: [{ index: 1, startedAt: 0, durationMs: (60 + n) * 60_000, endsIn: "nap" as const }],
+  }))),
+};
 
 test("awake fills the toggle with the current state, its timer and a switch to sleep", () => {
   const html = renderToStaticMarkup(createElement(SleepStateControl, {
@@ -58,4 +68,12 @@ test("both scenes stay mounted (for the carousel) and are hidden from assistive 
 test("an untimed state shows the hint in small text", () => {
   const html = renderToStaticMarkup(createElement(SleepStateControl, { state: "awake", since: null, disabled: false, onSelect: () => undefined }));
   assert.match(html, /mt-0\.5 text-sm[^"]*">Not timed yet</);
+});
+
+test("awake shows an own nap zone hint and sleeping hides it", () => {
+  const awake = renderToStaticMarkup(createElement(SleepStateControl, { state: "awake", napHintInput, disabled: false, onSelect: () => undefined }));
+  assert.match(awake, /data-nap-status="before"/);
+  assert.match(awake, /Nap 1:01–1:02/);
+  const sleeping = renderToStaticMarkup(createElement(SleepStateControl, { state: "sleeping", napHintInput, disabled: false, onSelect: () => undefined }));
+  assert.doesNotMatch(sleeping, /sleep-nap-hint/);
 });

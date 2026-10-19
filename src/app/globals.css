@@ -286,6 +286,9 @@ html[data-care-mode="sick"][data-theme="dark"] {
   background: radial-gradient(closest-side, rgb(255 250 238 / 0.55), rgb(255 250 238 / 0.18) 70%, transparent);
   backdrop-filter: blur(1.5px);
 }
+.sleep-nap-hint[data-nap-status="before"] { background: rgb(255 250 238 / 0.75); color: var(--color-warm-brown); }
+.sleep-nap-hint[data-nap-status="in"] { background: var(--color-warning); color: var(--color-warm-brown); }
+.sleep-nap-hint[data-nap-status="past"] { background: var(--color-terracotta); color: #fff; }
 .sleep-panel[data-scene="sleeping"] .sleep-status-backing {
   background: radial-gradient(closest-side, rgb(34 38 80 / 0.5), rgb(34 38 80 / 0.16) 70%, transparent);
 }

@@ -11,7 +11,8 @@ import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk
 import { activityNoteText } from "@/lib/activity-note";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
 import { SleepWindowsChart } from "@/components/SleepWindowsChart";
-import { calculateSleepWindowHistory } from "@/lib/sleep-windows";
+import { NapZonesSummary } from "@/components/NapZonesSummary";
+import { ageWakeWindowGuide, calculateNapZones, calculateSleepWindowHistory, currentWakeWindow } from "@/lib/sleep-windows";
 import { SleepStateControl } from "@/components/SleepStateControl";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
@@ -32,7 +33,7 @@ import { publishCareMode } from "@/lib/care-mode";
 import type { SleepUndoToken } from "@/lib/sleep-transition";
 import type { ConfirmedSleepCoverage, DailyNapSession } from "@/lib/daily-naps";
 import type { AvailableMilkBatch, FrozenMilkPacket, MilkBankHistoryItem } from "@/lib/milk-bank-ledger";
-import type { SickModeResponse } from "@/lib/sick-mode";
+import { episodeOverlapsSgtDate, type SickModeResponse } from "@/lib/sick-mode";
 import type { MedicationDoseReference } from "@/lib/activity-timeline";
 import type { HistoricalMedicationReference } from "@/lib/historical-medication";
 import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type MedicationEntry, type MedicationPrescriptionDraftInput } from "@/lib/medication-entry";
@@ -237,10 +238,6 @@ export default function DashboardPage() {
   const [selectedMilkDate, setSelectedMilkDate] = useState("");
   const [showMilkHistoryChart, setShowMilkHistoryChart] = useState(false);
   const [showSleepCharts, setShowSleepCharts] = useState(false);
-  const sleepWindowDays = useMemo(
-    () => showSleepCharts ? calculateSleepWindowHistory(sleepActivities, Date.now()) : [],
-    [showSleepCharts, sleepActivities],
-  );
   const [showMedianInfo, setShowMedianInfo] = useState(false);
   const medianInfoId = useId();
   const [isMilkHistoryLoading, setIsMilkHistoryLoading] = useState(false);
@@ -270,6 +267,25 @@ export default function DashboardPage() {
 
   const todayDateKey = sgtDateKey(0);
   const yesterdayDateKey = sgtDateKey(-1);
+
+  // Wake windows and nap zones. Sick days are left out of his normal zones
+  // (he's awake for shorter when unwell) and pooled on their own, over a
+  // longer lookback since they're rare. Recomputed when sleeps change or the
+  // Singapore day rolls over.
+  const sleepWindowDays = useMemo(
+    () => calculateSleepWindowHistory(sleepActivities, Date.now(), 90),
+    // todayDateKey: recompute at the Singapore day rollover.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sleepActivities, todayDateKey],
+  );
+  const sickEpisodes = sickMode?.schemaReady ? sickMode.episodes : null;
+  const sleepSickDates = useMemo(() => new Set(
+    sickEpisodes == null ? [] : sleepWindowDays.map((day) => day.date).filter((date) => sickEpisodes.some((episode) => episodeOverlapsSgtDate(episode, date))),
+  ), [sickEpisodes, sleepWindowDays]);
+  const normalNapZones = useMemo(() => calculateNapZones(sleepWindowDays, { includeDate: (date) => !sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
+  const sickNapZones = useMemo(() => calculateNapZones(sleepWindowDays, { lookbackDays: 90, includeDate: (date) => sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
+  const isSickNow = Boolean(sickMode?.schemaReady && sickMode.activeEpisode);
+  const ageGuide = ageWakeWindowGuide(baby?.birth_date, Date.now());
   useEffect(() => {
     setSelectedMilkDate((current) => current || todayDateKey);
   }, [todayDateKey]);
@@ -1824,6 +1840,18 @@ export default function DashboardPage() {
             since={sleepState.since}
             disabled={isChangingSleepState}
             onSelect={handleSleepTransition}
+            napHintInput={sleepState.state === "awake" ? {
+              current: (() => {
+                const current = currentWakeWindow(sleepActivities, Date.now());
+                // The control's own "awake since" is authoritative (it updates
+                // the moment he wakes); the sleep log supplies which window it is.
+                return current && sleepState.since != null ? { ...current, awakeSince: sleepState.since } : current;
+              })(),
+              normal: normalNapZones,
+              sick: sickNapZones,
+              isSick: isSickNow,
+              ageGuide,
+            } : null}
           />
           <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={(
             <>
@@ -2474,17 +2502,24 @@ export default function DashboardPage() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
               <section className="mt-4">
-                <h3 className="text-sm font-semibold text-warm-brown">Average wake window</h3>
-                <p className="mt-1 text-xs text-muted">Awake time between morning wake, naps and bedtime</p>
-                <SleepWindowsChart days={sleepWindowDays} metric="wake" />
+                <h3 className="text-sm font-semibold text-warm-brown">Nap zones</h3>
+                <p className="mt-1 text-xs text-muted">How long he&apos;s usually awake before each nap, by window of the day</p>
+                <div className="mt-3">
+                  <NapZonesSummary normal={normalNapZones} sick={sickNapZones} ageGuide={ageGuide} ageLabel={baby?.birth_date ? formatAge(baby.birth_date, { compact: true }) : null} />
+                </div>
               </section>
               <section className="mt-6 border-t border-border pt-5">
-                <h3 className="text-sm font-semibold text-warm-brown">Average nap length</h3>
-                <p className="mt-1 text-xs text-muted">Completed daytime naps; overnight sleep is not included</p>
-                <SleepWindowsChart days={sleepWindowDays} metric="nap" />
+                <h3 className="text-sm font-semibold text-warm-brown">Wake windows</h3>
+                <p className="mt-1 text-xs text-muted">Each dot is one awake stretch; its colour shows which window of the day it was</p>
+                <SleepWindowsChart days={sleepWindowDays.slice(-60)} metric="wake" sickDates={sleepSickDates} ageGuide={ageGuide} />
+              </section>
+              <section className="mt-6 border-t border-border pt-5">
+                <h3 className="text-sm font-semibold text-warm-brown">Nap length</h3>
+                <p className="mt-1 text-xs text-muted">Median completed daytime nap each day; overnight sleep is not included</p>
+                <SleepWindowsChart days={sleepWindowDays.slice(-60)} metric="nap" sickDates={sleepSickDates} ageGuide={null} />
               </section>
               <p className="mt-5 text-xs leading-relaxed text-muted">
-                Each day runs from the first wake at or after 5am to bedtime, the first sleep at or after 6pm (Singapore time). Overnight wakings, the ongoing nap and the current awake stretch are left out. Sleeps under 5 minutes apart count as one.
+                Each day runs from the first wake at or after 5am to bedtime, the first sleep at or after 6pm (Singapore time). Overnight wakings, the ongoing nap and the current awake stretch are left out. Sleeps under 5 minutes apart count as one. Sick days are shaded and left out of his usual zones.
               </p>
             </div>
             <div className="shrink-0 border-t border-border px-5 py-3">

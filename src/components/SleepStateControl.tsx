@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
 import { StorybookDay, StorybookNight } from "@/components/StorybookArt";
+import { napHint } from "@/lib/sleep-windows";
+import type { NapHint } from "@/lib/sleep-windows";
+import { formatElapsedDuration } from "@/lib/elapsed-time";
 
 type SleepState = "awake" | "sleeping";
 
@@ -14,6 +17,8 @@ type SleepStateControlProps = {
   disabled: boolean;
   compact?: boolean;
   onSelect: (state: SleepState) => void;
+  /** Inputs for the live nap-zone hint while awake; the control supplies "now" each tick. */
+  napHintInput?: Omit<Parameters<typeof napHint>[0], "now"> | null;
 };
 
 const SCENES = {
@@ -37,6 +42,29 @@ function formatElapsed(ms: number): string {
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function clockDuration(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function hintCopy(hint: NapHint): { text: string; detail: string } {
+  const ordinal = hint.index === 1 ? "1st" : hint.index === 2 ? "2nd" : hint.index === 3 ? "3rd" : `${hint.index}th`;
+  const from = formatElapsedDuration(hint.fromMs) ?? "";
+  const to = formatElapsedDuration(hint.toMs) ?? "";
+  const median = hint.medianMs == null ? "" : formatElapsedDuration(hint.medianMs) ?? "";
+  const nap = hint.leadsTo === "nap";
+  let text = hint.status === "before" ? `${nap ? "Nap" : "Bed"} ${clockDuration(hint.fromMs)}–${clockDuration(hint.toMs)}`
+    : hint.status === "in" ? (nap ? "Nap time" : "Bedtime")
+      : (nap ? "Past nap time" : "Past bedtime");
+  if (hint.source === "sick" && hint.status === "before") text = `Sick · ${text}`;
+  const detail = hint.source === "own"
+    ? `${ordinal} wake window. Usually ${nap ? "naps" : "goes to bed"} after ${from}–${to}, typically ${median}. From the last 14 days, sick days left out.`
+    : hint.source === "sick"
+      ? `${ordinal} wake window. On sick days he usually naps after ${from}–${to}, typically ${median}.`
+      : `Age guide: ${from}–${to} awake before a nap. Not enough of his own data yet.`;
+  return { text, detail };
+}
+
 function rolesFor(current: SleepState, otherRole: Role, currentRole: Role = "current"): Record<SleepState, Role> {
   return current === "awake"
     ? { awake: currentRole, sleeping: otherRole }
@@ -50,7 +78,7 @@ function rolesFor(current: SleepState, otherRole: Role, currentRole: Role = "cur
  * the chosen scene takes the stage and the scene just left comes back round
  * from the right as the new peek, so the carousel always moves leftwards.
  */
-export function SleepStateControl({ state, since = null, elapsedLabel, disabled, compact = false, onSelect }: SleepStateControlProps) {
+export function SleepStateControl({ state, since = null, elapsedLabel, disabled, compact = false, onSelect, napHintInput = null }: SleepStateControlProps) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
@@ -81,6 +109,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
 
   const elapsed = elapsedLabel ?? (since == null ? "Not timed yet" : formatElapsed(Math.max(0, now - since)));
   const untimed = since == null && elapsedLabel == null;
+  const hint = napHintInput ? napHint({ ...napHintInput, now }) : null;
 
   return (
     <div
@@ -102,6 +131,10 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                   <p className="flex items-center gap-1.5 text-base font-semibold">
                     <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
                     <span>{label}</span>
+                    {scene === "awake" && hint ? (() => {
+                      const { text, detail } = hintCopy(hint);
+                      return <span data-nap-status={hint.status} title={detail} className="sleep-nap-hint ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums">{text}<span className="sr-only">{". " + detail}</span></span>;
+                    })() : null}
                   </p>
                   <p className={"sleep-elapsed font-display font-semibold tabular-nums " + (untimed ? "mt-0.5 text-sm" : compact ? "text-[1.75rem] leading-8" : "text-[2.4rem] leading-[2.75rem]")}>
                     {elapsed}
