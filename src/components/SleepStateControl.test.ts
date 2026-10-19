@@ -70,11 +70,20 @@ test("an untimed state shows the hint in small text", () => {
   assert.match(html, /mt-0\.5 text-sm[^"]*">Not timed yet</);
 });
 
-test("awake shows an own nap zone hint and sleeping hides it", () => {
-  const awake = renderToStaticMarkup(createElement(SleepStateControl, { state: "awake", napHintInput, disabled: false, onSelect: () => undefined }));
-  assert.match(awake, /data-nap-status="before"/);
-  // Just woke; his zone opens at about 1h 1.5m: a countdown, not a range.
-  assert.match(awake, /Nap in 1h [12]m/);
-  const sleeping = renderToStaticMarkup(createElement(SleepStateControl, { state: "sleeping", napHintInput, disabled: false, onSelect: () => undefined }));
-  assert.doesNotMatch(sleeping, /sleep-nap-hint/);
+test("the awake timer glows in his nap zone, with words only for screen readers", () => {
+  const render = (state: "awake" | "sleeping", minutesAwake: number) => renderToStaticMarkup(createElement(SleepStateControl, {
+    state, disabled: false, onSelect: () => undefined,
+    napHintInput: { ...napHintInput, current: { index: 1, awakeSince: Date.now() - minutesAwake * 60_000 } },
+  }));
+  // Just woke: no glow yet; screen readers hear the countdown (zone opens at about 1h 1.5m).
+  const early = render("awake", 0);
+  assert.doesNotMatch(early, /data-nap-status/);
+  assert.match(early, /class="sr-only">\. Nap in 1h [12]m\./);
+  // In his zone (1h 1.5m - 1h 2.5m): the timer glows.
+  assert.match(render("awake", 62), /data-nap-status="in"[^>]*class="sleep-elapsed/);
+  // Past it: the timer pulses.
+  assert.match(render("awake", 90), /data-nap-status="past"/);
+  // Asleep: no nap hint at all.
+  const sleeping = render("sleeping", 62);
+  assert.doesNotMatch(sleeping, /data-nap-status|Nap time/);
 });

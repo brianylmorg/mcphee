@@ -111,6 +111,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
   const elapsed = elapsedLabel ?? (since == null ? "Not timed yet" : formatElapsed(Math.max(0, now - since)));
   const untimed = since == null && elapsedLabel == null;
   const hint = napHintInput ? napHint({ ...napHintInput, now }) : null;
+  const hintText = state === "awake" && hint ? (({ text, detail }) => text + ". " + detail)(hintCopy(hint)) : null;
 
   return (
     <div
@@ -132,12 +133,15 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                   <p className="flex items-center gap-1.5 text-base font-semibold">
                     <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
                     <span>{label}</span>
-                    {scene === "awake" && hint ? (() => {
-                      const { text, detail } = hintCopy(hint);
-                      return <span data-nap-status={hint.status} title={detail} className="sleep-nap-hint ml-1 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold leading-none tabular-nums">{text}<span className="sr-only">{". " + detail}</span></span>;
-                    })() : null}
+                    {/* The nap hint has no visible label: the timer glows in his nap zone
+                        and pulses once past it (see .sleep-elapsed[data-nap-status]).
+                        The words are for screen readers. */}
+                    {hintText ? <span className="sr-only">{". " + hintText}</span> : null}
                   </p>
-                  <p className={"sleep-elapsed font-display font-semibold tabular-nums " + (untimed ? "mt-0.5 text-sm" : compact ? "text-[1.75rem] leading-8" : "text-[2.4rem] leading-[2.75rem]")}>
+                  <p
+                    data-nap-status={scene === "awake" && hint && hint.status !== "before" ? hint.status : undefined}
+                    className={"sleep-elapsed font-display font-semibold tabular-nums " + (untimed ? "mt-0.5 text-sm" : compact ? "text-[1.75rem] leading-8" : "text-[2.4rem] leading-[2.75rem]")}
+                  >
                     {elapsed}
                   </p>
                 </div>
