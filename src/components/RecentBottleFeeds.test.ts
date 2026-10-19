@@ -39,16 +39,21 @@ test("latest feeds explicitly state when no feeds have been logged", () => {
   assert.doesNotMatch(html, /data-feed-row=/);
 });
 
-test("latest feed summary shows the milk hint at three hours, with sleeping wording", () => {
+test("latest feeds glow when milk is due, with words only for screen readers", () => {
   const now = Date.now();
   const feeds = [{ id: "newest", startedAt: now - 3 * 60 * 60 * 1000, amountMl: 100 }];
   const html = renderToStaticMarkup(createElement(RecentBottleFeeds, { feeds }));
-  assert.match(html, /data-milk-status="due"/);
-  assert.match(html, /Milk time/);
+  assert.match(html, /class="latest-feeds[^"]*"[^>]*data-milk-status="due"/);
+  assert.match(html, /class="sr-only">\. Milk time</);
+  assert.doesNotMatch(html, /milk-hint|data-milk-asleep/);
 
   const asleepHtml = renderToStaticMarkup(createElement(RecentBottleFeeds, { feeds, asleep: true }));
-  assert.match(asleepHtml, /data-milk-status="due"/);
-  assert.match(asleepHtml, /Milk when he wakes/);
+  assert.match(asleepHtml, /data-milk-asleep="true"/);
+  assert.match(asleepHtml, /class="sr-only">\. Milk when he wakes</);
+
+  const pastHtml = renderToStaticMarkup(createElement(RecentBottleFeeds, { feeds: [{ ...feeds[0], startedAt: now - 4 * 60 * 60 * 1000 }] }));
+  assert.match(pastHtml, /data-milk-status="past"/);
+  assert.match(pastHtml, /class="sr-only">\. Past milk time</);
 });
 
 test("latest feed summary has no milk hint before the due threshold", () => {
