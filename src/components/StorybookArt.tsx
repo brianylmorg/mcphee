@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type CSSProperties } from "react";
+import { useId, type CSSProperties } from "react";
 
 /**
  * Storybook watercolour illustrations (classic nursery-book style): soft
@@ -99,40 +99,28 @@ export function StorybookDay({ className = "" }: { className?: string }) {
   );
 }
 
-/** Temporary: compare sleeping-kid placements on the preview with ?kid=a or ?kid=c. */
-function useKidMock(): string {
-  const [variant, setVariant] = useState("a");
-  useEffect(() => {
-    const kid = new URLSearchParams(window.location.search).get("kid");
-    if (kid === "a" || kid === "c") setVariant(kid);
-  }, []);
-  return variant;
-}
-
 const NIGHT_STARS = [
   { src: "star-1.webp", left: "22%", top: "5%", width: "3.6%", delay: "0s" },
   { src: "star-3.webp", left: "30%", top: "6%", width: "3.2%", delay: "-1.2s" },
   { src: "star-2.webp", left: "38%", top: "40%", width: "3%", delay: "-2.1s" },
   { src: "star-7.webp", left: "64%", top: "8%", width: "3.6%", delay: "-0.6s" },
   { src: "star-5.webp", left: "88%", top: "12%", width: "3%", delay: "-1.7s" },
-  { src: "star-4.webp", left: "70%", top: "70%", width: "2.6%", delay: "-2.6s" },
+  { src: "star-4.webp", left: "42%", top: "4%", width: "2.6%", delay: "-2.6s" },
 ];
 
 /**
  * Sleeping: the painted night sky, deepened so light text reads. The moon
- * rocks inside `.sb-moon-arc` (so it can rise), stars twinkle one by one,
- * z's float up and the sleepy cloud drifts low.
+ * rocks inside `.sb-moon-arc` (so it can rise), stars twinkle one by one, the
+ * sleepy cloud drifts low, and he sleeps in the grass, breathing slowly with
+ * z's floating up.
  */
 export function StorybookNight({ className = "" }: { className?: string }) {
-  const KID_MOCK = useKidMock();
   return (
     <span aria-hidden="true" className={`sb-painted sb-painted-night ${className}`}>
       <Layer src="night-backdrop.webp" className="sb-backdrop" />
       <span className="sb-night-veil" />
       <span className="sb-moon-arc sb-pos" style={{ left: "48%", top: "4%", width: "13%" }}>
         <Layer src="moon.webp" className="sb-moon-rock" />
-        <span className="sb-zz sb-zz-1">z</span>
-        <span className="sb-zz sb-zz-2">z</span>
       </span>
       {NIGHT_STARS.map((star) => (
         <span key={star.src} className="sb-pos" style={{ left: star.left, top: star.top, width: star.width }}>
@@ -140,8 +128,16 @@ export function StorybookNight({ className = "" }: { className?: string }) {
         </span>
       ))}
       <span className="sb-pos sb-cloud-drift sb-cloud-sleepy" style={{ left: "34%", top: "66%", width: "14%" }}><Layer src="sleepy-cloud.webp" /></span>
-      {KID_MOCK === "a" && <span className="sb-pos" style={{ left: "60%", top: "6%", width: "15%" }}><Layer src="kid-sleep-cloud.webp" /></span>}
-      {KID_MOCK === "c" && <span className="sb-pos" style={{ left: "60%", bottom: "-18%", width: "12%", transform: "rotate(-90deg)", transformOrigin: "50% 50%" }}><Layer src="kid-sleep.webp" /></span>}
+      {/* He sleeps in the grass on the hill, below the moon. His left edge stays
+          clear of the timer's frosted backing (about 11rem wide whatever the
+          toggle width), and on narrow phones he shrinks rather than running into
+          the "Wake up" strip. The ragged foot of his grass patch tucks under the
+          bottom edge. */}
+      <span className="sb-pos" style={{ left: "max(50.5%, 11rem)", bottom: "-9%", width: "min(34%, calc(86% - max(50.5%, 11rem)))" }}>
+        <Layer src="kid-sleep.webp" className="sb-kid-breathe" />
+        <span className="sb-zz sb-zz-1">z</span>
+        <span className="sb-zz sb-zz-2">z</span>
+      </span>
     </span>
   );
 }

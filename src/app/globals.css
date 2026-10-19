@@ -929,6 +929,15 @@ body {
   animation: sb-zz-float 4s ease-out infinite;
 }
 .sb-zz-2 { left: -30%; top: -8%; font-size: 8px; animation-delay: -2s; }
+/* Sleeping kid: a slow breath. Kept a touch dimmer for the night, without
+   tinting his skin. The z's rise from just above his face. */
+.sb-kid-breathe {
+  transform-origin: 50% 100%;
+  animation: sb-kid-breathe 4.2s ease-in-out infinite;
+  filter: brightness(0.9) saturate(0.92);
+}
+.sb-kid-breathe ~ .sb-zz-1 { left: 26%; top: -2%; }
+.sb-kid-breathe ~ .sb-zz-2 { left: 18%; top: -16%; }
 
 .sb-home-wrap .sb-home { width: 100%; height: 100%; }
 .sb-smoke-rise { animation: sb-smoke-curl 5s ease-out infinite; transform-origin: 50% 100%; }
@@ -973,13 +982,17 @@ html:not([data-care-mode="sick"])[data-theme="dark"] .sb-smoke-rise { filter: no
   25% { opacity: 0.9; }
   100% { opacity: 0; transform: translate(-8px, -14px); }
 }
+@keyframes sb-kid-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  45% { transform: scale(1.012, 1.03); }
+}
 @keyframes sb-smoke-curl {
   0% { opacity: 0; transform: translateY(6px) scale(0.7); }
   30% { opacity: 0.85; }
   100% { opacity: 0; transform: translate(4px, -8px) scale(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-bee-face, .sb-bee-rock, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise { animation: none; }
+  .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-bee-face, .sb-bee-rock, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise, .sb-kid-breathe { animation: none; }
   .sb-zz { animation: none; opacity: 0.7; }
   .sb-smoke-rise { opacity: 0.7; }
 }
