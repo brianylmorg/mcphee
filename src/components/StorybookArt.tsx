@@ -61,15 +61,13 @@ function Layer({ src, className, style }: { src: string; className?: string; sty
 }
 
 const DAY_BEES = [
-  { id: "a", left: "50%", top: "56%", width: "5.6%", duration: "12s", delay: "0s", rockDelay: "0s" },
-  { id: "b", left: "66%", top: "34%", width: "4.2%", duration: "15s", delay: "-6s", rockDelay: "-1.1s" },
-  { id: "c", left: "55%", top: "75%", width: "3.6%", duration: "10s", delay: "-3s", rockDelay: "-1.9s" },
+  { id: "b", left: "66%", top: "30%", width: "4.2%", duration: "15s", delay: "-6s", rockDelay: "-1.1s" },
 ];
 
 /**
  * Awake: the painted morning meadow fills the toggle. The sun glows in open
- * sky (inside `.sb-sun-arc`, so it can set), clouds drift at different speeds
- * and a bee loops low with flapping wings.
+ * sky (inside `.sb-sun-arc`, so it can set), clouds drift at different speeds,
+ * a bee wanders high, and he runs across the meadow chasing another.
  */
 export function StorybookDay({ className = "" }: { className?: string }) {
   return (
@@ -95,6 +93,18 @@ export function StorybookDay({ className = "" }: { className?: string }) {
           </span>
         </span>
       ))}
+      {/* He runs back and forth across the meadow, clear of the timer and the
+          "Sleep" strip, chasing a bee that stays just ahead of him. The run is
+          a 6-frame flip-book (kid-run.webp); travel and turn share one duration
+          so he turns exactly at each end, and the bee turns with him. */}
+      <span className="sb-pos sb-kid-track" style={{ left: "max(50.5%, 11rem)", width: "calc(74% - max(50.5%, 11rem))", bottom: "6%", height: "50%" }}>
+        <span className="sb-kid-runner">
+          <span className="sb-kid-face">
+            <span className="sb-kid-frame"><Layer src="kid-run.webp" className="sb-kid-strip" /></span>
+            <span className="sb-kid-bee"><span className="sb-bee-rock"><Layer src="bee-up.webp" /></span></span>
+          </span>
+        </span>
+      </span>
     </span>
   );
 }
@@ -128,12 +138,11 @@ export function StorybookNight({ className = "" }: { className?: string }) {
         </span>
       ))}
       <span className="sb-pos sb-cloud-drift sb-cloud-sleepy" style={{ left: "34%", top: "66%", width: "14%" }}><Layer src="sleepy-cloud.webp" /></span>
-      {/* He sleeps in the grass on the hill, below the moon. His left edge stays
+      {/* He sleeps on the painted hill, below the moon. His left edge stays
           clear of the timer's frosted backing (about 11rem wide whatever the
           toggle width), and on narrow phones he shrinks rather than running into
-          the "Wake up" strip. The ragged foot of his grass patch tucks under the
-          bottom edge. */}
-      <span className="sb-pos" style={{ left: "max(50.5%, 11rem)", bottom: "-9%", width: "min(34%, calc(86% - max(50.5%, 11rem)))" }}>
+          the "Wake up" strip. */}
+      <span className="sb-pos" style={{ left: "max(50.5%, 11rem)", bottom: "4%", width: "min(27%, calc(78% - max(50.5%, 11rem)))" }}>
         <Layer src="kid-sleep.webp" className="sb-kid-breathe" />
         <span className="sb-zz sb-zz-1">z</span>
         <span className="sb-zz sb-zz-2">z</span>

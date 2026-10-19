@@ -938,6 +938,34 @@ body {
 }
 .sb-kid-breathe ~ .sb-zz-1 { left: 26%; top: -2%; }
 .sb-kid-breathe ~ .sb-zz-2 { left: 18%; top: -16%; }
+/* Day runner: the runner moves along the track (left 0 -> 100%, pulled back by
+   its own width so it stops at the far end) and turns at each end. The frame
+   window shows one cell of the 6-cell strip; the strip steps through them. */
+.sb-kid-runner {
+  position: absolute;
+  bottom: 0;
+  height: 100%;
+  aspect-ratio: 242 / 349;
+  animation: sb-kid-travel 5.2s linear infinite;
+}
+.sb-kid-face {
+  position: relative;
+  display: block;
+  height: 100%;
+  animation: sb-kid-turn 5.2s steps(1) infinite;
+}
+.sb-kid-frame { display: block; height: 100%; overflow: hidden; }
+.sb-kid-strip { width: 600%; max-width: none; animation: sb-kid-run 0.6s steps(6) infinite; }
+/* The bee flies just ahead and a little above him; its painted pose faces left. */
+.sb-kid-bee {
+  position: absolute;
+  left: 112%;
+  top: -6%;
+  width: 52%;
+  display: block;
+  transform: scaleX(-1);
+}
+.sb-kid-bee .sb-bee-rock { animation: sb-bee-rock 0.9s ease-in-out infinite alternate; }
 
 .sb-home-wrap .sb-home { width: 100%; height: 100%; }
 .sb-smoke-rise { animation: sb-smoke-curl 5s ease-out infinite; transform-origin: 50% 100%; }
@@ -986,13 +1014,25 @@ html:not([data-care-mode="sick"])[data-theme="dark"] .sb-smoke-rise { filter: no
   0%, 100% { transform: scale(1, 1); }
   45% { transform: scale(1.012, 1.03); }
 }
+@keyframes sb-kid-travel {
+  0%, 100% { left: 0%; transform: translateX(0); }
+  50% { left: 100%; transform: translateX(-100%); }
+}
+@keyframes sb-kid-turn {
+  0% { transform: scaleX(1); }
+  50% { transform: scaleX(-1); }
+}
+@keyframes sb-kid-run {
+  to { transform: translateX(-100%); }
+}
 @keyframes sb-smoke-curl {
   0% { opacity: 0; transform: translateY(6px) scale(0.7); }
   30% { opacity: 0.85; }
   100% { opacity: 0; transform: translate(4px, -8px) scale(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-bee-face, .sb-bee-rock, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise, .sb-kid-breathe { animation: none; }
+  .sb-sun-glow, .sb-cloud-drift, .sb-bee-path, .sb-bee-face, .sb-bee-rock, .sb-moon-rock, .sb-star-twinkle, .sb-smoke-rise, .sb-kid-breathe, .sb-kid-runner, .sb-kid-face, .sb-kid-strip, .sb-kid-bee .sb-bee-rock { animation: none; }
+  .sb-kid-runner { left: 20%; }
   .sb-zz { animation: none; opacity: 0.7; }
   .sb-smoke-rise { opacity: 0.7; }
 }
