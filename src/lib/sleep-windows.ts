@@ -156,7 +156,17 @@ export function percentile(values: readonly number[], p: number): number | null 
 }
 
 /** A typical wake window: the median, and the middle half (25th-75th percentile) as the zone. */
-export type NapZone = { count: number; medianMs: number; fromMs: number; toMs: number };
+export type NapZone = {
+  count: number;
+  medianMs: number;
+  fromMs: number;
+  toMs: number;
+  /** How many days back it looked to find enough wake windows. */
+  lookbackDays: number;
+};
+
+/** Look back 14 days, or further when that has too few wake windows (after a sick spell, say). */
+export const NAP_ZONE_LOOKBACKS = [14, 28, 60];
 
 /** Wake windows from the 4th on are pooled: few days have that many. */
 export const LAST_NAP_INDEX = 4;
@@ -178,50 +188,73 @@ function sgtMinuteOfDay(timestamp: number): number {
   return Math.floor(((timestamp + SGT_OFFSET_MS) % DAY_MS) / MINUTE_MS);
 }
 
-function zoneOf(durations: readonly number[]): NapZone | null {
+function zoneOf(durations: readonly number[], lookbackDays: number): NapZone | null {
   if (durations.length < MIN_ZONE_SAMPLES) return null;
   return {
     count: durations.length,
     medianMs: percentile(durations, 0.5) as number,
     fromMs: percentile(durations, 0.25) as number,
     toMs: percentile(durations, 0.75) as number,
+    lookbackDays,
   };
 }
 
-/**
- * Typical wake windows by position in the day, from the most recent
- * `lookbackDays` days (today included) that pass `includeDate`, so sick days
- * can be left out of the normal benchmark or used on their own.
- */
-export function calculateNapZones(
-  days: readonly DailySleepWindows[],
-  options: { lookbackDays?: number; includeDate?: (date: string) => boolean } = {},
-): NapZones {
-  const { lookbackDays = 14, includeDate = () => true } = options;
-  const recent = days.slice(-lookbackDays).filter((day) => includeDate(day.date));
-  const byIndex = new Map<number, number[]>();
-  const bedtime: number[] = [];
-  const bedtimeStarts: number[] = [];
-  let dayCount = 0;
-  for (const day of recent) {
-    if (day.wakeWindows.length > 0) dayCount += 1;
+type WindowSamples = { byIndex: Map<number, number[]>; bedtime: number[]; bedtimeStarts: number[]; dayCount: number };
+
+function collectWindows(days: readonly DailySleepWindows[]): WindowSamples {
+  const samples: WindowSamples = { byIndex: new Map(), bedtime: [], bedtimeStarts: [], dayCount: 0 };
+  for (const day of days) {
+    if (day.wakeWindows.length > 0) samples.dayCount += 1;
     for (const window of day.wakeWindows) {
       if (window.endsIn === "bedtime") {
-        bedtime.push(window.durationMs);
-        bedtimeStarts.push(sgtMinuteOfDay(window.startedAt));
+        samples.bedtime.push(window.durationMs);
+        samples.bedtimeStarts.push(sgtMinuteOfDay(window.startedAt));
         continue;
       }
       const index = Math.min(window.index, LAST_NAP_INDEX);
-      byIndex.set(index, [...(byIndex.get(index) ?? []), window.durationMs]);
+      samples.byIndex.set(index, [...(samples.byIndex.get(index) ?? []), window.durationMs]);
     }
   }
+  return samples;
+}
+
+/**
+ * Typical wake windows by position in the day, from the most recent days
+ * (today included) that pass `includeDate`, so sick days can be left out of
+ * the normal benchmark or used on their own. Each position uses the shortest
+ * lookback in `lookbackDays` that has enough wake windows, so a recent sick
+ * spell or a gap in logging reaches further back instead of showing nothing.
+ */
+export function calculateNapZones(
+  days: readonly DailySleepWindows[],
+  options: { lookbackDays?: number | readonly number[]; includeDate?: (date: string) => boolean } = {},
+): NapZones {
+  const { lookbackDays = NAP_ZONE_LOOKBACKS, includeDate = () => true } = options;
+  const ladder = typeof lookbackDays === "number" ? [lookbackDays] : lookbackDays;
+  const samplesByLookback = ladder.map((lookback) => ({
+    lookback,
+    samples: collectWindows(days.slice(-lookback).filter((day) => includeDate(day.date))),
+  }));
+  const firstZone = (pick: (samples: WindowSamples) => number[]): NapZone | null => {
+    for (const { lookback, samples } of samplesByLookback) {
+      const zone = zoneOf(pick(samples), lookback);
+      if (zone) return zone;
+    }
+    return null;
+  };
   const nap: Partial<Record<number, NapZone>> = {};
-  for (const [index, durations] of byIndex) {
-    const zone = zoneOf(durations);
+  for (let index = 1; index <= LAST_NAP_INDEX; index += 1) {
+    const zone = firstZone((samples) => samples.byIndex.get(index) ?? []);
     if (zone) nap[index] = zone;
   }
-  const bedtimeZone = zoneOf(bedtime);
-  return { nap, bedtime: bedtimeZone, bedtimeWindowStartMinute: bedtimeZone ? percentile(bedtimeStarts, 0.5) : null, dayCount };
+  const bedtime = firstZone((samples) => samples.bedtime);
+  const bedtimeStarts = bedtime ? samplesByLookback.find(({ lookback }) => lookback === bedtime.lookbackDays)?.samples.bedtimeStarts ?? [] : [];
+  return {
+    nap,
+    bedtime,
+    bedtimeWindowStartMinute: bedtime ? percentile(bedtimeStarts, 0.5) : null,
+    dayCount: samplesByLookback[0]?.samples.dayCount ?? 0,
+  };
 }
 
 /** Median completed nap length per day (null on days without a completed nap). */

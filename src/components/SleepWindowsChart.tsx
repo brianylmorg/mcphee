@@ -5,6 +5,11 @@ import type { DailySleepWindows } from "@/lib/sleep-windows";
 import { LAST_NAP_INDEX, medianNapMs, percentile } from "@/lib/sleep-windows";
 import { formatElapsedDuration } from "@/lib/elapsed-time";
 
+const HOUR_MS = 60 * 60 * 1000;
+/** Compact axis label: "0", "30m", "1h", "1.5h". */
+const axisLabel = (ms: number) => ms === 0 ? "0" : ms < HOUR_MS ? `${Math.round(ms / 60000)}m` : `${+(ms / HOUR_MS).toFixed(1)}h`;
+const AXIS_WIDTH = 34;
+
 const COLORS = ["var(--color-info)", "var(--color-terracotta)", "var(--color-warning)", "var(--color-warm-brown)"];
 const ordinal = (index: number) => index === 1 ? "1st" : index === 2 ? "2nd" : index === 3 ? "3rd" : "4th+";
 
@@ -38,7 +43,10 @@ export function SleepWindowsChart({ days, metric, sickDates, ageGuide }: {
   const width = Math.max(300, days.length * step + 28);
   const allValues = wake ? days.flatMap((day) => day.wakeWindows.map((window) => window.durationMs)) : days.map(medianNapMs).filter((value): value is number => value != null);
   if (ageGuide) allValues.push(ageGuide.toMs);
-  const maxScale = Math.max(...allValues, 1);
+  // Y axis: ticks every 30 minutes (hourly for longer ranges), scale rounded up to a whole tick.
+  const tickStep = Math.max(...allValues, 1) > 3 * HOUR_MS ? HOUR_MS : HOUR_MS / 2;
+  const maxScale = Math.max(tickStep, Math.ceil(Math.max(...allValues, 1) / tickStep) * tickStep);
+  const ticks = Array.from({ length: Math.round(maxScale / tickStep) + 1 }, (_, i) => i * tickStep);
   const availableHeight = baseline - topPadding;
   const yFor = (value: number) => baseline - value / maxScale * availableHeight;
   // Sick days are left out of the typical figure, as they are from the zones.
@@ -53,8 +61,14 @@ export function SleepWindowsChart({ days, metric, sickDates, ageGuide }: {
 
   return <figure className="mt-5">
     <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"><span className="text-sm font-semibold text-warm-brown">Last 7 days: typical {typicalLabel}</span>{legend}</div>
-    <div ref={scrollRef} className="overflow-x-auto overscroll-x-contain border-y border-border py-3 touch-pan-x">
+    <div className="flex border-y border-border py-3">
+    {/* The axis stays put while the days scroll sideways. */}
+    <svg aria-hidden="true" className="block shrink-0" width={AXIS_WIDTH} height={height} viewBox={`0 0 ${AXIS_WIDTH} ${height}`}>
+      {ticks.map((tick) => <text key={tick} x={AXIS_WIDTH - 6} y={yFor(tick) + 3.5} textAnchor="end" fontSize="10" fill="var(--color-text-muted)">{axisLabel(tick)}</text>)}
+    </svg>
+    <div ref={scrollRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain touch-pan-x">
       <svg role="img" aria-label={wake ? "Wake windows per day" : "Median nap length per day"} className="block min-w-full" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        {ticks.filter((tick) => tick > 0).map((tick) => <line key={tick} x1="0" y1={yFor(tick)} x2={width} y2={yFor(tick)} stroke="var(--color-border)" strokeDasharray="2 4" />)}
         {wake && ageGuide ? <rect x="0" y={yFor(ageGuide.toMs)} width={width} height={Math.max(0, yFor(ageGuide.fromMs) - yFor(ageGuide.toMs))} fill="var(--color-success)" opacity="0.14" /> : null}
         <line x1="0" y1={baseline} x2={width} y2={baseline} stroke="var(--color-border)" />
         {days.map((day, index) => {
@@ -73,6 +87,7 @@ export function SleepWindowsChart({ days, metric, sickDates, ageGuide }: {
           </g>;
         })}
       </svg>
+    </div>
     </div>
   </figure>;
 }

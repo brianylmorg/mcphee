@@ -135,7 +135,7 @@ test("nap zones group wake windows by position and keep bedtime separate", () =>
   ];
   const zones = calculateNapZones(days);
   assert.equal(zones.dayCount, 4);
-  assert.deepEqual(zones.nap[1], { count: 4, medianMs: 115 * minute, fromMs: 107.5 * minute, toMs: 122.5 * minute });
+  assert.deepEqual(zones.nap[1], { count: 4, medianMs: 115 * minute, fromMs: 107.5 * minute, toMs: 122.5 * minute, lookbackDays: 14 });
   assert.equal(zones.nap[2]?.medianMs, 155 * minute);
   assert.equal(zones.bedtime?.medianMs, 240 * minute);
   assert.equal(zones.nap[3], undefined);
@@ -151,8 +151,18 @@ test("nap zones skip excluded days, look back 14 days and need 3 samples", () =>
   const normal = calculateNapZones(days, { includeDate: (date) => !sickDates.has(date) });
   assert.equal(normal.nap[1]?.medianMs, 120 * minute);
   assert.equal(normal.nap[1]?.count, 13);
-  const sick = calculateNapZones(days, { includeDate: (date) => sickDates.has(date) });
+  const sick = calculateNapZones(days, { lookbackDays: 14, includeDate: (date) => sickDates.has(date) });
   assert.equal(sick.nap[1], undefined);
+});
+
+test("nap zones reach further back when the last 14 days are mostly sick", () => {
+  // 20 well days, then 14 sick days: nothing usable in the last 14 well days.
+  const days = Array.from({ length: 34 }, (_, i) => day(`d${String(i).padStart(2, "0")}`, [i < 20 ? 120 : 60]));
+  const sickDates = new Set(days.slice(-14).map((d) => d.date));
+  const zones = calculateNapZones(days, { includeDate: (date) => !sickDates.has(date) });
+  assert.equal(zones.nap[1]?.lookbackDays, 28);
+  assert.equal(zones.nap[1]?.medianMs, 120 * minute);
+  assert.equal(zones.nap[1]?.count, 14);
 });
 
 test("windows from the 4th on are pooled", () => {

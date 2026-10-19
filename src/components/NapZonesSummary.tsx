@@ -18,7 +18,7 @@ function WindowRows({ zones, ageGuide, ageLabel }: { zones: NapZones; ageGuide?:
   return <>
     {rows.map(({ key, label, zone }) => <div key={key} className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0">
       <dt className="text-warm-brown">{label}</dt>
-      <dd className="text-right tabular-nums">{formatElapsedDuration(zone.fromMs)} – {formatElapsedDuration(zone.toMs)}<div className="text-xs text-muted">typical {formatElapsedDuration(zone.medianMs)} · from {zone.count}</div></dd>
+      <dd className="text-right tabular-nums">{formatElapsedDuration(zone.fromMs)} – {formatElapsedDuration(zone.toMs)}<div className="text-xs text-muted">typical {formatElapsedDuration(zone.medianMs)} · {zone.count} wake windows{zone.lookbackDays > 14 ? ` over ${zone.lookbackDays} days` : ""}</div></dd>
     </div>)}
     {ageGuide ? <div className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0">
       <dt className="text-warm-brown">Age guide{ageLabel ? ` (${ageLabel})` : ""}</dt>
@@ -31,8 +31,8 @@ export function NapZonesSummary({ normal, sick, ageGuide, ageLabel }: Props) {
   const hasNormal = Object.values(normal.nap).some(Boolean) || normal.bedtime != null;
   const hasSick = Object.values(sick.nap).some(Boolean) || sick.bedtime != null;
   return <div className="text-sm">
-    {hasNormal ? <dl><WindowRows zones={normal} ageGuide={ageGuide} ageLabel={ageLabel} /></dl> : <><p className="text-sm text-muted">Not enough recent wake windows yet. A zone needs at least 3 from the last 14 days.</p>{ageGuide ? <dl><WindowRows zones={normal} ageGuide={ageGuide} ageLabel={ageLabel} /></dl> : null}</>}
+    {hasNormal ? <dl><WindowRows zones={normal} ageGuide={ageGuide} ageLabel={ageLabel} /></dl> : <><p className="text-sm text-muted">Not enough wake windows yet. A range needs at least 3 at that point in the day, from the last 60 days with sick days left out.</p>{ageGuide ? <dl><WindowRows zones={normal} ageGuide={ageGuide} ageLabel={ageLabel} /></dl> : null}</>}
     {hasSick ? <><h3 className="mt-3 text-xs font-semibold text-muted">On sick days</h3><dl><WindowRows zones={sick} /></dl></> : null}
-    <p className="mt-2 text-xs text-muted">Zones are the middle half of his last 14 days of wake windows, with sick days left out. The age guide is a rough comparison only: sources differ by up to half an hour.</p>
+    <p className="mt-2 text-xs text-muted">Each range is the middle half of his recent wake windows at that point in the day: from the last 14 days, or further back when there are too few, with sick days left out. &ldquo;Typical&rdquo; is the median. The age guide is a rough comparison only: sources differ by up to half an hour.</p>
   </div>;
 }
