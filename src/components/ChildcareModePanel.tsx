@@ -22,6 +22,8 @@ export interface ChildcareModePanelProps {
   /** Required: the parent persists the edited start time and resolves true only on success. */
   onEditCheckIn: (at: number) => Promise<boolean>;
   onImport: (session: ChildcareSessionSummary) => void;
+  /** Imports a caretaker screenshot not tied to any recorded stay (e.g. a forgotten check-in, or care by someone else). */
+  onImportWithoutSession?: () => void;
   /**
    * Closed sessions the server reports: screenshot pending, imported or
    * dismissed. Merged with pendingSessions and de-duplicated by id.
@@ -290,6 +292,7 @@ export default function ChildcareModePanel({
   onCheckOut,
   onEditCheckIn,
   onImport,
+  onImportWithoutSession,
   historySessions,
   onEditSession,
   onDismissImport,
@@ -827,6 +830,17 @@ export default function ChildcareModePanel({
             })}
           </ul>
         </div>
+      )}
+      {onImportWithoutSession && (
+        <button
+          type="button"
+          onClick={onImportWithoutSession}
+          disabled={busy}
+          className="mt-3 inline-flex min-h-9 items-center gap-1.5 text-xs font-semibold text-accent-strong underline decoration-terracotta/35 decoration-dotted underline-offset-4 disabled:opacity-60"
+        >
+          <ImageUp aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          Import a screenshot without a check-in
+        </button>
       )}
     </section>
   );

@@ -330,3 +330,8 @@ test("a stay checked in on an earlier day asks what time they left that day", ()
   assert.match(html, /disabled=""[^>]*>[\s\S]*?Check out at this time/);
   assert.doesNotMatch(html, />Check out</);
 });
+
+test("offers a standalone screenshot import only when the parent supports it", () => {
+  assert.match(render({ onImportWithoutSession: () => {} }), /Import a screenshot without a check-in</);
+  assert.doesNotMatch(render(), /without a check-in/);
+});

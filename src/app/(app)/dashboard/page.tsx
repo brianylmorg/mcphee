@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId, useMemo, type CSSProperties } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, ChartScatter, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, ChartScatter, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -1119,7 +1119,8 @@ export default function DashboardPage() {
     setShowActivityMenu(false);
   };
 
-  const openCaretakerImport = (session: ChildcareSessionSummary | null = null) => {
+  /** `standalone`: a screenshot not tied to any stay, so don't fall back to the active or today's stay. */
+  const openCaretakerImport = (session: ChildcareSessionSummary | null = null, { standalone = false }: { standalone?: boolean } = {}) => {
     setShowActivityMenu(false);
     setShowLogModal(false);
     setEditingActivity(null);
@@ -1131,7 +1132,7 @@ export default function DashboardPage() {
     const latestPendingForToday = childcareMode.pendingSessions
       .filter((pendingSession) => pendingSession.pendingImport && sgtDateKeyForTimestamp(pendingSession.checkedInAt) === todayDateKey)
       .sort((left, right) => (right.checkedOutAt ?? right.checkedInAt) - (left.checkedOutAt ?? left.checkedInAt))[0] ?? null;
-    setCaretakerImportSession(session ?? childcareMode.activeSession ?? latestPendingForToday);
+    setCaretakerImportSession(standalone ? null : session ?? childcareMode.activeSession ?? latestPendingForToday);
     setShowCaretakerImport(true);
   };
 
@@ -1773,6 +1774,7 @@ export default function DashboardPage() {
                       onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
                       onEditCheckIn={async (at) => Boolean(await mutateChildcareMode("editCheckIn", at))}
                       onImport={(session) => { closeCareMenu(); openCaretakerImport(session); }}
+                      onImportWithoutSession={() => { closeCareMenu(); openCaretakerImport(null, { standalone: true }); }}
                     />
                   </div>
                 )}{baby?.id && <div data-care-section="sick"><SickModePanel key={baby.id} babyId={baby.id} data={sickMode} isStale={sickModeIsStale} display="controls" onAddMedication={(drafts, episodeId) => { const targetEpisodeId = episodeId ?? activeSickEpisodeId; if (targetEpisodeId) { closeCareMenu(); setMedicationEntry(medicationAddEntry(targetEpisodeId, drafts)); } }} onRefresh={async () => { await fetchSickMode(baby.id); await fetchMilkHistory(baby.id, false); setActivityFilterRefresh((value) => value + 1); }} /></div>}{renderHouseholdSettings(closeCareMenu)}</>}
@@ -2367,17 +2369,6 @@ export default function DashboardPage() {
       <div className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] right-5 z-40 flex flex-col items-end gap-3">
         {showActivityMenu && (
           <div className="activity-picker flex max-h-[calc(100dvh-7rem)] w-[min(320px,calc(100vw-2.5rem))] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
-            <button
-              type="button"
-              onClick={() => openCaretakerImport(null)}
-              className="mb-1 flex min-h-11 w-full shrink-0 items-center justify-between gap-3 rounded-lg border border-terracotta/25 bg-terracotta/10 px-3 py-2 text-left text-warm-brown transition-colors hover:bg-terracotta/15"
-            >
-              <span className="flex min-w-0 items-center gap-3">
-                <ImageUp aria-hidden="true" className="h-5 w-5 shrink-0 text-accent-strong" />
-                <span className="text-sm font-semibold">Import caretaker screenshot</span>
-              </span>
-              <span className="shrink-0 text-xs text-muted">Review first</span>
-            </button>
             {activityActionTypes.map((type) => {
               const last = getLastActivity(type);
               const overdue = isOverdue(type);
