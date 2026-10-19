@@ -97,7 +97,7 @@ export function SleepWindowsChart({
                 {value != null && (
                   <>
                     <rect x={x} y={baseline - barHeight} width={barWidth} height={barHeight} rx="3" fill={wake ? "var(--color-warning)" : "var(--color-info)"} />
-                    <text x={x + barWidth / 2} y={Math.max(14, baseline - barHeight - 7)} textAnchor="middle" fontSize="10" fill="var(--color-warm-brown)">{formatted}</text>
+                    <text x={x + barWidth / 2} y={Math.max(14, baseline - barHeight - 7)} textAnchor="middle" fontSize="10" fill="var(--color-warm-brown)" stroke="var(--color-surface)" strokeWidth="3" paintOrder="stroke">{formatted}</text>
                   </>
                 )}
                 <text x={x + barWidth / 2} y={baseline + 22} textAnchor="middle" fontSize="11" fill="var(--color-text-muted)">{day.date.slice(5).replace("-", "/")}</text>
