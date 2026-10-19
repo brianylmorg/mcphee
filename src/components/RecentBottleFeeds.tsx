@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { formatDate, formatTime } from "@/lib/utils";
 import { formatElapsedSince } from "@/lib/elapsed-time";
 import { sgtDateKey } from "@/lib/milk-volumes";
+import { milkHint } from "@/lib/milk-hint";
 import LatestEntriesDisclosure from "./LatestEntriesDisclosure";
 
 export interface RecentBottleFeedItem {
@@ -22,7 +23,7 @@ const LATEST_FEED_COUNT = 3;
  * component so the 30s tick (plus visibility/focus refresh) never re-renders
  * the rest of the dashboard.
  */
-export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedItem[] }) {
+export default function RecentBottleFeeds({ feeds, asleep = false }: { feeds: RecentBottleFeedItem[]; asleep?: boolean }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
   const todayDateKey = sgtDateKey(now);
   const latestFeeds = feeds.slice(0, LATEST_FEED_COUNT);
   const newest = latestFeeds[0];
+  const hint = milkHint(newest?.startedAt, now, asleep);
 
   const feedWhen = (feed: RecentBottleFeedItem) =>
     sgtDateKey(feed.startedAt) === todayDateKey
@@ -62,6 +64,7 @@ export default function RecentBottleFeeds({ feeds }: { feeds: RecentBottleFeedIt
             <>
               <span className="latest-entries-when font-semibold tabular-nums text-warm-brown">{feedWhen(newest)}</span>
               <span className="latest-entries-elapsed whitespace-nowrap font-semibold tabular-nums text-muted"><span aria-hidden="true">· </span>{formatElapsedSince(newest.startedAt, now)}</span>
+              {hint ? <span data-milk-status={hint.status} className="milk-hint whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none">{hint.text}</span> : null}
               <span aria-label={`${newest.amountMl} ml consumed`} className="latest-entries-amount ml-auto shrink-0 whitespace-nowrap tabular-nums text-warm-brown">{newest.amountMl} ml</span>
             </>
           }

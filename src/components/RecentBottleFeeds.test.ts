@@ -39,6 +39,25 @@ test("latest feeds explicitly state when no feeds have been logged", () => {
   assert.doesNotMatch(html, /data-feed-row=/);
 });
 
+test("latest feed summary shows the milk hint at three hours, with sleeping wording", () => {
+  const now = Date.now();
+  const feeds = [{ id: "newest", startedAt: now - 3 * 60 * 60 * 1000, amountMl: 100 }];
+  const html = renderToStaticMarkup(createElement(RecentBottleFeeds, { feeds }));
+  assert.match(html, /data-milk-status="due"/);
+  assert.match(html, /Milk time/);
+
+  const asleepHtml = renderToStaticMarkup(createElement(RecentBottleFeeds, { feeds, asleep: true }));
+  assert.match(asleepHtml, /data-milk-status="due"/);
+  assert.match(asleepHtml, /Milk when he wakes/);
+});
+
+test("latest feed summary has no milk hint before the due threshold", () => {
+  const now = Date.now();
+  const feeds = [{ id: "newest", startedAt: now - 60 * 60 * 1000, amountMl: 100 }];
+  const html = renderToStaticMarkup(createElement(RecentBottleFeeds, { feeds }));
+  assert.doesNotMatch(html, /milk-hint|data-milk-status=/);
+});
+
 test("latest feeds bound the history at three for empty through larger inputs", () => {
   const now = Date.now();
   const makeFeeds = (count: number) =>

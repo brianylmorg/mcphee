@@ -2074,7 +2074,7 @@ export default function DashboardPage() {
             {medianInfoText}
           </p>
 
-          <RecentBottleFeeds feeds={activeSickSummary?.latestFeeds?.map((feed) => ({ id: feed.id, startedAt: feed.startedAt, amountMl: feed.totalMl })) ?? recentMilkFeeds} />
+          <RecentBottleFeeds feeds={activeSickSummary?.latestFeeds?.map((feed) => ({ id: feed.id, startedAt: feed.startedAt, amountMl: feed.totalMl })) ?? recentMilkFeeds} asleep={sleepState.state === "sleeping"} />
         </section>
         {baby?.id && (
             <MilkBank

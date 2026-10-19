@@ -287,8 +287,10 @@ html[data-care-mode="sick"][data-theme="dark"] {
   backdrop-filter: blur(1.5px);
 }
 .sleep-nap-hint[data-nap-status="before"] { background: rgb(255 250 238 / 0.75); color: var(--color-warm-brown); }
-.sleep-nap-hint[data-nap-status="in"] { background: var(--color-warning); color: var(--color-warm-brown); }
+.sleep-nap-hint[data-nap-status="in"] { background: rgb(var(--sb-sun)); color: rgb(var(--sb-ink)); }
 .sleep-nap-hint[data-nap-status="past"] { background: var(--color-terracotta); color: #fff; }
+.milk-hint[data-milk-status="due"] { background: rgb(var(--sb-sun)); color: rgb(var(--sb-ink)); }
+.milk-hint[data-milk-status="past"] { background: var(--color-terracotta); color: #fff; }
 .sleep-panel[data-scene="sleeping"] .sleep-status-backing {
   background: radial-gradient(closest-side, rgb(34 38 80 / 0.5), rgb(34 38 80 / 0.16) 70%, transparent);
 }
