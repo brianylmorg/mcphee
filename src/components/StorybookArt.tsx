@@ -122,13 +122,14 @@ export function StorybookNight({ className = "" }: { className?: string }) {
       ))}
       {/* The sleepy cloud drifts beside the moon, at the same height. */}
       <span className="sb-pos sb-cloud-drift sb-cloud-sleepy" style={{ left: "62%", top: "10%", width: "12%" }}><Layer src="sleepy-cloud.webp" /></span>
-      {/* He lies on the painted hill, below the moon, on a soft contact shadow
-          so he rests on the ground. His left edge stays clear of the timer's
-          frosted backing (about 11rem wide whatever the toggle width), and on
-          narrow phones he shrinks rather than running into the "Wake up" strip. */}
-      <span className="sb-pos" style={{ left: "max(52%, 11.5rem)", bottom: "2%", width: "min(16%, calc(76% - max(52%, 11.5rem)))" }}>
+      {/* The night backdrop is mirrored (see .sb-painted-night .sb-backdrop) so
+          its hill rises on the right, clear of the timer's frosted backing
+          (about 11rem wide at most). He lies back on the hillside, head uphill
+          on the right, on a soft contact shadow; on narrow phones he shrinks
+          rather than running into the "Wake up" strip. */}
+      <span className="sb-pos sb-kid-hillside" style={{ left: "max(50%, 11rem)", bottom: "7%", width: "min(16%, calc(76% - max(50%, 11rem)))" }}>
         <span className="sb-kid-ground" />
-        <Layer src="kid-sleep.webp" className="sb-kid-breathe" />
+        <span className="sb-kid-mirror"><Layer src="kid-sleep.webp" className="sb-kid-breathe" /></span>
         <span className="sb-zz sb-zz-1">z</span>
         <span className="sb-zz sb-zz-2">z</span>
       </span>

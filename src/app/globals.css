@@ -940,9 +940,13 @@ body {
   border-radius: 50%;
   background: radial-gradient(closest-side, rgb(20 24 44 / 0.55), rgb(20 24 44 / 0.25) 60%, transparent);
 }
-.sb-kid-breathe { position: relative; }
-.sb-kid-breathe ~ .sb-zz-1 { left: 26%; top: -2%; }
-.sb-kid-breathe ~ .sb-zz-2 { left: 18%; top: -16%; }
+/* Night: mirror the painted hills so the big hill rises on the right, where
+   he lies on its slope (head uphill), clear of the timer. */
+.sb-painted-night .sb-backdrop { transform: scaleX(-1); }
+.sb-kid-hillside { transform: rotate(-11deg); transform-origin: 70% 100%; }
+.sb-kid-mirror { position: relative; display: block; transform: scaleX(-1); }
+.sb-kid-hillside .sb-zz-1 { left: 84%; top: -8%; }
+.sb-kid-hillside .sb-zz-2 { left: 94%; top: -22%; }
 /* Day runner: the runner moves along the track (left 0 -> 100%, pulled back by
    its own width so it stops at the far end) and turns at each end. The frame
    window shows one cell of the 6-cell strip; the strip steps through them. */
