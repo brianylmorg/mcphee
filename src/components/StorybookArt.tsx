@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type CSSProperties } from "react";
+import { useEffect, useId, useState, type CSSProperties } from "react";
 
 /**
  * Storybook watercolour illustrations (classic nursery-book style): soft
@@ -99,6 +99,16 @@ export function StorybookDay({ className = "" }: { className?: string }) {
   );
 }
 
+/** Temporary: compare sleeping-kid placements on the preview with ?kid=a or ?kid=c. */
+function useKidMock(): string {
+  const [variant, setVariant] = useState("a");
+  useEffect(() => {
+    const kid = new URLSearchParams(window.location.search).get("kid");
+    if (kid === "a" || kid === "c") setVariant(kid);
+  }, []);
+  return variant;
+}
+
 const NIGHT_STARS = [
   { src: "star-1.webp", left: "22%", top: "5%", width: "3.6%", delay: "0s" },
   { src: "star-3.webp", left: "30%", top: "6%", width: "3.2%", delay: "-1.2s" },
@@ -114,6 +124,7 @@ const NIGHT_STARS = [
  * z's float up and the sleepy cloud drifts low.
  */
 export function StorybookNight({ className = "" }: { className?: string }) {
+  const KID_MOCK = useKidMock();
   return (
     <span aria-hidden="true" className={`sb-painted sb-painted-night ${className}`}>
       <Layer src="night-backdrop.webp" className="sb-backdrop" />
@@ -129,6 +140,8 @@ export function StorybookNight({ className = "" }: { className?: string }) {
         </span>
       ))}
       <span className="sb-pos sb-cloud-drift sb-cloud-sleepy" style={{ left: "34%", top: "66%", width: "14%" }}><Layer src="sleepy-cloud.webp" /></span>
+      {KID_MOCK === "a" && <span className="sb-pos" style={{ left: "60%", top: "6%", width: "15%" }}><Layer src="kid-sleep-cloud.webp" /></span>}
+      {KID_MOCK === "c" && <span className="sb-pos" style={{ left: "60%", bottom: "-18%", width: "12%", transform: "rotate(-90deg)", transformOrigin: "50% 50%" }}><Layer src="kid-sleep.webp" /></span>}
     </span>
   );
 }
