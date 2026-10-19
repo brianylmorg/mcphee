@@ -43,9 +43,8 @@ test("both scenes stay mounted (for the carousel) and are hidden from assistive 
   assert.match(html, /sb-painted-night/);
   assert.match(html, /class="sb-sun-arc sb-pos"/);
   assert.match(html, /class="sb-moon-arc sb-pos"/);
-  assert.match(html, /sb-bee-path/);
-  // One bee wanders high; he runs the meadow chasing another, and sleeps on the hill at night.
-  assert.equal((html.match(/sb-bee-frame/g) ?? []).length, 1);
+  // He runs the meadow chasing a bee by day, and sleeps on the hill at night.
+  assert.equal((html.match(/src="\/storybook\/bee-up\.webp"/g) ?? []).length, 1);
   assert.match(html, /class="sb-kid-runner"/);
   assert.match(html, /kid-run\.webp/);
   assert.match(html, /class="sb-kid-bee"/);

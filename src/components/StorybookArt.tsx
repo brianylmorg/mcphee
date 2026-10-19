@@ -60,14 +60,10 @@ function Layer({ src, className, style }: { src: string; className?: string; sty
   return <img src={`${ART}/${src}`} alt="" draggable={false} decoding="async" className={`sb-layer ${className ?? ""}`} style={style} />;
 }
 
-const DAY_BEES = [
-  { id: "b", left: "66%", top: "30%", width: "4.2%", duration: "15s", delay: "-6s", rockDelay: "-1.1s" },
-];
-
 /**
  * Awake: the painted morning meadow fills the toggle. The sun glows in open
  * sky (inside `.sb-sun-arc`, so it can set), clouds drift at different speeds,
- * a bee wanders high, and he runs across the meadow chasing another.
+ * and he runs unhurriedly across the meadow: after a bee, then away from it.
  */
 export function StorybookDay({ className = "" }: { className?: string }) {
   return (
@@ -79,30 +75,17 @@ export function StorybookDay({ className = "" }: { className?: string }) {
       <span className="sb-pos sb-cloud-drift sb-cloud-a" style={{ left: "2%", top: "4%", width: "22%" }}><Layer src="cloud-1.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-b" style={{ left: "28%", top: "-6%", width: "15%" }}><Layer src="cloud-2.webp" /></span>
       <span className="sb-pos sb-cloud-drift sb-cloud-c" style={{ left: "76%", top: "0%", width: "18%" }}><Layer src="cloud-3.webp" /></span>
-      {/* Bees drift left and right over the open meadow (clear of the timer and
-          the peek), turning to face where they fly, with a gentle rock. Each has
-          its own size, speed and phase; travel and turn share one duration so
-          the turn always lands at the end of a pass. One painted pose only:
-          swapping two differently sized poses made them jitter. */}
-      {DAY_BEES.map((bee) => (
-        <span key={bee.id} className="sb-pos sb-bee-path" style={{ left: bee.left, top: bee.top, width: bee.width, animationDuration: bee.duration, animationDelay: bee.delay }}>
-          <span className="sb-bee-face" style={{ animationDuration: bee.duration, animationDelay: bee.delay }}>
-            <span className="sb-bee-rock" style={{ animationDelay: bee.rockDelay }}>
-              <Layer src="bee-up.webp" className="sb-bee-frame" />
-            </span>
-          </span>
-        </span>
-      ))}
       {/* He runs back and forth across the meadow, clear of the timer and the
-          "Sleep" strip, chasing a bee that stays just ahead of him. The run is
-          a 6-frame flip-book (kid-run.webp); travel and turn share one duration
-          so he turns exactly at each end, and the bee turns with him. */}
+          "Sleep" strip. The bee always flies on his right: running right he
+          chases it, and on the way back it chases him. The run is a 6-frame
+          flip-book (kid-run.webp); travel and turns share one duration so both
+          turn exactly at each end. */}
       <span className="sb-pos sb-kid-track" style={{ left: "max(50.5%, 11rem)", width: "calc(74% - max(50.5%, 11rem))", bottom: "6%", height: "50%" }}>
         <span className="sb-kid-runner">
           <span className="sb-kid-face">
             <span className="sb-kid-frame"><Layer src="kid-run.webp" className="sb-kid-strip" /></span>
-            <span className="sb-kid-bee"><span className="sb-bee-rock"><Layer src="bee-up.webp" /></span></span>
           </span>
+          <span className="sb-kid-bee"><span className="sb-bee-rock"><Layer src="bee-up.webp" /></span></span>
         </span>
       </span>
     </span>
