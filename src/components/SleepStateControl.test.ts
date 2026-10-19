@@ -10,7 +10,7 @@ const napHintInput = {
   current: { index: 1, awakeSince: Date.now() },
   normal: calculateNapZones([1, 2, 3].map((n) => ({
     date: `2026-10-0${n}`, wakeWindowCount: 1, wakeWindowTotalMs: (60 + n) * 60_000,
-    napCount: 0, napTotalMs: 0, napDurationsMs: [],
+    napCount: 0, napTotalMs: 0, napDurationsMs: [], naps: [],
     wakeWindows: [{ index: 1, startedAt: 0, durationMs: (60 + n) * 60_000, endsIn: "nap" as const }],
   }))),
 };

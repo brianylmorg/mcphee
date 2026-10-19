@@ -12,7 +12,7 @@ import { activityNoteText } from "@/lib/activity-note";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
 import { SleepWindowsChart } from "@/components/SleepWindowsChart";
 import { NapZonesSummary } from "@/components/NapZonesSummary";
-import { ageWakeWindowGuide, calculateNapZones, calculateSleepWindowHistory, currentWakeWindow } from "@/lib/sleep-windows";
+import { ageWakeWindowGuide, calculateNapLengthZones, calculateNapZones, calculateSleepWindowHistory, currentWakeWindow } from "@/lib/sleep-windows";
 import { SleepStateControl } from "@/components/SleepStateControl";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
@@ -284,6 +284,8 @@ export default function DashboardPage() {
   ), [sickEpisodes, sleepWindowDays]);
   const normalNapZones = useMemo(() => calculateNapZones(sleepWindowDays, { includeDate: (date) => !sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
   const sickNapZones = useMemo(() => calculateNapZones(sleepWindowDays, { lookbackDays: 90, includeDate: (date) => sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
+  const normalNapLengthZones = useMemo(() => calculateNapLengthZones(sleepWindowDays, { includeDate: (date) => !sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
+  const sickNapLengthZones = useMemo(() => calculateNapLengthZones(sleepWindowDays, { lookbackDays: 90, includeDate: (date) => sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
   const isSickNow = Boolean(sickMode?.schemaReady && sickMode.activeEpisode);
   const ageGuide = ageWakeWindowGuide(baby?.birth_date, Date.now());
   useEffect(() => {
@@ -2502,10 +2504,10 @@ export default function DashboardPage() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
               <section className="mt-4">
-                <h3 className="text-sm font-semibold text-warm-brown">Nap zones</h3>
-                <p className="mt-1 text-xs text-muted">How long he&apos;s usually awake before each nap, by window of the day</p>
+                <h3 className="text-sm font-semibold text-warm-brown">His usual day</h3>
+                <p className="mt-1 text-xs text-muted">How long he&apos;s usually awake and asleep at each point in the day, and roughly when</p>
                 <div className="mt-3">
-                  <NapZonesSummary normal={normalNapZones} sick={sickNapZones} ageGuide={ageGuide} ageLabel={baby?.birth_date ? formatAge(baby.birth_date, { compact: true }) : null} />
+                  <NapZonesSummary normal={normalNapZones} sick={sickNapZones} normalNaps={normalNapLengthZones} sickNaps={sickNapLengthZones} initialView={isSickNow ? "sick" : "usual"} ageGuide={ageGuide} ageLabel={baby?.birth_date ? formatAge(baby.birth_date, { compact: true }) : null} />
                 </div>
               </section>
               <section className="mt-6 border-t border-border pt-5">

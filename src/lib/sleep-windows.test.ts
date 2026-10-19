@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   ageWakeWindowGuide,
   averageSleepWindows,
+  calculateNapLengthZones,
   calculateNapZones,
   calculateSleepWindowHistory,
   currentWakeWindow,
@@ -40,6 +41,10 @@ test("counts wake windows from morning wake to bedtime and completed naps", () =
       { index: 3, startedAt: sgt("2026-10-05", "14:30:00"), durationMs: 270 * minute, endsIn: "bedtime" },
     ],
     napDurationsMs: [60 * minute, 90 * minute],
+    naps: [
+      { index: 1, startedAt: sgt("2026-10-05", "09:00:00"), durationMs: 60 * minute },
+      { index: 2, startedAt: sgt("2026-10-05", "13:00:00"), durationMs: 90 * minute },
+    ],
   });
   // Today has a morning wake but nothing completed after it yet.
   assert.equal(days[2].wakeWindowCount, 0);
@@ -100,8 +105,8 @@ test("days without a morning wake have no windows and the range is capped", () =
 
 test("averages weight every window equally", () => {
   const avg = averageSleepWindows([
-    { date: "a", wakeWindowCount: 1, wakeWindowTotalMs: 60 * minute, napCount: 0, napTotalMs: 0, wakeWindows: [], napDurationsMs: [] },
-    { date: "b", wakeWindowCount: 3, wakeWindowTotalMs: 300 * minute, napCount: 2, napTotalMs: 100 * minute, wakeWindows: [], napDurationsMs: [] },
+    { date: "a", wakeWindowCount: 1, wakeWindowTotalMs: 60 * minute, napCount: 0, napTotalMs: 0, wakeWindows: [], napDurationsMs: [], naps: [] },
+    { date: "b", wakeWindowCount: 3, wakeWindowTotalMs: 300 * minute, napCount: 2, napTotalMs: 100 * minute, wakeWindows: [], napDurationsMs: [], naps: [] },
   ]);
   assert.equal(avg.wakeWindowMs, 90 * minute);
   assert.equal(avg.napMs, 50 * minute);
@@ -114,7 +119,7 @@ function day(date: string, napWindows: number[], bedtimeWindow?: number): DailyS
   // Bedtime stretches start at 16:30 Singapore time.
   if (bedtimeWindow != null) wakeWindows.push({ index: napWindows.length + 1, startedAt: Date.parse(`2026-10-01T16:30:00+08:00`), durationMs: bedtimeWindow * minute, endsIn: "bedtime" });
   return {
-    date, wakeWindows, napDurationsMs: [],
+    date, wakeWindows, napDurationsMs: [], naps: [],
     wakeWindowCount: wakeWindows.length, wakeWindowTotalMs: wakeWindows.reduce((t, w) => t + w.durationMs, 0), napCount: 0, napTotalMs: 0,
   };
 }
@@ -135,7 +140,8 @@ test("nap zones group wake windows by position and keep bedtime separate", () =>
   ];
   const zones = calculateNapZones(days);
   assert.equal(zones.dayCount, 4);
-  assert.deepEqual(zones.nap[1], { count: 4, medianMs: 115 * minute, fromMs: 107.5 * minute, toMs: 122.5 * minute, lookbackDays: 14 });
+  // Fixture windows start at epoch 0 (08:00 Singapore).
+  assert.deepEqual(zones.nap[1], { count: 4, medianMs: 115 * minute, fromMs: 107.5 * minute, toMs: 122.5 * minute, lookbackDays: 14, startMinute: 480, endMinute: 480 + 115 });
   assert.equal(zones.nap[2]?.medianMs, 155 * minute);
   assert.equal(zones.bedtime?.medianMs, 240 * minute);
   assert.equal(zones.nap[3], undefined);
@@ -231,4 +237,28 @@ test("a stretch starting near his usual bedtime-stretch time heads to bed", () =
   assert.equal(napHint({ current: { index: 3, awakeSince: sgt("2026-10-05", "15:30:00") }, now: evening, normal })?.leadsTo, "nap");
   // The first window of the day is never the bedtime stretch.
   assert.equal(napHint({ current: { index: 1, awakeSince: sgt("2026-10-05", "17:00:00") }, now: evening, normal })?.leadsTo, "nap");
+});
+
+test("zones carry his typical times, and naps get their own zones", () => {
+  const sessions: SleepWindowSession[] = [];
+  for (const [d, wake, nap1, nap1End, nap2, nap2End] of [
+    ["2026-10-01", "07:00", "09:00", "10:00", "13:00", "14:30"],
+    ["2026-10-02", "07:15", "09:15", "10:05", "13:10", "14:20"],
+    ["2026-10-03", "06:50", "08:55", "10:10", "12:50", "14:40"],
+  ]) {
+    sessions.push({ startedAt: sgt(d, "00:00:00") - 5 * 60 * minute, endedAt: sgt(d, `${wake}:00`) });
+    sessions.push({ startedAt: sgt(d, `${nap1}:00`), endedAt: sgt(d, `${nap1End}:00`) });
+    sessions.push({ startedAt: sgt(d, `${nap2}:00`), endedAt: sgt(d, `${nap2End}:00`) });
+  }
+  const days = calculateSleepWindowHistory(sessions, sgt("2026-10-03", "16:00:00"));
+  const wake = calculateNapZones(days);
+  assert.equal(wake.nap[1]?.startMinute, 7 * 60);
+  assert.equal(wake.nap[1]?.endMinute, 9 * 60);
+  const naps = calculateNapLengthZones(days);
+  assert.equal(naps[1]?.count, 3);
+  assert.equal(naps[1]?.medianMs, 60 * minute);
+  assert.equal(naps[1]?.startMinute, 9 * 60);
+  assert.equal(naps[1]?.endMinute, 10 * 60 + 5);
+  assert.equal(naps[2]?.medianMs, 90 * minute);
+  assert.equal(naps[3], undefined);
 });
