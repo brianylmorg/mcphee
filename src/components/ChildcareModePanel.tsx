@@ -17,6 +17,8 @@ export interface ChildcareModePanelProps {
   error: string | null;
   onCheckIn: (at?: number) => void;
   onCheckOut: (at?: number) => void;
+  /** Clock for the missed check-out check; defaults to now. */
+  now?: number;
   /** Required: the parent persists the edited start time and resolves true only on success. */
   onEditCheckIn: (at: number) => Promise<boolean>;
   onImport: (session: ChildcareSessionSummary) => void;
@@ -292,10 +294,13 @@ export default function ChildcareModePanel({
   onEditSession,
   onDismissImport,
   onRemoveSession,
+  now = Date.now(),
 }: ChildcareModePanelProps) {
   const activeId = activeSession ? activeSession.id : null;
   const activeCheckedInAt = activeSession ? activeSession.checkedInAt : null;
   const [editingCheckIn, setEditingCheckIn] = useState(false);
+  const [missedCheckOutTime, setMissedCheckOutTime] = useState("");
+  const [missedCheckOutError, setMissedCheckOutError] = useState<string | null>(null);
   const [editCheckInTime, setEditCheckInTime] = useState("");
   const [editCheckInError, setEditCheckInError] = useState<string | null>(null);
   const [savingCheckIn, setSavingCheckIn] = useState(false);
@@ -321,6 +326,8 @@ export default function ChildcareModePanel({
     setEditCheckInTime("");
     setEditCheckInError(null);
     setSavingCheckIn(false);
+    setMissedCheckOutTime("");
+    setMissedCheckOutError(null);
   }, [activeId, activeCheckedInAt]);
 
   const pendingIds = useMemo(() => {
@@ -387,6 +394,26 @@ export default function ChildcareModePanel({
     } else {
       onCheckIn();
     }
+  }
+
+  // A stay checked in on an earlier Singapore day can't be checked out "now":
+  // check-out has to fall on the check-in day, so ask when they left that day.
+  const missedCheckOut = activeSession != null && !isSameSgDay(activeSession.checkedInAt, now);
+
+  function handleMissedCheckOut() {
+    if (busy || !activeSession) return;
+    if (!/^\d{2}:\d{2}$/.test(missedCheckOutTime)) {
+      setMissedCheckOutError("Enter the time " + babyName + " left.");
+      return;
+    }
+    const checkInDate = toSgDateTimeLocal(activeSession.checkedInAt).slice(0, 10);
+    const at = parseSgDateTimeLocal(checkInDate + "T" + missedCheckOutTime);
+    if (at == null || at <= activeSession.checkedInAt) {
+      setMissedCheckOutError("Pick a time after check-in (" + formatSgTime(activeSession.checkedInAt) + ").");
+      return;
+    }
+    setMissedCheckOutError(null);
+    onCheckOut(at);
   }
 
   /** Opens the inline editor prefilled with the active stay's start time. */
@@ -572,15 +599,48 @@ export default function ChildcareModePanel({
               Adding an activity will ask for confirmation.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleAction}
-            disabled={busy || editingCheckIn}
-            className={primaryButtonClass}
-          >
-            <LogOut aria-hidden="true" className="h-4 w-4 shrink-0" />
-            Check out
-          </button>
+          {missedCheckOut ? (
+            <div className="w-full min-w-0 basis-full rounded-lg border border-terracotta/40 bg-surface p-2.5">
+              <p className="text-xs leading-relaxed text-warm-brown">
+                Check-out wasn&apos;t recorded on {formatSgDate(activeSession.checkedInAt)}. What time did {babyName} leave that day?
+              </p>
+              <div className="mt-2 grid gap-2">
+                <label htmlFor="childcare-missed-checkout-time" className="block text-xs font-medium text-warm-brown">
+                  Left at (Singapore time)
+                  <input
+                    id="childcare-missed-checkout-time"
+                    type="time"
+                    value={missedCheckOutTime}
+                    onChange={(event) => { setMissedCheckOutTime(event.target.value); setMissedCheckOutError(null); }}
+                    disabled={busy}
+                    className={dateTimeInputClass}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleMissedCheckOut}
+                  disabled={busy || missedCheckOutTime === ""}
+                  className={primaryButtonClass + " w-full"}
+                >
+                  <LogOut aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  Check out at this time
+                </button>
+              </div>
+              {missedCheckOutError && (
+                <p role="alert" className="mt-1.5 text-xs text-danger">{missedCheckOutError}</p>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleAction}
+              disabled={busy || editingCheckIn}
+              className={primaryButtonClass}
+            >
+              <LogOut aria-hidden="true" className="h-4 w-4 shrink-0" />
+              Check out
+            </button>
+          )}
           {editingCheckIn && (
             <div className="w-full min-w-0 basis-full rounded-lg border border-border bg-surface p-2.5">
               <label

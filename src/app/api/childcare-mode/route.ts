@@ -458,7 +458,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Childcare state changed on another device. Refresh and try again.", code: "CHILDCARE_STATE_CHANGED" }, { status: 409 });
   }
   if (sgtDateKey(at) !== sgtDateKey(Number(active.rows[0].checked_in_at))) {
-    return NextResponse.json({ error: "Set the check-out time to a time on the check-in date.", code: "CHILDCARE_DATE_MISMATCH" }, { status: 400 });
+    return NextResponse.json({ error: "Check-out has to be on the same day as check-in. Enter the time they left on the check-in day.", code: "CHILDCARE_DATE_MISMATCH" }, { status: 400 });
   }
   if (at <= Number(active.rows[0].checked_in_at)) {
     return NextResponse.json({ error: "Check-out time must be after check-in time" }, { status: 400 });

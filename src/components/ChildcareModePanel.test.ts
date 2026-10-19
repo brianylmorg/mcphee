@@ -98,7 +98,8 @@ test("idle state says 'Not in childcare' and offers a check in that records now"
 });
 
 test("active stay shows the SGT start stamp, latest editor wording and check out", () => {
-  const html = render({ activeSession: session({ id: "session-active" }) });
+  // Same Singapore day as check-in (16:00).
+  const html = render({ activeSession: session({ id: "session-active" }), now: CHECKED_IN_AT + 8 * 60 * 60 * 1000 });
 
   assert.ok(html.includes("Aria is in childcare"));
   assert.ok(html.includes("Checked in 16 Oct 2026 at 08:00 SGT"));
@@ -317,4 +318,15 @@ test("attendance editor keeps its failure message and locked state while saving"
   const buttonTags = html.match(/<button[^>]*>/g) ?? [];
   assert.equal(buttonTags.length, 2);
   assert.equal(buttonTags.filter((tag) => tag.includes('disabled=""')).length, 2);
+});
+
+test("a stay checked in on an earlier day asks what time they left that day", () => {
+  // Next morning in Singapore: the normal check-out ("now") would land on the wrong day.
+  const html = render({ activeSession: session({ id: "session-active", checkedOutAt: null }), now: CHECKED_IN_AT + 26 * 60 * 60 * 1000 });
+  assert.ok(html.includes("Check-out wasn&#x27;t recorded on 16 Oct 2026. What time did Aria leave that day?"));
+  assert.match(html, /id="childcare-missed-checkout-time"[^>]*type="time"/);
+  assert.match(html, /Check out at this time</);
+  // No pre-filled time, so the button waits for one.
+  assert.match(html, /disabled=""[^>]*>[\s\S]*?Check out at this time/);
+  assert.doesNotMatch(html, />Check out</);
 });
