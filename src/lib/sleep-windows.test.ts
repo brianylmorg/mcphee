@@ -7,6 +7,7 @@ import {
   calculateNapLengthZones,
   calculateNapZones,
   calculateSleepWindowHistory,
+  zoneConfidence,
   currentWakeWindow,
   medianNapMs,
   napHint,
@@ -261,4 +262,20 @@ test("zones carry his typical times, and naps get their own zones", () => {
   assert.equal(naps[1]?.endMinute, 10 * 60 + 5);
   assert.equal(naps[2]?.medianMs, 90 * minute);
   assert.equal(naps[3], undefined);
+});
+
+test("confidence rises with more, more recent and steadier stretches", () => {
+  const zone = (count: number, lookbackDays: number, fromMin: number, toMin: number) => ({
+    count, lookbackDays, fromMs: fromMin * minute, toMs: toMin * minute, medianMs: 120 * minute, startMinute: 0, endMinute: 0,
+  });
+  // 22 recent, steady stretches: high.
+  assert.equal(zoneConfidence(zone(22, 14, 110, 130)), 80);
+  // Only 3: low.
+  assert.equal(zoneConfidence(zone(3, 14, 110, 130)), 45);
+  // Same 22 but reaching back 90 days: lower.
+  assert.equal(zoneConfidence(zone(22, 90, 110, 130)), 50);
+  // Same 22 but all over the place: lower.
+  assert.equal(zoneConfidence(zone(22, 14, 60, 180)), 55);
+  // Never above 100 or below 0.
+  assert.ok(zoneConfidence(zone(1000, 14, 120, 120)) <= 100);
 });

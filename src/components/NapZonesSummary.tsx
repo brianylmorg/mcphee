@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { NapZone, NapZones } from "@/lib/sleep-windows";
-import { LAST_NAP_INDEX } from "@/lib/sleep-windows";
+import { LAST_NAP_INDEX, zoneConfidence } from "@/lib/sleep-windows";
 import { formatElapsedDuration } from "@/lib/elapsed-time";
 
 type View = "usual" | "sick";
@@ -27,9 +27,9 @@ function clock(minute: number): string {
 }
 
 function ZoneRow({ label, zone }: { label: string; zone: NapZone }) {
-  return <div className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0">
-    <dt className="text-warm-brown">{label}</dt>
-    <dd className="text-right tabular-nums">{formatElapsedDuration(zone.fromMs)} – {formatElapsedDuration(zone.toMs)}<div className="text-xs text-muted">~{clock(zone.startMinute)}–{clock(zone.endMinute)} · typical {formatElapsedDuration(zone.medianMs)} · n = {zone.count}{zone.lookbackDays !== 14 ? ` · ${zone.lookbackDays} days` : ""}</div></dd>
+  return <div className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0">
+    <dt className="whitespace-nowrap text-warm-brown">{label}</dt>
+    <dd className="text-right tabular-nums">{formatElapsedDuration(zone.fromMs)} – {formatElapsedDuration(zone.toMs)}<div className="text-xs text-muted"><span className="whitespace-nowrap">~{clock(zone.startMinute)}–{clock(zone.endMinute)}</span> · <span className="whitespace-nowrap">typical {formatElapsedDuration(zone.medianMs)}</span> · <span className="whitespace-nowrap">{zoneConfidence(zone)}% confidence</span></div></dd>
   </div>;
 }
 
@@ -60,9 +60,9 @@ export function NapZonesSummary({ normal, sick, normalNaps, sickNaps, initialVie
     </div> : null}
     <h4 className="mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Awake</h4>
     <Rows rows={awakeRows} />
-    {selected === "usual" && ageGuide ? <dl><div className="grid grid-cols-[1fr_auto] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0"><dt className="text-warm-brown">Age guide{ageLabel ? ` (${ageLabel})` : ""}</dt><dd className="text-right tabular-nums">{formatElapsedDuration(ageGuide.fromMs)} – {formatElapsedDuration(ageGuide.toMs)}<div className="text-xs text-muted">from common wake-window charts</div></dd></div></dl> : null}
+    {selected === "usual" && ageGuide ? <dl><div className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0"><dt className="whitespace-nowrap text-warm-brown">Age guide{ageLabel ? ` (${ageLabel})` : ""}</dt><dd className="text-right tabular-nums">{formatElapsedDuration(ageGuide.fromMs)} – {formatElapsedDuration(ageGuide.toMs)}<div className="text-xs text-muted">from common wake-window charts</div></dd></div></dl> : null}
     <h4 className="mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Naps</h4>
     <Rows rows={napRows} />
-    <p className="mt-3 text-xs text-muted">Ranges are the middle half of his recent stretches at that point in the day; times are when they usually start and end, rounded to 15 minutes; n is how many stretches. From the last 14 days, or further back when there are too few. Sick days are counted separately. The age guide is a rough comparison only.</p>
+    <p className="mt-3 text-xs text-muted">Ranges are the middle half of his recent stretches at that point in the day; times are when they usually start and end, rounded to 15 minutes. Confidence rises with how many stretches there are, how recent they are and how steady he&apos;s been. From the last 14 days, or further back when there are too few; sick days are counted separately. The age guide is a rough comparison only.</p>
   </div>;
 }

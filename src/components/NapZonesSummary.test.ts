@@ -15,13 +15,14 @@ function render(overrides: Partial<Parameters<typeof NapZonesSummary>[0]> = {}) 
 test("renders range and rounded clock details", () => {
   const html = render({ normal: { ...empty, nap: { 1: zone() } } });
   assert.match(html, /1h 33m – 1h 52m/);
-  assert.match(html, /~15:00–17:00 · typical 1h 40m · n = 22/);
+  assert.match(html, /~15:00–17:00<\/span> · <span[^>]*>typical 1h 40m<\/span> · <span[^>]*>80% confidence/);
+  assert.doesNotMatch(html, /n = |· 14 days/);
 });
 
-test("shows nonstandard lookback only", () => {
+test("confidence drops when the zone had to reach further back", () => {
   const html = render({ normal: { ...empty, nap: { 1: zone({ lookbackDays: 28 }) } } });
-  assert.match(html, /· 28 days/);
-  assert.doesNotMatch(render({ normal: { ...empty, nap: { 1: zone() } } }), /· 14 days/);
+  assert.match(html, />70% confidence</);
+  assert.doesNotMatch(html, /28 days/);
 });
 
 test("omits toggle without sick data and defaults selected radio to usual", () => {

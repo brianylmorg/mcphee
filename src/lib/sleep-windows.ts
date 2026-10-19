@@ -292,6 +292,20 @@ export function calculateNapLengthZones(
   return zones;
 }
 
+/**
+ * How far to trust a zone, as a rounded percentage. It rises with how many
+ * stretches it's based on (3 is shaky, 20+ solid), how recent they are (the
+ * last 14 days count fully; 28, 60 or 90 days less) and how steady they are
+ * (a tight middle half relative to the typical length scores higher).
+ */
+export function zoneConfidence(zone: NapZone): number {
+  const amount = zone.count / (zone.count + 3);
+  const recency = zone.lookbackDays <= 14 ? 1 : zone.lookbackDays <= 28 ? 0.85 : zone.lookbackDays <= 60 ? 0.7 : 0.6;
+  const relativeSpread = zone.medianMs > 0 ? (zone.toMs - zone.fromMs) / zone.medianMs : 1;
+  const steadiness = Math.min(1, Math.max(0.6, 1.1 - relativeSpread));
+  return Math.round((amount * recency * steadiness * 100) / 5) * 5;
+}
+
 /** Median completed nap length per day (null on days without a completed nap). */
 export function medianNapMs(day: DailySleepWindows): number | null {
   return percentile(day.napDurationsMs, 0.5);
