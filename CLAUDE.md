@@ -18,6 +18,13 @@
 - Prediction uses median of last 8 entries (robust to outlier cycles)
 - All API routes that touch DB use `node` runtime (edge doesn't support libSQL)
 
+## Preview environment
+- **One preview database at a time.** Every preview deploy, whatever the branch, uses the single most recent copy of prod. Currently `mcphee-preview-childcare-20261016` (Turso, prod as of 2026-10-16, plus test data added on previews since).
+- Don't make a new copy per branch or feature. When a fresher copy is needed, copy prod into a new dated database, repoint the Preview `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` at it, then delete the old copy (ask the user first), so only one exists.
+- Previews must never point at the prod database (`mcphee`). Preview data is test data and never flows back to prod.
+- The copy's data stops at its copy date, so time-based hints (milk glow, recent nap zones) need a backdated test entry to show on a preview.
+- Release flow: the user checks the preview, then says "go live"; `main` is fast-forwarded and Vercel deploys prod. Prod database commands only with the user's explicit go-ahead.
+
 ## Features by Stage
 
 ### Stage 1 — Scaffold + Household Setup
