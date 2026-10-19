@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useId, type CSSProperties } from "react";
+import { useState, useEffect, useCallback, useRef, useId, useMemo, type CSSProperties } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
 import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
@@ -10,6 +10,8 @@ import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } fr
 import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk-calculation";
 import { activityNoteText } from "@/lib/activity-note";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
+import { SleepWindowsChart } from "@/components/SleepWindowsChart";
+import { calculateSleepWindowHistory } from "@/lib/sleep-windows";
 import { SleepStateControl } from "@/components/SleepStateControl";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
@@ -234,6 +236,11 @@ export default function DashboardPage() {
   const [refreshFeedback, setRefreshFeedback] = useState<DashboardRefreshFeedback | null>(null);
   const [selectedMilkDate, setSelectedMilkDate] = useState("");
   const [showMilkHistoryChart, setShowMilkHistoryChart] = useState(false);
+  const [showSleepCharts, setShowSleepCharts] = useState(false);
+  const sleepWindowDays = useMemo(
+    () => showSleepCharts ? calculateSleepWindowHistory(sleepActivities, Date.now()) : [],
+    [showSleepCharts, sleepActivities],
+  );
   const [showMedianInfo, setShowMedianInfo] = useState(false);
   const medianInfoId = useId();
   const [isMilkHistoryLoading, setIsMilkHistoryLoading] = useState(false);
@@ -594,6 +601,7 @@ export default function DashboardPage() {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setShowMilkHistoryChart(false);
+      setShowSleepCharts(false);
       setShowLeaveConfirm(false);
       setDeleteActivity(null);
     };
@@ -683,6 +691,7 @@ export default function DashboardPage() {
     || Boolean(medicationEntry)
     || showLeaveConfirm
     || showMilkHistoryChart
+    || showSleepCharts
     || isEditingSleepSince
     || isChangingSleepState
     || isDeletingActivity
@@ -1816,9 +1825,14 @@ export default function DashboardPage() {
             disabled={isChangingSleepState}
             onSelect={handleSleepTransition}
           />
-          <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={sleepState.since != null && sleepState.activity && !isEditingSleepSince ? (
-            <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
-          ) : undefined} />
+          <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={(
+            <>
+              <button type="button" onClick={() => setShowSleepCharts(true)} aria-label="View wake window and nap charts" title="Sleep charts" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><BarChart3 aria-hidden="true" className="h-3.5 w-3.5" /></button>
+              {sleepState.since != null && sleepState.activity && !isEditingSleepSince && (
+                <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
+              )}
+            </>
+          )} />
           {sleepState.since != null && sleepState.activity && isEditingSleepSince && (
               <div className="mt-3 flex flex-wrap items-end gap-2">
                 <label className="min-w-0 flex-1 text-xs text-muted">
@@ -2424,6 +2438,59 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setShowMilkHistoryChart(false)}
+                className="min-h-11 w-full rounded-lg border border-border bg-surface text-sm font-semibold text-warm-brown transition-colors hover:bg-surface-muted"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSleepCharts && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-warm-brown/55 px-4 pb-4 sm:items-center sm:pb-0"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sleep-charts-title"
+          onClick={(event) => { if (event.target === event.currentTarget) setShowSleepCharts(false); }}
+          onKeyDown={(event) => { if (event.key === "Escape") setShowSleepCharts(false); }}
+        >
+          <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-lg bg-surface shadow-xl">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 pb-3 pt-4">
+              <div>
+                <h2 id="sleep-charts-title" className="font-display text-xl text-warm-brown">Sleep charts</h2>
+                <p className="mt-1 text-sm text-muted">Latest day on the right · scroll left for older days</p>
+              </div>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setShowSleepCharts(false)}
+                aria-label="Close sleep charts"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-muted hover:text-warm-brown"
+              >
+                <X aria-hidden="true" className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
+              <section className="mt-4">
+                <h3 className="text-sm font-semibold text-warm-brown">Average wake window</h3>
+                <p className="mt-1 text-xs text-muted">Awake time between morning wake, naps and bedtime</p>
+                <SleepWindowsChart days={sleepWindowDays} metric="wake" />
+              </section>
+              <section className="mt-6 border-t border-border pt-5">
+                <h3 className="text-sm font-semibold text-warm-brown">Average nap length</h3>
+                <p className="mt-1 text-xs text-muted">Completed daytime naps; overnight sleep is not included</p>
+                <SleepWindowsChart days={sleepWindowDays} metric="nap" />
+              </section>
+              <p className="mt-5 text-xs leading-relaxed text-muted">
+                Each day runs from the first wake at or after 5am to bedtime, the first sleep at or after 6pm (Singapore time). Overnight wakings, the ongoing nap and the current awake stretch are left out. Sleeps under 5 minutes apart count as one.
+              </p>
+            </div>
+            <div className="shrink-0 border-t border-border px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setShowSleepCharts(false)}
                 className="min-h-11 w-full rounded-lg border border-border bg-surface text-sm font-semibold text-warm-brown transition-colors hover:bg-surface-muted"
               >
                 Close
