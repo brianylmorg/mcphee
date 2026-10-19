@@ -142,7 +142,7 @@ export function StorybookNight({ className = "" }: { className?: string }) {
           clear of the timer's frosted backing (about 11rem wide whatever the
           toggle width), and on narrow phones he shrinks rather than running into
           the "Wake up" strip. */}
-      <span className="sb-pos" style={{ left: "max(50.5%, 11rem)", bottom: "4%", width: "min(27%, calc(78% - max(50.5%, 11rem)))" }}>
+      <span className="sb-pos" style={{ left: "max(52%, 11.5rem)", bottom: "6%", width: "min(19%, calc(78% - max(52%, 11.5rem)))" }}>
         <Layer src="kid-sleep.webp" className="sb-kid-breathe" />
         <span className="sb-zz sb-zz-1">z</span>
         <span className="sb-zz sb-zz-2">z</span>
