@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId, useMemo, type CSSProperties } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, ChartScatter, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, ImageUp, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -1855,7 +1855,7 @@ export default function DashboardPage() {
           />
           <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={(
             <>
-              <button type="button" onClick={() => setShowSleepCharts(true)} aria-label="View wake window and nap charts" title="Sleep charts" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><BarChart3 aria-hidden="true" className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => setShowSleepCharts(true)} aria-label="View wake window and nap charts" title="Sleep charts" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><ChartScatter aria-hidden="true" className="h-4 w-4" /></button>
               {sleepState.since != null && sleepState.activity && !isEditingSleepSince && (
                 <button type="button" onClick={startEditingSleepSince} aria-label={`Edit ${sleepState.state === "sleeping" ? "sleep start" : "awake start"} (${formatTime(sleepState.since)})`} title="Edit current state start time" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
               )}

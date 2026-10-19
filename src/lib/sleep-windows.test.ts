@@ -192,9 +192,10 @@ test("nap hint prefers his own zone, then sick days while sick, then bedtime, th
   const at = (minutesAwake: number, index: number) => ({ index, awakeSince: now - minutesAwake * minute });
 
   assert.deepEqual(napHint({ current: at(90, 1), now, normal }), {
-    status: "before", fromMs: 105 * minute, toMs: 115 * minute, medianMs: 110 * minute, source: "own", leadsTo: "nap", index: 1,
+    status: "before", untilMs: 15 * minute, fromMs: 105 * minute, toMs: 115 * minute, medianMs: 110 * minute, source: "own", leadsTo: "nap", index: 1,
   });
   assert.equal(napHint({ current: at(110, 1), now, normal })?.status, "in");
+  assert.equal(napHint({ current: at(110, 1), now, normal })?.untilMs, 0);
   assert.equal(napHint({ current: at(130, 1), now, normal })?.status, "past");
   assert.equal(napHint({ current: at(65, 1), now, normal, sick, isSick: true })?.source, "sick");
   // Sick but no sick-day zone for this window: fall back to his normal zone.

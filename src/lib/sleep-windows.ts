@@ -277,6 +277,8 @@ export function ageWakeWindowGuide(birthDate: number | null | undefined, now: nu
 export type NapHint = {
   /** Where the current stretch sits against the zone. */
   status: "before" | "in" | "past";
+  /** Time left until the zone opens (0 once in or past it). */
+  untilMs: number;
   fromMs: number;
   toMs: number;
   medianMs: number | null;
@@ -310,8 +312,9 @@ export function napHint(input: {
   const elapsed = now - current.awakeSince;
   const index = Math.min(current.index, LAST_NAP_INDEX);
   const statusFor = (fromMs: number, toMs: number): NapHint["status"] => elapsed < fromMs ? "before" : elapsed <= toMs ? "in" : "past";
+  const untilFor = (fromMs: number) => Math.max(0, fromMs - elapsed);
   const fromZone = (zone: NapZone, source: NapHint["source"], leadsTo: NapHint["leadsTo"]): NapHint => ({
-    status: statusFor(zone.fromMs, zone.toMs), fromMs: zone.fromMs, toMs: zone.toMs, medianMs: zone.medianMs, source, leadsTo, index: current.index,
+    status: statusFor(zone.fromMs, zone.toMs), untilMs: untilFor(zone.fromMs), fromMs: zone.fromMs, toMs: zone.toMs, medianMs: zone.medianMs, source, leadsTo, index: current.index,
   });
 
   const startedMinute = sgtMinuteOfDay(current.awakeSince);
@@ -326,6 +329,6 @@ export function napHint(input: {
   for (let k = index; k >= 1; k -= 1) {
     if (normal.nap[k]) return fromZone(normal.nap[k] as NapZone, "own", "nap");
   }
-  if (ageGuide) return { status: statusFor(ageGuide.fromMs, ageGuide.toMs), fromMs: ageGuide.fromMs, toMs: ageGuide.toMs, medianMs: null, source: "age", leadsTo: "nap", index: current.index };
+  if (ageGuide) return { status: statusFor(ageGuide.fromMs, ageGuide.toMs), untilMs: untilFor(ageGuide.fromMs), fromMs: ageGuide.fromMs, toMs: ageGuide.toMs, medianMs: null, source: "age", leadsTo: "nap", index: current.index };
   return null;
 }

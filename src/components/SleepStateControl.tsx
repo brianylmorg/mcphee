@@ -42,9 +42,10 @@ function formatElapsed(ms: number): string {
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function clockDuration(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+/** Countdown text: "25m" or "1h 54m", rounded up so it never reads 0m early. */
+function countdown(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 function hintCopy(hint: NapHint): { text: string; detail: string } {
@@ -53,7 +54,7 @@ function hintCopy(hint: NapHint): { text: string; detail: string } {
   const to = formatElapsedDuration(hint.toMs) ?? "";
   const median = hint.medianMs == null ? "" : formatElapsedDuration(hint.medianMs) ?? "";
   const nap = hint.leadsTo === "nap";
-  let text = hint.status === "before" ? `${nap ? "Nap" : "Bed"} ${clockDuration(hint.fromMs)}–${clockDuration(hint.toMs)}`
+  let text = hint.status === "before" ? `${nap ? "Nap" : "Bed"} in ${countdown(hint.untilMs)}`
     : hint.status === "in" ? (nap ? "Nap time" : "Bedtime")
       : (nap ? "Past nap time" : "Past bedtime");
   if (hint.source === "sick" && hint.status === "before") text = `Sick · ${text}`;
@@ -133,7 +134,7 @@ export function SleepStateControl({ state, since = null, elapsedLabel, disabled,
                     <span>{label}</span>
                     {scene === "awake" && hint ? (() => {
                       const { text, detail } = hintCopy(hint);
-                      return <span data-nap-status={hint.status} title={detail} className="sleep-nap-hint ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums">{text}<span className="sr-only">{". " + detail}</span></span>;
+                      return <span data-nap-status={hint.status} title={detail} className="sleep-nap-hint ml-1 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold leading-none tabular-nums">{text}<span className="sr-only">{". " + detail}</span></span>;
                     })() : null}
                   </p>
                   <p className={"sleep-elapsed font-display font-semibold tabular-nums " + (untimed ? "mt-0.5 text-sm" : compact ? "text-[1.75rem] leading-8" : "text-[2.4rem] leading-[2.75rem]")}>

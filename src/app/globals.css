@@ -286,7 +286,7 @@ html[data-care-mode="sick"][data-theme="dark"] {
   background: radial-gradient(closest-side, rgb(255 250 238 / 0.55), rgb(255 250 238 / 0.18) 70%, transparent);
   backdrop-filter: blur(1.5px);
 }
-.sleep-nap-hint[data-nap-status="before"] { background: rgb(255 250 238 / 0.75); color: var(--color-warm-brown); }
+.sleep-nap-hint[data-nap-status="before"] { background: rgb(var(--sb-ink) / 0.82); color: rgb(255 250 238); }
 .sleep-nap-hint[data-nap-status="in"] { background: rgb(var(--sb-sun)); color: rgb(var(--sb-ink)); }
 .sleep-nap-hint[data-nap-status="past"] { background: var(--color-terracotta); color: #fff; }
 .milk-hint[data-milk-status="due"] { background: rgb(var(--sb-sun)); color: rgb(var(--sb-ink)); }

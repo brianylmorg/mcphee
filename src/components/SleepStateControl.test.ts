@@ -73,7 +73,8 @@ test("an untimed state shows the hint in small text", () => {
 test("awake shows an own nap zone hint and sleeping hides it", () => {
   const awake = renderToStaticMarkup(createElement(SleepStateControl, { state: "awake", napHintInput, disabled: false, onSelect: () => undefined }));
   assert.match(awake, /data-nap-status="before"/);
-  assert.match(awake, /Nap 1:01–1:02/);
+  // Just woke; his zone opens at about 1h 1.5m: a countdown, not a range.
+  assert.match(awake, /Nap in 1h [12]m/);
   const sleeping = renderToStaticMarkup(createElement(SleepStateControl, { state: "sleeping", napHintInput, disabled: false, onSelect: () => undefined }));
   assert.doesNotMatch(sleeping, /sleep-nap-hint/);
 });
