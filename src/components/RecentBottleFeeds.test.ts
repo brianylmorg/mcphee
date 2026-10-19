@@ -26,8 +26,13 @@ test("latest feeds keep three records behind a closed native disclosure", () => 
     assert.ok(html.includes(formatTime(feed.startedAt)));
     assert.ok(html.includes(`${feed.amountMl} ml</span>`));
   }
-  // Timestamp and elapsed read stronger than the volume value.
-  assert.match(html, /latest-entries-elapsed[^"]*font-semibold/);
+  // Expanded rows: timestamp and elapsed read stronger than the volume value.
+  assert.match(html, /data-feed-row="feed-0"[\s\S]*?latest-entries-elapsed[^"]*font-semibold/);
+  // Collapsed summary: all three values in the same regular weight.
+  const summary = html.match(/<summary[\s\S]*?<\/summary>/)?.[0] ?? "";
+  assert.match(summary, /latest-entries-when font-normal/);
+  assert.match(summary, /latest-entries-elapsed[^"]*font-normal/);
+  assert.doesNotMatch(summary, /font-semibold/);
   assert.doesNotMatch(html, /latest-entries-amount[^"]*font-semibold/);
   assert.doesNotMatch(html, /pr-12|sm:pr-0/);
 });

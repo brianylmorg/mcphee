@@ -62,8 +62,9 @@ export default function RecentBottleFeeds({ feeds, asleep = false }: { feeds: Re
           summaryWrapperClassName="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5"
           summary={
             <>
-              <span className="latest-entries-when font-semibold tabular-nums text-warm-brown">{feedWhen(newest)}</span>
-              <span className="latest-entries-elapsed whitespace-nowrap font-semibold tabular-nums text-muted"><span aria-hidden="true">· </span>{formatElapsedSince(newest.startedAt, now)}</span>
+              {/* Collapsed: all three in the regular weight, which reads better under the milk glow; the expanded rows keep the bold time and "ago". */}
+              <span className="latest-entries-when font-normal tabular-nums text-warm-brown">{feedWhen(newest)}</span>
+              <span className="latest-entries-elapsed whitespace-nowrap font-normal tabular-nums text-muted"><span aria-hidden="true">· </span>{formatElapsedSince(newest.startedAt, now)}</span>
               {/* The line itself glows when milk is due (see .latest-feeds[data-milk-status]); the words are for screen readers. */}
               {hint ? <span className="sr-only">{". " + hint.text}</span> : null}
               <span aria-label={`${newest.amountMl} ml consumed`} className="latest-entries-amount ml-auto shrink-0 whitespace-nowrap tabular-nums text-warm-brown">{newest.amountMl} ml</span>
