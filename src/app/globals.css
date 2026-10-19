@@ -930,6 +930,17 @@ body {
   animation: sb-kid-breathe 4.2s ease-in-out infinite;
   filter: brightness(0.9) saturate(0.92);
 }
+/* A soft dark pool on the hill under him, so he lies on the ground. */
+.sb-kid-ground {
+  position: absolute;
+  left: -6%;
+  right: -4%;
+  bottom: -10%;
+  height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(20 24 44 / 0.55), rgb(20 24 44 / 0.25) 60%, transparent);
+}
+.sb-kid-breathe { position: relative; }
 .sb-kid-breathe ~ .sb-zz-1 { left: 26%; top: -2%; }
 .sb-kid-breathe ~ .sb-zz-2 { left: 18%; top: -16%; }
 /* Day runner: the runner moves along the track (left 0 -> 100%, pulled back by

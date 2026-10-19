@@ -96,7 +96,7 @@ const NIGHT_STARS = [
   { src: "star-1.webp", left: "22%", top: "5%", width: "3.6%", delay: "0s" },
   { src: "star-3.webp", left: "30%", top: "6%", width: "3.2%", delay: "-1.2s" },
   { src: "star-2.webp", left: "38%", top: "40%", width: "3%", delay: "-2.1s" },
-  { src: "star-7.webp", left: "64%", top: "8%", width: "3.6%", delay: "-0.6s" },
+  { src: "star-7.webp", left: "79%", top: "3%", width: "3.6%", delay: "-0.6s" },
   { src: "star-5.webp", left: "88%", top: "12%", width: "3%", delay: "-1.7s" },
   { src: "star-4.webp", left: "42%", top: "4%", width: "2.6%", delay: "-2.6s" },
 ];
@@ -120,12 +120,14 @@ export function StorybookNight({ className = "" }: { className?: string }) {
           <Layer src={star.src} className="sb-star-twinkle" style={{ animationDelay: star.delay }} />
         </span>
       ))}
-      <span className="sb-pos sb-cloud-drift sb-cloud-sleepy" style={{ left: "34%", top: "66%", width: "14%" }}><Layer src="sleepy-cloud.webp" /></span>
-      {/* He sleeps on the painted hill, below the moon. His left edge stays
-          clear of the timer's frosted backing (about 11rem wide whatever the
-          toggle width), and on narrow phones he shrinks rather than running into
-          the "Wake up" strip. */}
-      <span className="sb-pos" style={{ left: "max(52%, 11.5rem)", bottom: "6%", width: "min(19%, calc(78% - max(52%, 11.5rem)))" }}>
+      {/* The sleepy cloud drifts beside the moon, at the same height. */}
+      <span className="sb-pos sb-cloud-drift sb-cloud-sleepy" style={{ left: "62%", top: "10%", width: "12%" }}><Layer src="sleepy-cloud.webp" /></span>
+      {/* He lies on the painted hill, below the moon, on a soft contact shadow
+          so he rests on the ground. His left edge stays clear of the timer's
+          frosted backing (about 11rem wide whatever the toggle width), and on
+          narrow phones he shrinks rather than running into the "Wake up" strip. */}
+      <span className="sb-pos" style={{ left: "max(52%, 11.5rem)", bottom: "2%", width: "min(16%, calc(76% - max(52%, 11.5rem)))" }}>
+        <span className="sb-kid-ground" />
         <Layer src="kid-sleep.webp" className="sb-kid-breathe" />
         <span className="sb-zz sb-zz-1">z</span>
         <span className="sb-zz sb-zz-2">z</span>
