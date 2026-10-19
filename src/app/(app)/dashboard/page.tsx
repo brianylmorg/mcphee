@@ -12,7 +12,7 @@ import { activityNoteText } from "@/lib/activity-note";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
 import { SleepWindowsChart } from "@/components/SleepWindowsChart";
 import { NapZonesSummary } from "@/components/NapZonesSummary";
-import { ageWakeWindowGuide, calculateNapLengthZones, calculateNapZones, calculateSleepWindowHistory, currentWakeWindow } from "@/lib/sleep-windows";
+import { ageMaxDaytimeSleepMs, ageWakeWindowGuide, calculateNapLengthZones, calculateNapZones, calculateSleepWindowHistory, currentWakeWindow } from "@/lib/sleep-windows";
 import { SleepStateControl } from "@/components/SleepStateControl";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
@@ -1855,7 +1855,7 @@ export default function DashboardPage() {
               ageGuide,
             } : null}
           />
-          <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} trailingAction={(
+          <DailyNapSummary sessions={sleepActivities} confirmedCoverage={confirmedSleepCoverages} maxDaytimeMs={isSickNow ? null : ageMaxDaytimeSleepMs(baby?.birth_date, Date.now())} trailingAction={(
             <>
               <button type="button" onClick={() => setShowSleepCharts(true)} aria-label="View wake window and nap charts" title="Sleep charts" className="hit-44 flex h-8 w-8 items-center justify-center rounded-lg text-accent-strong hover:bg-surface/60"><ChartScatter aria-hidden="true" className="h-4 w-4" /></button>
               {sleepState.since != null && sleepState.activity && !isEditingSleepSince && (

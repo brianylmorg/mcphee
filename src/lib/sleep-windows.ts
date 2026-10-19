@@ -348,6 +348,36 @@ const AGE_GUIDE: { untilMonths: number; fromMs: number; toMs: number }[] = [
   { untilMonths: 36, fromMs: 300 * MINUTE_MS, toMs: 360 * MINUTE_MS },
 ];
 
+/**
+ * Commonly quoted upper end of total daytime sleep by age (parenting and
+ * sleep-consultant charts; they differ by up to an hour). No cap under 3
+ * months, when newborns nap a lot.
+ */
+const DAYTIME_SLEEP_MAX: { fromMonths: number; untilMonths: number; maxMs: number }[] = [
+  { fromMonths: 3, untilMonths: 6, maxMs: 4 * HOUR_MS },
+  { fromMonths: 6, untilMonths: 9, maxMs: 3.5 * HOUR_MS },
+  { fromMonths: 9, untilMonths: 18, maxMs: 3 * HOUR_MS },
+  { fromMonths: 18, untilMonths: 36, maxMs: 2.5 * HOUR_MS },
+];
+
+/** The usual maximum total daytime nap time for a baby born at `birthDate`, or null (no birth date, under 3 months or over 3 years). */
+export function ageMaxDaytimeSleepMs(birthDate: number | null | undefined, now: number): number | null {
+  if (birthDate == null || !Number.isFinite(birthDate) || birthDate > now) return null;
+  const months = (now - birthDate) / (DAY_MS * 30.4375);
+  return DAYTIME_SLEEP_MAX.find((band) => months >= band.fromMonths && months < band.untilMonths)?.maxMs ?? null;
+}
+
+/** Within this of the daytime maximum, the nap total starts to glow. */
+export const NAP_TOTAL_NEAR_MS = 30 * MINUTE_MS;
+
+/** Where today's nap total sits against the daytime maximum: nearing it, past it, or neither. */
+export function napTotalStatus(totalMs: number, maxMs: number | null | undefined): "near" | "past" | null {
+  if (maxMs == null || !Number.isFinite(totalMs)) return null;
+  if (totalMs >= maxMs) return "past";
+  if (totalMs >= maxMs - NAP_TOTAL_NEAR_MS) return "near";
+  return null;
+}
+
 /** The age-guide wake window for a baby born at `birthDate` (epoch ms), or null. */
 export function ageWakeWindowGuide(birthDate: number | null | undefined, now: number): { fromMs: number; toMs: number } | null {
   if (birthDate == null || !Number.isFinite(birthDate) || birthDate > now) return null;

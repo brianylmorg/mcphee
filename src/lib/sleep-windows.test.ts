@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ageMaxDaytimeSleepMs,
   ageWakeWindowGuide,
+  napTotalStatus,
   averageSleepWindows,
   calculateNapLengthZones,
   calculateNapZones,
@@ -278,4 +280,21 @@ test("confidence rises with more, more recent and steadier stretches", () => {
   assert.equal(zoneConfidence(zone(22, 14, 60, 180)), 55);
   // Never above 100 or below 0.
   assert.ok(zoneConfidence(zone(1000, 14, 120, 120)) <= 100);
+});
+
+test("daytime nap cap by age, and when today's total nears or passes it", () => {
+  const now = sgt("2026-10-19", "12:00:00");
+  const monthsOld = (m: number) => now - m * 30.4375 * 24 * 60 * minute;
+  assert.equal(ageMaxDaytimeSleepMs(monthsOld(2), now), null);
+  assert.equal(ageMaxDaytimeSleepMs(monthsOld(5), now), 4 * 60 * minute);
+  assert.equal(ageMaxDaytimeSleepMs(monthsOld(7), now), 3.5 * 60 * minute);
+  assert.equal(ageMaxDaytimeSleepMs(monthsOld(12), now), 3 * 60 * minute);
+  assert.equal(ageMaxDaytimeSleepMs(monthsOld(24), now), 2.5 * 60 * minute);
+  assert.equal(ageMaxDaytimeSleepMs(null, now), null);
+
+  const max = 4 * 60 * minute;
+  assert.equal(napTotalStatus(3 * 60 * minute, max), null);
+  assert.equal(napTotalStatus(3.5 * 60 * minute, max), "near");
+  assert.equal(napTotalStatus(4 * 60 * minute, max), "past");
+  assert.equal(napTotalStatus(5 * 60 * minute, null), null);
 });

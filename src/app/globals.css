@@ -302,6 +302,9 @@ html[data-care-mode="sick"][data-theme="dark"] {
 .latest-feeds[data-milk-status="past"]:not([data-milk-asleep="true"]) .latest-entries-newest :is(.latest-entries-when, .latest-entries-elapsed, .latest-entries-amount) {
   animation: milk-glow-pulse 1.1s ease-in-out infinite;
 }
+/* Today's nap total: the same small-text glow as it nears his usual daytime maximum, the pulse once past. */
+.daily-nap-total[data-nap-total-status="near"] { animation: milk-glow-breathe 3.2s ease-in-out infinite; }
+.daily-nap-total[data-nap-total-status="past"] { animation: milk-glow-pulse 1.1s ease-in-out infinite; }
 @keyframes milk-glow-breathe {
   0%, 100% { text-shadow: 0 0 1px rgb(255 250 238 / 0.9), 0 0 6px rgb(var(--sb-sun) / 0.5), 0 0 14px rgb(var(--sb-sun) / 0.3); }
   50% { text-shadow: 0 0 1px rgb(255 250 238 / 0.95), 0 0 4px rgb(var(--sb-sun)), 0 0 9px rgb(var(--sb-sun)), 0 0 18px rgb(var(--sb-sun) / 0.95), 0 0 30px rgb(var(--sb-sun-rim) / 0.8), 0 0 52px rgb(var(--sb-sun-rim) / 0.55); }
@@ -321,11 +324,13 @@ html[data-care-mode="sick"][data-theme="dark"] {
 /* Reduced motion: a still glow. */
 @media (prefers-reduced-motion: reduce) {
   .sleep-elapsed[data-nap-status],
+  .daily-nap-total[data-nap-total-status],
   .latest-feeds[data-milk-status] .latest-entries-newest :is(.latest-entries-when, .latest-entries-elapsed, .latest-entries-amount) {
     animation: none;
     text-shadow: 0 0 1px rgb(255 250 238 / 0.95), 0 0 6px rgb(var(--sb-sun) / 0.9), 0 0 14px rgb(var(--sb-sun) / 0.8), 0 0 28px rgb(var(--sb-sun-rim) / 0.55);
   }
   .sleep-elapsed[data-nap-status="past"],
+  .daily-nap-total[data-nap-total-status="past"],
   .latest-feeds[data-milk-status="past"]:not([data-milk-asleep="true"]) .latest-entries-newest :is(.latest-entries-when, .latest-entries-elapsed, .latest-entries-amount) {
     text-shadow: 0 0 1px rgb(255 250 238 / 0.95), 0 0 6px rgb(var(--sb-roof) / 0.9), 0 0 14px rgb(var(--sb-roof) / 0.75), 0 0 28px rgb(var(--sb-roof-deep) / 0.5);
   }

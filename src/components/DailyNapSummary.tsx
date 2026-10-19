@@ -8,6 +8,7 @@ import {
   type DailyNapSession,
 } from "@/lib/daily-naps";
 import { formatElapsedDuration } from "@/lib/elapsed-time";
+import { napTotalStatus } from "@/lib/sleep-windows";
 
 const TICK_MS = 30 * 1000;
 
@@ -15,10 +16,13 @@ export function DailyNapSummary({
   sessions,
   confirmedCoverage = [],
   trailingAction,
+  maxDaytimeMs = null,
 }: {
   sessions: readonly DailyNapSession[];
   confirmedCoverage?: readonly ConfirmedSleepCoverage[];
   trailingAction?: ReactNode;
+  /** Usual maximum daytime nap total for his age; the total glows as it nears this. Null for no glow (e.g. while sick). */
+  maxDaytimeMs?: number | null;
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [showInfo, setShowInfo] = useState(false);
@@ -41,6 +45,7 @@ export function DailyNapSummary({
   }, []);
 
   const summary = calculateDailyNaps(sessions, now, confirmedCoverage);
+  const totalStatus = summary.waitingForMorningWake ? null : napTotalStatus(summary.totalMs, maxDaytimeMs);
 
   return (
     <div className="daily-nap-summary mt-1 border-t border-border/70 pt-1">
@@ -64,7 +69,13 @@ export function DailyNapSummary({
           </button>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <p className="text-xs font-semibold tabular-nums text-warm-brown">{formatElapsedDuration(summary.totalMs) ?? "0h 0m"}</p>
+          {/* Glows as the total nears his usual daytime maximum and pulses once past it (see .daily-nap-total). */}
+          <p data-nap-total-status={totalStatus ?? undefined} className="daily-nap-total text-xs font-semibold tabular-nums text-warm-brown">
+            {formatElapsedDuration(summary.totalMs) ?? "0h 0m"}
+            {totalStatus && maxDaytimeMs != null ? (
+              <span className="sr-only">{totalStatus === "past" ? `. Past the usual ${formatElapsedDuration(maxDaytimeMs)} of daytime sleep for his age` : `. Nearing the usual ${formatElapsedDuration(maxDaytimeMs)} of daytime sleep for his age`}</span>
+            ) : null}
+          </p>
           {trailingAction}
         </div>
       </div>
@@ -73,7 +84,7 @@ export function DailyNapSummary({
         hidden={!showInfo}
         className="rounded-lg bg-surface/55 px-3 py-2 text-xs leading-relaxed text-muted"
       >
-          Singapore time: counting starts at the first recorded wake at or after 5am, or an earlier confirmed infant-care period, and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight.
+          Singapore time: counting starts at the first recorded wake at or after 5am, or an earlier confirmed infant-care period, and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight. The total glows when it nears the usual daytime maximum for his age and pulses once past it (not on sick days).
       </p>
     </div>
   );
