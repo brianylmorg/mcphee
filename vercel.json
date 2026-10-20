@@ -1,4 +1,5 @@
 {
+  "buildCommand": "pnpm test:dashboard && pnpm build",
   "regions": [
     "hnd1"
   ],

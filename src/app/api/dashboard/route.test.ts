@@ -442,3 +442,63 @@ test("optional: identical answers on a local copy of real data (MCPHEE_DASHBOARD
     }
   }
 });
+
+test("if a migration drops a trigger (e.g. a table rebuild), clients fall back to full answers", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  setClock(t, NOW);
+  const tag = etag(await getDashboard(dashboardRequest()));
+
+  // The usual SQLite rebuild: new table, copy, drop old, rename. Its triggers vanish.
+  await client.execute("CREATE TABLE measurements_new AS SELECT * FROM measurements");
+  await client.execute("DROP TABLE measurements");
+  await client.execute("ALTER TABLE measurements_new RENAME TO measurements");
+  assert.equal(await isDashboardVersionSchemaReady(client), false);
+
+  const afterRebuild = await getDashboard(dashboardRequest({ ifNoneMatch: tag }));
+  assert.equal(afterRebuild.status, 200, "a tag from before the rebuild no longer matches");
+  assert.equal(etag(afterRebuild), null, "no tag is handed out while a trigger is missing");
+  assert.equal(afterRebuild.headers.get("etag"), null);
+
+  // Writes to the rebuilt table still reach clients, because every poll is a full answer.
+  await client.execute(`INSERT INTO measurements (id, baby_id, measured_at, weight_g, created_at) VALUES ('m-new', 'baby-1', ${NOW}, 6100, ${NOW})`);
+  const body = await dashboardJson(getDashboard);
+  assert.equal(body.measurement.weight_g, 6100);
+
+  // Re-running migrations restores the triggers and tagging.
+  await migrate();
+  assert.equal(await isDashboardVersionSchemaReady(client), true);
+  const restored = await getDashboard(dashboardRequest());
+  assert.ok(etag(restored));
+  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: etag(restored) }))).status, UNCHANGED);
+});
+
+test("guard: the dashboard only reads tables whose writes bump the version", async (t) => {
+  // If this fails, the dashboard started reading a new table. Add it to
+  // DASHBOARD_VERSION_TABLES (src/db/dashboard-version-schema.ts) and run the
+  // migration on preview and prod, or phones will show stale data.
+  const client = await openDb(t);
+  await seed(client);
+  setClock(t, NOW);
+  const { createDB } = await import("@/db");
+  const db = createDB() as unknown as { execute: (...args: unknown[]) => unknown; batch: (...args: unknown[]) => unknown };
+  const seen: string[] = [];
+  const sqlOf = (stmt: unknown) => (typeof stmt === "string" ? stmt : String((stmt as { sql: string }).sql));
+  const execute = db.execute.bind(db);
+  const batch = db.batch.bind(db);
+  db.execute = (stmt: unknown, ...rest: unknown[]) => { seen.push(sqlOf(stmt)); return execute(stmt, ...rest); };
+  db.batch = (stmts: unknown[], ...rest: unknown[]) => { seen.push(...stmts.map(sqlOf)); return batch(stmts, ...rest); };
+  t.after(() => { db.execute = execute; db.batch = batch; });
+
+  for (const household of ["house-1", "house-2"]) await dashboardJson(getDashboard, { household });
+  const tables = new Set(seen.flatMap((sql) => [...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)/gi)].map((m) => m[1].toLowerCase())));
+  const allowed = new Set<string>([
+    ...DASHBOARD_VERSION_TABLES,
+    "dashboard_version",
+    "sqlite_master",
+    "pragma_schema_version",
+    "pragma_table_info",
+  ]);
+  assert.ok(tables.size >= 6, `expected to see the dashboard's queries, saw ${[...tables].join(", ")}`);
+  assert.deepEqual([...tables].filter((name) => !allowed.has(name)), [], "tables read without a version trigger");
+});

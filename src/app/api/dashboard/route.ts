@@ -9,6 +9,7 @@ import { selectRecentMilkFeeds, type RecentMilkFeedActivity } from "@/lib/recent
 import { caretakerSleepCoverageFromAudit } from "@/lib/caretaker-sleep-audit";
 import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
 import { isChildcareModeSchemaReady } from "@/db/childcare-mode-schema";
+import { isDashboardVersionSchemaReady } from "@/db/dashboard-version-schema";
 import { loadChildcareModeState } from "@/lib/childcare-mode-server";
 
 const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
     // Read the version before any data, so a write landing mid-request leaves
     // an older tag on newer data: the next poll then refetches, never the reverse.
     const dataVersion = await readDataVersion(db);
-    const tagBase = dataVersion == null ? null : { householdHash: householdHash(householdId), dataVersion, sgtDate };
+    let tagBase = dataVersion == null ? null : { householdHash: householdHash(householdId), dataVersion, sgtDate };
     const clientTag = request.headers.get(DASHBOARD_TAG_HEADER);
     const ifNoneMatch = request.headers.get("if-none-match");
     if (tagBase && clientCopyIsCurrent(clientTag, tagBase, nowMs)) {
@@ -112,6 +113,15 @@ export async function GET(request: NextRequest) {
         status: 304,
         headers: { ...NO_STORE, ETag: ifNoneMatch!.split(",")[0].trim() },
       });
+    }
+
+    // Only hand out a tag while every trigger exists. A table rebuild in some
+    // future migration would drop its triggers; it also changes schema_version,
+    // so held tags stop matching, and from then on clients get full answers
+    // every poll (correct, just not cheap) until the triggers are restored.
+    if (tagBase && !await isDashboardVersionSchemaReady(db)) {
+      console.error("Dashboard version triggers missing; serving untagged responses");
+      tagBase = null;
     }
 
     const caretakerColumnsPresent = await isCaretakerImportSchemaReady(db);
