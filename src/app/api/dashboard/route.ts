@@ -71,6 +71,9 @@ async function readDataVersion(db: ReturnType<typeof createDB>): Promise<string 
 }
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
+// Vercel's edge drops If-None-Match on the way to functions, so the client
+// sends its tag in this header too, and "unchanged" is a 204 rather than a 304.
+const DASHBOARD_TAG_HEADER = "X-Dashboard-Tag";
 
 export async function GET(request: NextRequest) {
   const householdId = request.cookies.get("mcphee_hh")?.value;
@@ -99,10 +102,15 @@ export async function GET(request: NextRequest) {
     // an older tag on newer data: the next poll then refetches, never the reverse.
     const dataVersion = await readDataVersion(db);
     const tagBase = dataVersion == null ? null : { householdHash: householdHash(householdId), dataVersion, sgtDate };
-    if (tagBase && clientCopyIsCurrent(request.headers.get("if-none-match"), tagBase, nowMs)) {
+    const clientTag = request.headers.get(DASHBOARD_TAG_HEADER);
+    const ifNoneMatch = request.headers.get("if-none-match");
+    if (tagBase && clientCopyIsCurrent(clientTag, tagBase, nowMs)) {
+      return new NextResponse(null, { status: 204, headers: { ...NO_STORE, [DASHBOARD_TAG_HEADER]: clientTag!.trim() } });
+    }
+    if (tagBase && clientCopyIsCurrent(ifNoneMatch, tagBase, nowMs)) {
       return new NextResponse(null, {
         status: 304,
-        headers: { ...NO_STORE, ETag: request.headers.get("if-none-match")!.split(",")[0].trim() },
+        headers: { ...NO_STORE, ETag: ifNoneMatch!.split(",")[0].trim() },
       });
     }
 
@@ -297,7 +305,9 @@ export async function GET(request: NextRequest) {
         batches: pumpedMilkBatches,
       },
     }, {
-      headers: tagBase ? { ...NO_STORE, ETag: formatTag({ ...tagBase, validUntil }) } : NO_STORE,
+      headers: tagBase
+        ? { ...NO_STORE, ETag: formatTag({ ...tagBase, validUntil }), [DASHBOARD_TAG_HEADER]: formatTag({ ...tagBase, validUntil }) }
+        : NO_STORE,
     });
   } catch (error) {
     console.error("Dashboard API error:", error);

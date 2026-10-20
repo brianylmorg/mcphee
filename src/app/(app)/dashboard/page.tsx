@@ -230,7 +230,7 @@ export default function DashboardPage() {
   const dashboardRequestRef = useRef<AbortController | null>(null);
   const activityRequestRef = useRef<AbortController | null>(null);
   const dashboardSnapshotRef = useRef("");
-  // ETag of the dashboard payload currently on screen; the API answers 304
+  // Tag of the dashboard payload currently on screen; the API answers 204
   // (one row read) while nothing it depends on has changed.
   const dashboardEtagRef = useRef<string | null>(null);
   const manualRefreshActiveRef = useRef(false);
@@ -479,15 +479,15 @@ export default function DashboardPage() {
       const res = await fetch("/api/dashboard", {
         cache: "no-store",
         signal: controller.signal,
-        headers: dashboardEtagRef.current ? { "If-None-Match": dashboardEtagRef.current } : undefined,
+        headers: dashboardEtagRef.current ? { "X-Dashboard-Tag": dashboardEtagRef.current } : undefined,
       });
-      if (res.status === 304) return controller.signal.aborted ? "superseded" : "success";
+      if (res.status === 204 || res.status === 304) return controller.signal.aborted ? "superseded" : "success";
       if (!res.ok) throw new Error("Failed to load dashboard");
 
       const data = await res.json();
       if (controller.signal.aborted) return "superseded";
       const snapshot = JSON.stringify(data);
-      dashboardEtagRef.current = res.headers.get("ETag");
+      dashboardEtagRef.current = res.headers.get("X-Dashboard-Tag");
       if (snapshot === dashboardSnapshotRef.current) return "success";
       dashboardSnapshotRef.current = snapshot;
 

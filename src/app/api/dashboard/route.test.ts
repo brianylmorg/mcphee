@@ -19,9 +19,12 @@ const sgt = (date: string, time = "12:00") => Date.parse(`${date}T${time}:00+08:
 // Fixed clock for the fixture: mid-afternoon in Singapore.
 const NOW = sgt("2026-10-20", "15:00");
 
-function dashboardRequest(opts: { household?: string; ifNoneMatch?: string | null } = {}) {
+// `ifNoneMatch` is the client's stored tag, sent the way the app sends it (the
+// X-Dashboard-Tag header, since Vercel drops If-None-Match). `standard: true`
+// sends it as If-None-Match instead, which still works off Vercel.
+function dashboardRequest(opts: { household?: string; ifNoneMatch?: string | null; standard?: boolean } = {}) {
   const headers = new Headers({ cookie: `mcphee_hh=${opts.household ?? "house-1"}; mcphee_user=user-1` });
-  if (opts.ifNoneMatch) headers.set("if-none-match", opts.ifNoneMatch);
+  if (opts.ifNoneMatch) headers.set(opts.standard ? "if-none-match" : "x-dashboard-tag", opts.ifNoneMatch);
   return new NextRequest("http://localhost/api/dashboard", { headers });
 }
 
@@ -141,7 +144,8 @@ async function seed(client: Client) {
   }
 }
 
-const etag = (response: Response) => response.headers.get("etag");
+const etag = (response: Response) => response.headers.get("x-dashboard-tag");
+const UNCHANGED = 204;
 
 // The old query left entries with the same start time in arbitrary order; the
 // new one breaks ties newest-entered first. Compare with ties ordered alike.
@@ -216,7 +220,7 @@ test("the recent list is the newest 50 across all of a household's babies", asyn
   assert.deepEqual(body.activities.map((a: { id: string }) => a.id), newestInDb.rows.map((r) => r.id));
 });
 
-test("an unchanged poll answers 304 with no body, and a matching tag is required", async (t) => {
+test("an unchanged poll answers 204 with no body, and a matching tag is required", async (t) => {
   const client = await openDb(t);
   await seed(client);
   setClock(t, NOW);
@@ -227,17 +231,22 @@ test("an unchanged poll answers 304 with no body, and a matching tag is required
   assert.equal(first.headers.get("cache-control"), "private, no-store");
 
   const second = await getDashboard(dashboardRequest({ ifNoneMatch: tag }));
-  assert.equal(second.status, 304);
+  assert.equal(second.status, UNCHANGED);
   assert.equal(await second.text(), "");
   assert.equal(etag(second), tag);
+  assert.equal(first.headers.get("etag"), tag, "the standard ETag carries the same tag");
 
-  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: `W/${tag}` }))).status, 304, "weak form accepted");
-  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: `"other", ${tag}` }))).status, 304, "tag lists accepted");
+  const standard = await getDashboard(dashboardRequest({ ifNoneMatch: tag, standard: true }));
+  assert.equal(standard.status, 304, "plain If-None-Match still gets a 304");
+  assert.equal(standard.headers.get("etag"), tag);
+
+  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: `W/${tag}` }))).status, UNCHANGED, "weak form accepted");
+  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: `"other", ${tag}` }))).status, UNCHANGED, "tag lists accepted");
   for (const bad of ['"garbage"', "*", tag!.replace("dv1.", "dv2."), tag!.replace(/\.\d+"$/, '.99999999999999"').replace(/\.(\d+)-(\d+)\./, ".$1-0.")]) {
     assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: bad }))).status, 200, `rejects ${bad}`);
   }
   assert.equal((await getDashboard(dashboardRequest({ household: "house-2", ifNoneMatch: tag }))).status, 200,
-    "another household never gets a 304 for this tag");
+    "another household never gets an unchanged answer for this tag");
 });
 
 test("every insert, update and delete on a dashboard input invalidates the tag", async (t) => {
@@ -297,13 +306,13 @@ test("every insert, update and delete on a dashboard input invalidates the tag",
       const next = etag(response);
       assert.notEqual(next, tag);
       tag = next;
-      assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: tag }))).status, 304, "settles again");
+      assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: tag }))).status, UNCHANGED, "settles again");
     }
   }
 
   // Writes the dashboard never reads leave cached answers alone.
   await client.execute(`INSERT INTO notification_log (id, household_id, kind, sent_at) VALUES ('n-x', 'house-1', 'feed', ${NOW})`);
-  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: tag }))).status, 304);
+  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: tag }))).status, UNCHANGED);
 });
 
 test("writes through the real API routes invalidate the tag and show up", async (t) => {
@@ -343,12 +352,12 @@ test("tags expire at SGT midnight, when future entries go live, when packets exp
 
   // pump-future goes live at NOW + 20 min.
   const tag = await tagAt(NOW);
-  assert.equal(await statusAt(NOW + 19 * MINUTE, tag), 304);
+  assert.equal(await statusAt(NOW + 19 * MINUTE, tag), UNCHANGED);
   assert.equal(await statusAt(NOW + 20 * MINUTE, tag), 200);
 
   // freeze-old expires at 15:45 SGT, 45 min after NOW.
   const afterPump = await tagAt(NOW + 21 * MINUTE);
-  assert.equal(await statusAt(NOW + 44 * MINUTE, afterPump), 304);
+  assert.equal(await statusAt(NOW + 44 * MINUTE, afterPump), UNCHANGED);
   t.mock.timers.reset();
   setClock(t, NOW + 45 * MINUTE);
   const expired = await dashboardJson(getDashboard);
@@ -357,17 +366,17 @@ test("tags expire at SGT midnight, when future entries go live, when packets exp
 
   // bf-future goes live at 18:00; between, the one-hour cap still forces a refetch.
   const afterExpiry = await tagAt(NOW + 46 * MINUTE);
-  assert.equal(await statusAt(NOW + 105 * MINUTE, afterExpiry), 304);
+  assert.equal(await statusAt(NOW + 105 * MINUTE, afterExpiry), UNCHANGED);
   assert.equal(await statusAt(NOW + 106 * MINUTE, afterExpiry), 200, "one-hour cap");
 
   // Nothing pending late at night: midnight still rolls the day over.
-  await client.execute("DELETE FROM activities WHERE started_at > ?", [NOW]);
+  await client.execute({ sql: "DELETE FROM activities WHERE started_at > ?", args: [NOW] });
   const lateTag = await tagAt(sgt("2026-10-20", "23:30"));
-  assert.equal(await statusAt(sgt("2026-10-20", "23:59"), lateTag), 304);
+  assert.equal(await statusAt(sgt("2026-10-20", "23:59"), lateTag), UNCHANGED);
   assert.equal(await statusAt(sgt("2026-10-21", "00:00"), lateTag), 200);
 });
 
-test("whenever a 304 is given, the full answer really would have been the same", async (t) => {
+test("whenever an unchanged answer is given, the full answer really would have been the same", async (t) => {
   // Property check for time-dependence nobody listed: across many random
   // moments with no writes, any time the new route reuses an earlier answer,
   // the pre-change route must produce identical JSON at both moments.
@@ -387,10 +396,10 @@ test("whenever a 304 is given, the full answer really would have been the same",
     t.mock.timers.reset();
     setClock(t, late);
     const lateResponse = await getDashboard(dashboardRequest({ ifNoneMatch: etag(earlyResponse) }));
-    if (lateResponse.status !== 304) continue;
+    if (lateResponse.status !== UNCHANGED) continue;
     reused += 1;
     assert.deepEqual(await dashboardJson(legacyDashboard), earlyLegacy,
-      `304 at ${new Date(late).toISOString()} for answer from ${new Date(early).toISOString()}`);
+      `unchanged at ${new Date(late).toISOString()} for answer from ${new Date(early).toISOString()}`);
   }
   assert.ok(reused >= 30, `expected many reuses to check, got ${reused}`);
 });
@@ -429,7 +438,7 @@ test("optional: identical answers on a local copy of real data (MCPHEE_DASHBOARD
       assert.deepEqual(tieOrdered(await dashboardJson(getDashboard, { household })), tieOrdered(await dashboardJson(legacyDashboard, { household })),
         `household ${household.slice(0, 4)}… at ${new Date(at).toISOString()}`);
       const first = await getDashboard(dashboardRequest({ household }));
-      assert.equal((await getDashboard(dashboardRequest({ household, ifNoneMatch: etag(first) }))).status, 304);
+      assert.equal((await getDashboard(dashboardRequest({ household, ifNoneMatch: etag(first) }))).status, UNCHANGED);
     }
   }
 });
