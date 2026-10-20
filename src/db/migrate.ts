@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { applySickModeSchema } from "./sick-mode-schema";
 import { applyCaretakerImportSchema } from "./caretaker-import-schema";
+import { applyDashboardVersionSchema } from "./dashboard-version-schema";
 import { applyChildcareModeSchema } from "./childcare-mode-schema";
 
 const client = createClient({
@@ -123,6 +124,7 @@ async function migrate() {
     await applySickModeSchema(client);
     await applyChildcareModeSchema(client);
     await applyCaretakerImportSchema(client);
+    await applyDashboardVersionSchema(client);
     console.log("Migrations completed successfully.");
   } catch (error) {
     console.error("Migration failed:", error);

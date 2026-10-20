@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
@@ -19,6 +20,57 @@ const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
 
 export const runtime = "nodejs";
 
+const RECENT_ACTIVITY_LIMIT = 50;
+// Upper bound on how long an unchanged answer is reused, even if every input
+// looks static: a safety net for time-dependent output nobody has listed yet.
+const TAG_MAX_AGE_MS = 60 * 60 * 1000;
+const BUILD_ID = (process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_DEPLOYMENT_ID ?? "local").slice(0, 12);
+
+type DashboardTag = {
+  householdHash: string;
+  dataVersion: string;
+  sgtDate: string;
+  validUntil: number;
+};
+
+function householdHash(householdId: string): string {
+  return createHash("sha256").update(householdId).digest("hex").slice(0, 16);
+}
+
+function formatTag(tag: DashboardTag): string {
+  return `"dv1.${BUILD_ID}.${tag.householdHash}.${tag.dataVersion}.${tag.sgtDate}.${tag.validUntil}"`;
+}
+
+// The tag says the client's copy is current while the data version, SGT day,
+// household and deploy all match, and until the earliest moment the answer
+// would change on its own (a future-dated entry going live, a packet expiring).
+function clientCopyIsCurrent(ifNoneMatch: string | null, current: Omit<DashboardTag, "validUntil">, nowMs: number): boolean {
+  if (!ifNoneMatch) return false;
+  return ifNoneMatch.split(",").some((candidate) => {
+    const match = /^(?:W\/)?"dv1\.([^.]+)\.([0-9a-f]{16})\.([^.]+)\.(\d{4}-\d{2}-\d{2})\.(\d+)"$/.exec(candidate.trim());
+    return match != null
+      && match[1] === BUILD_ID
+      && match[2] === current.householdHash
+      && match[3] === current.dataVersion
+      && match[4] === current.sgtDate
+      && nowMs < Number(match[5]);
+  });
+}
+
+/** Counter bumped by triggers on every dashboard input, plus SQLite's schema version. Null before the migration. */
+async function readDataVersion(db: ReturnType<typeof createDB>): Promise<string | null> {
+  try {
+    const result = await db.execute(
+      "SELECT version, (SELECT schema_version FROM pragma_schema_version) AS schema_version FROM dashboard_version WHERE id = 1",
+    );
+    const row = result.rows[0];
+    return row ? `${Number(row.version)}-${Number(row.schema_version)}` : null;
+  } catch {
+    return null;
+  }
+}
+
+const NO_STORE = { "Cache-Control": "private, no-store" };
 
 export async function GET(request: NextRequest) {
   const householdId = request.cookies.get("mcphee_hh")?.value;
@@ -41,22 +93,39 @@ export async function GET(request: NextRequest) {
     const sgtDate = [sgtPart("year"), sgtPart("month"), sgtPart("day")].join("-");
     const dayStart = Date.parse(sgtDate + "T00:00:00+08:00");
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-    const caretakerColumnsPresent = await isCaretakerImportSchemaReady(db);
+    const nowMs = now.getTime();
 
-    const [babies, activities, household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, caretakerSleepAudits] = await db.batch([
-      {
-        sql: "SELECT * FROM babies WHERE household_id = ?",
-        args: [householdId],
-      },
-      {
-        sql: `SELECT a.*, b.name as baby_name
-              FROM activities a
-              JOIN babies b ON a.baby_id = b.id
-              WHERE b.household_id = ?
-                AND a.type NOT IN ('bankfreeze', 'bankthaw', 'bankdiscard')
-              ORDER BY a.started_at DESC LIMIT 50`,
-        args: [householdId],
-      },
+    // Read the version before any data, so a write landing mid-request leaves
+    // an older tag on newer data: the next poll then refetches, never the reverse.
+    const dataVersion = await readDataVersion(db);
+    const tagBase = dataVersion == null ? null : { householdHash: householdHash(householdId), dataVersion, sgtDate };
+    if (tagBase && clientCopyIsCurrent(request.headers.get("if-none-match"), tagBase, nowMs)) {
+      return new NextResponse(null, {
+        status: 304,
+        headers: { ...NO_STORE, ETag: request.headers.get("if-none-match")!.split(",")[0].trim() },
+      });
+    }
+
+    const caretakerColumnsPresent = await isCaretakerImportSchemaReady(db);
+    const babies = await db.execute({
+      sql: "SELECT * FROM babies WHERE household_id = ?",
+      args: [householdId],
+    });
+    const babyRows = babies.rows as unknown as Array<{ id: unknown; name: unknown }>;
+
+    // One indexed, ordered read per baby (LIMIT 50 each) instead of sorting the
+    // household's whole history; merged below into the same top 50.
+    const recentActivityQueries = babyRows.map((baby) => ({
+      sql: `SELECT a.*, b.name as baby_name
+            FROM activities a
+            JOIN babies b ON b.id = a.baby_id
+            WHERE a.baby_id = ?
+              AND a.type NOT IN ('bankfreeze', 'bankthaw', 'bankdiscard')
+            ORDER BY a.started_at DESC, a.created_at DESC LIMIT ${RECENT_ACTIVITY_LIMIT}`,
+      args: [baby.id as string],
+    }));
+
+    const [household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, caretakerSleepAudits, ...recentActivityResults] = await db.batch([
       {
         sql: "SELECT * FROM households WHERE id = ?",
         args: [householdId],
@@ -111,7 +180,13 @@ export async function GET(request: NextRequest) {
               ORDER BY committed_at ASC` : "SELECT NULL AS baby_id, NULL AS audit_metadata WHERE 0",
         args: caretakerColumnsPresent ? [householdId] : [],
       },
+      ...recentActivityQueries,
     ], "read");
+    const recentActivities = recentActivityResults
+      .flatMap((result) => result.rows as unknown as Array<Record<string, unknown> & { created_by?: unknown }>)
+      .sort((left, right) =>
+        Number(right.started_at) - Number(left.started_at) || Number(right.created_at) - Number(left.created_at))
+      .slice(0, RECENT_ACTIVITY_LIMIT);
 
     const householdRow = household.rows[0];
     const selectedBabyId = babies.rows[0]?.id;
@@ -165,6 +240,15 @@ export async function GET(request: NextRequest) {
       isAdjustment: batch.source === "adjustment",
       source: batch.source,
     }));
+    // Earliest moment this answer changes with no new write: SGT midnight, a
+    // future-dated ledger entry (bank and recent feeds skip those) going live,
+    // or a frozen packet passing its expiry.
+    const validUntil = Math.min(
+      dayEnd,
+      nowMs + TAG_MAX_AGE_MS,
+      ...ledgerEvents.map((event) => event.startedAt).filter((at) => at > nowMs),
+      ...bankState.frozenPackets.map((packet) => packet.expiresAt).filter((at) => at > nowMs),
+    );
     const latestWeightG = Number((measurements.rows[0] as { weight_g?: unknown } | undefined)?.weight_g);
     const expectedMilkMl = Number.isFinite(latestWeightG)
       ? Math.round((latestWeightG / 1000) * 150)
@@ -173,7 +257,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       babies: babies.rows,
       activities: normalizeActivityCreators(
-        activities.rows as unknown as Array<Record<string, unknown> & { created_by?: unknown }>,
+        recentActivities,
         users.rows as unknown as Array<{ name?: unknown }>,
       ),
       household: householdRow
@@ -212,6 +296,8 @@ export async function GET(request: NextRequest) {
         lastPumpAt: latestPump?.startedAt ?? null,
         batches: pumpedMilkBatches,
       },
+    }, {
+      headers: tagBase ? { ...NO_STORE, ETag: formatTag({ ...tagBase, validUntil }) } : NO_STORE,
     });
   } catch (error) {
     console.error("Dashboard API error:", error);
