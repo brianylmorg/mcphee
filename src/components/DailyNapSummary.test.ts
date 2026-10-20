@@ -14,7 +14,8 @@ test("nap summary exposes its waiting state and accessible calculation details",
   assert.match(html, /aria-label="How naps today is calculated"/);
   assert.match(html, /aria-expanded="false"/);
   assert.match(html, /aria-controls="[^"]+"/);
-  assert.match(html, /hidden=""[^>]*>Singapore time:/);
+  assert.match(html, /hidden=""[^>]*><ul[^>]*><li>Starts when he wakes for the day/);
+  assert.match(html, /Sleep starting before 7am counts as night, not a nap/);
 });
 
 test("nap summary can host an accessible inline sleep-start edit action", () => {

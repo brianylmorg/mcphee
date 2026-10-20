@@ -63,6 +63,11 @@ export function NapZonesSummary({ normal, sick, normalNaps, sickNaps, initialVie
     {selected === "usual" && ageGuide ? <dl><div className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0"><dt className="whitespace-nowrap text-warm-brown">Age guide{ageLabel ? ` (${ageLabel})` : ""}</dt><dd className="text-right tabular-nums">{formatElapsedDuration(ageGuide.fromMs)} – {formatElapsedDuration(ageGuide.toMs)}<div className="text-xs text-muted">from common wake-window charts</div></dd></div></dl> : null}
     <h4 className="mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Naps</h4>
     <Rows rows={napRows} />
-    <p className="mt-3 text-xs text-muted">Ranges are the middle half of his recent stretches at that point in the day; times are when they usually start and end, rounded to 15 minutes. Confidence rises with how many stretches there are, how recent they are and how steady he&apos;s been. From the last 14 days, or further back when there are too few; sick days are counted separately. The age guide is a rough comparison only.</p>
+    <ul className="mt-3 list-disc space-y-0.5 pl-4 text-xs text-muted">
+      <li>Range: the middle half of his recent stretches.</li>
+      <li>Times: when they usually start and end, to the nearest 15 min.</li>
+      <li>Confidence: higher with more, newer and steadier stretches.</li>
+      <li>Last 14 days, or further back if too few. Age guide is a rough comparison.</li>
+    </ul>
   </div>;
 }

@@ -1603,9 +1603,17 @@ export default function DashboardPage() {
   const medianDataDayCountLabel = medianDataDays.length < 7 && (activeMedianEpisode || medianDataDays.length > 0)
     ? ` (${medianDataDays.length} ${medianDataDays.length === 1 ? "day" : "days"})`
     : "";
-  const medianInfoText = activeMedianEpisode
-    ? "Uses the saved eligible days from the seven completed calendar days before sick mode began, comparing milk consumed by the current Singapore time on each day. These dates stay fixed for the episode. Recorded sick days and days without milk logs are excluded. Missing days reduce the count; no eligible days means unavailable."
-    : "Uses the latest seven completed non-sick days with milk logs, comparing intake by the current Singapore time. Skips sick days and days without logs, looking further back in the available 180-day history. The count shows when fewer than seven qualify.";
+  const medianInfoPoints = activeMedianEpisode
+    ? [
+        "Uses the 7 days before sick mode began, fixed for this episode.",
+        "Compares milk drunk by this time of day (Singapore).",
+        "Skips sick days and days without milk logs; unavailable if none qualify.",
+      ]
+    : [
+        "Uses his last 7 non-sick days with milk logged.",
+        "Compares milk drunk by this time of day (Singapore).",
+        "Looks further back if needed (up to 180 days); shows the count if fewer than 7.",
+      ];
 
   // Signed volume (ml) and % difference of today's intake vs a same-time
   // reference total (comparison day or the 7-day median). Both parts share the
@@ -2079,13 +2087,15 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
-          <p
+          <div
             id={medianInfoId}
             hidden={!showMedianInfo}
             className="rounded-lg bg-surface/55 px-3 py-2 text-xs leading-relaxed text-muted"
           >
-            {medianInfoText}
-          </p>
+            <ul className="list-disc space-y-0.5 pl-4">
+              {medianInfoPoints.map((point) => <li key={point}>{point}</li>)}
+            </ul>
+          </div>
 
           <RecentBottleFeeds feeds={activeSickSummary?.latestFeeds?.map((feed) => ({ id: feed.id, startedAt: feed.startedAt, amountMl: feed.totalMl })) ?? recentMilkFeeds} asleep={sleepState.state === "sleeping"} />
         </section>
@@ -2520,9 +2530,12 @@ export default function DashboardPage() {
                 <p className="mt-1 text-xs text-muted">Median completed daytime nap each day; overnight sleep is not included</p>
                 <SleepWindowsChart days={sleepWindowDays.slice(-60)} metric="nap" sickDates={sleepSickDates} ageGuide={null} />
               </section>
-              <p className="mt-5 text-xs leading-relaxed text-muted">
-                Each day runs from when he wakes for the day (sleeps starting before 7am count as the end of the night, not naps) to bedtime, the first sleep at or after 6pm (Singapore time). Overnight wakings, the ongoing nap and the current awake stretch are left out. Sleeps under 5 minutes apart count as one. Sick days are shaded and left out of his usual zones.
-              </p>
+              <ul className="mt-5 list-disc space-y-0.5 pl-4 text-xs leading-relaxed text-muted">
+                <li>A day runs from waking for the day to bedtime, the first sleep from 6pm (Singapore time).</li>
+                <li>Sleep starting before 7am counts as night, not a nap.</li>
+                <li>Only finished stretches count; sleeps under 5 minutes apart count as one.</li>
+                <li>Sick days are shaded and kept out of his usual ranges.</li>
+              </ul>
             </div>
             <div className="shrink-0 border-t border-border px-5 py-3">
               <button

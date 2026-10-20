@@ -82,13 +82,19 @@ export function DailyNapSummary({
           {trailingAction}
         </div>
       </div>
-      <p
+      <div
         id={infoId}
         hidden={!showInfo}
         className="rounded-lg bg-surface/55 px-3 py-2 text-xs leading-relaxed text-muted"
       >
-          Singapore time: counting starts when he wakes for the day (any sleep starting before 7am is the end of the night, not a nap), or at an earlier confirmed infant-care period, and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight. The total glows when it nears the usual daytime maximum for his age and pulses once past it (not on sick days).
-      </p>
+        <ul className="list-disc space-y-0.5 pl-4">
+          <li>Starts when he wakes for the day, or at an earlier infant-care check-in.</li>
+          <li>Sleep starting before 7am counts as night, not a nap.</li>
+          <li>Stops at bedtime: the first sleep from 6pm.</li>
+          <li>Includes a nap in progress. Singapore time; resets at midnight.</li>
+          <li>Glows near the usual daytime max for his age, pulses once past it (not on sick days).</li>
+        </ul>
+      </div>
     </div>
   );
 }
