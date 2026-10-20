@@ -2521,7 +2521,7 @@ export default function DashboardPage() {
                 <SleepWindowsChart days={sleepWindowDays.slice(-60)} metric="nap" sickDates={sleepSickDates} ageGuide={null} />
               </section>
               <p className="mt-5 text-xs leading-relaxed text-muted">
-                Each day runs from the first wake at or after 5am to bedtime, the first sleep at or after 6pm (Singapore time). Overnight wakings, the ongoing nap and the current awake stretch are left out. Sleeps under 5 minutes apart count as one. Sick days are shaded and left out of his usual zones.
+                Each day runs from when he wakes for the day (sleeps starting before 7am count as the end of the night, not naps) to bedtime, the first sleep at or after 6pm (Singapore time). Overnight wakings, the ongoing nap and the current awake stretch are left out. Sleeps under 5 minutes apart count as one. Sick days are shaded and left out of his usual zones.
               </p>
             </div>
             <div className="shrink-0 border-t border-border px-5 py-3">

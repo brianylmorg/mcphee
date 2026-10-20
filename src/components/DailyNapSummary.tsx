@@ -87,7 +87,7 @@ export function DailyNapSummary({
         hidden={!showInfo}
         className="rounded-lg bg-surface/55 px-3 py-2 text-xs leading-relaxed text-muted"
       >
-          Singapore time: counting starts at the first recorded wake at or after 5am, or an earlier confirmed infant-care period, and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight. The total glows when it nears the usual daytime maximum for his age and pulses once past it (not on sick days).
+          Singapore time: counting starts when he wakes for the day (any sleep starting before 7am is the end of the night, not a nap), or at an earlier confirmed infant-care period, and stops at the first sleep at or after 6pm. Overnight sleep is excluded and ongoing daytime naps are included. A late nap starting at or after 6pm counts as bedtime. Resets at midnight. The total glows when it nears the usual daytime maximum for his age and pulses once past it (not on sick days).
       </p>
     </div>
   );

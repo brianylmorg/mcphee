@@ -136,3 +136,34 @@ test("coverage spanning 05:00 starts tracking at the morning boundary", () => {
   assert.equal(result.dayStartAt, sgt("2026-10-05", "05:00:00"));
   assert.equal(result.totalMs, 45 * minute);
 });
+
+test("going back to sleep before 7am is the end of the night, not a nap", () => {
+  // From the real log, 20 Oct: up at 05:29, back down 06:13-09:12, nap at 11:30.
+  const sessions: DailyNapSession[] = [
+    { startedAt: sgt("2026-10-19", "20:00:00"), endedAt: sgt("2026-10-20", "05:29:00") },
+    { startedAt: sgt("2026-10-20", "06:13:00"), endedAt: sgt("2026-10-20", "09:12:00") },
+    { startedAt: sgt("2026-10-20", "11:30:00"), endedAt: sgt("2026-10-20", "12:15:00") },
+  ];
+  const summary = calculateDailyNaps(sessions, sgt("2026-10-20", "13:00:00"));
+  assert.equal(summary.dayStartAt, sgt("2026-10-20", "09:12:00"));
+  assert.equal(summary.totalMs, 45 * minute);
+});
+
+test("a real first nap from 7am still counts", () => {
+  // 11 Oct: woke 05:45, first nap 07:11.
+  const sessions: DailyNapSession[] = [
+    { startedAt: sgt("2026-10-10", "18:55:00"), endedAt: sgt("2026-10-11", "05:45:00") },
+    { startedAt: sgt("2026-10-11", "07:11:00"), endedAt: sgt("2026-10-11", "08:44:00") },
+  ];
+  const summary = calculateDailyNaps(sessions, sgt("2026-10-11", "10:00:00"));
+  assert.equal(summary.dayStartAt, sgt("2026-10-11", "05:45:00"));
+  assert.equal(summary.totalMs, 93 * minute);
+});
+
+test("still waiting for the morning while an early sleep is going", () => {
+  const sessions: DailyNapSession[] = [
+    { startedAt: sgt("2026-10-19", "20:00:00"), endedAt: sgt("2026-10-20", "05:29:00") },
+    { startedAt: sgt("2026-10-20", "06:13:00") },
+  ];
+  assert.equal(calculateDailyNaps(sessions, sgt("2026-10-20", "07:30:00")).waitingForMorningWake, true);
+});

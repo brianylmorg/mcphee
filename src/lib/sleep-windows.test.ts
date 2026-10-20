@@ -298,3 +298,15 @@ test("daytime nap cap by age, and when today's total nears or passes it", () => 
   assert.equal(napTotalStatus(4 * 60 * minute, max), "past");
   assert.equal(napTotalStatus(5 * 60 * minute, null), null);
 });
+
+test("wake windows start after the end of the night, including an early back-to-sleep", () => {
+  const sessions: SleepWindowSession[] = [
+    { startedAt: sgt("2026-10-19", "20:00:00"), endedAt: sgt("2026-10-20", "05:29:00") },
+    { startedAt: sgt("2026-10-20", "06:13:00"), endedAt: sgt("2026-10-20", "09:12:00") },
+    { startedAt: sgt("2026-10-20", "11:30:00"), endedAt: sgt("2026-10-20", "12:15:00") },
+  ];
+  const today = calculateSleepWindowHistory(sessions, sgt("2026-10-20", "13:00:00")).at(-1)!;
+  assert.equal(today.napCount, 1);
+  assert.deepEqual(today.wakeWindows.map((w) => [w.index, w.durationMs / minute]), [[1, 138]]);
+  assert.deepEqual(currentWakeWindow(sessions, sgt("2026-10-20", "13:00:00")), { index: 2, awakeSince: sgt("2026-10-20", "12:15:00") });
+});

@@ -1,3 +1,5 @@
+import { NIGHT_ENDS_HOUR } from "./daily-naps";
+
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -74,9 +76,24 @@ function mergeSessions(sessions: readonly SleepWindowSession[], now: number): In
 }
 
 /** Index of the interval whose end is the day's morning wake, or -1. */
+/**
+ * Index of the interval whose end is the day's morning wake, or -1. Sleeps
+ * starting before 07:00 are the tail of the night (same rule as "Naps
+ * today"), so it's the last of those to end; -1 while one is still going.
+ * With no night logged, the first wake at or after 05:00.
+ */
 function morningWakeIndex(intervals: readonly Interval[], dayStart: number): number {
   const morningBoundary = dayStart + 5 * HOUR_MS;
+  const nightBoundary = dayStart + NIGHT_ENDS_HOUR * HOUR_MS;
   const dayEnd = dayStart + DAY_MS;
+  let nightEndIndex = -1;
+  for (let index = 0; index < intervals.length; index += 1) {
+    const interval = intervals[index];
+    if (interval.start >= nightBoundary) break;
+    if (interval.end == null) return -1;
+    if (interval.end >= dayStart && interval.end < dayEnd) nightEndIndex = index;
+  }
+  if (nightEndIndex !== -1) return nightEndIndex;
   return intervals.findIndex((interval) => (
     interval.end != null && interval.end >= morningBoundary && interval.end < dayEnd
   ));
@@ -117,8 +134,8 @@ function windowsForDay(intervals: readonly Interval[], dayStart: number): Omit<D
 /**
  * Per-day wake windows and nap lengths, oldest first, ending with today.
  *
- * Uses the same day as "Naps today": it starts at the first recorded wake at or
- * after 05:00 SGT and ends at bedtime, the first sleep starting at or after
+ * Uses the same day as "Naps today": it starts when he wakes for the day (the
+ * end of the last sleep that started before 07:00 SGT) and ends at bedtime, the first sleep starting at or after
  * 18:00 SGT. Overnight wakings are excluded. Only completed windows and naps
  * count, so an ongoing nap or the current awake stretch is left out. Days
  * without a recorded morning wake have zero counts.
@@ -316,7 +333,7 @@ export type CurrentWakeWindow = { index: number; awakeSince: number };
 /**
  * The awake stretch in progress, numbered like the history: 1 after morning
  * wake, 2 after the first nap of the day, and so on. Null while asleep or with
- * no sleep recorded. Waking before 05:00 counts as the day's first window.
+ * no sleep recorded. With no night logged for today, it's the day's first window.
  */
 export function currentWakeWindow(sessions: readonly SleepWindowSession[], now: number): CurrentWakeWindow | null {
   if (!Number.isFinite(now)) return null;

@@ -2,6 +2,8 @@ const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const SGT_OFFSET_MS = 8 * HOUR_MS;
+/** Sleeps starting before this hour (SGT) are the tail of the night, not naps. */
+export const NIGHT_ENDS_HOUR = 7;
 
 export type DailyNapSession = {
   id?: string;
@@ -38,7 +40,10 @@ function sgtDayStart(timestamp: number): number {
 /**
  * Totals daytime sleep for the current Singapore calendar day.
  *
- * The day begins at the first recorded wake at or after 05:00 SGT. The first
+ * The day begins when he wakes for the day: the end of the last sleep that
+ * started before 07:00 SGT (going back down after an early waking is the
+ * tail of the night, not a nap), or, with no night logged, the first recorded
+ * wake at or after 05:00 SGT. The first
  * sleep starting at or after 18:00 SGT is treated as bedtime, so that sleep and
  * later overnight activity are excluded. Overlapping intervals are merged to
  * avoid double-counting duplicated legacy rows.
@@ -68,7 +73,20 @@ export function calculateDailyNaps(
     return [{ start, end }];
   });
 
-  const recordedWake = validSessions.reduce<number | null>((earliest, session) => {
+  // Any sleep starting before 07:00 is the end of the night (going back down
+  // after an early waking), not a nap: the day starts when the last of those
+  // sleeps ends. While one is still going, the night isn't over yet.
+  const nightBoundary = calendarDayStart + NIGHT_ENDS_HOUR * HOUR_MS;
+  const nightSleeps = validSessions.filter((session) => (
+    session.start < nightBoundary && (session.end == null || session.end >= calendarDayStart)
+  ));
+  const stillNight = nightSleeps.some((session) => session.end == null);
+  const nightEnd = nightSleeps.reduce<number | null>((latest, session) => {
+    if (session.end == null || session.end >= calendarDayEnd) return latest;
+    return latest == null || session.end > latest ? session.end : latest;
+  }, null);
+  // Without a night logged, fall back to the first wake at or after 05:00.
+  const firstWake = validSessions.reduce<number | null>((earliest, session) => {
     if (
       session.end == null ||
       session.end < morningBoundary ||
@@ -78,6 +96,7 @@ export function calculateDailyNaps(
     }
     return earliest == null || session.end < earliest ? session.end : earliest;
   }, null);
+  const recordedWake = stillNight ? null : nightEnd ?? firstWake;
 
   const coverageStart = confirmedCoverage.reduce<number | null>((earliest, coverage) => {
     const start = Number(coverage.startedAt);
