@@ -26,18 +26,18 @@ test("nap summary can host an accessible inline sleep-start edit action", () => 
 
 test("nap total glows as it nears the daytime maximum and pulses once past", () => {
   const hour = 60 * 60 * 1000;
-  const now = Date.now();
-  // Woke 7h ago, then napped 3h 40m (finished 10 min ago).
+  const sgt = (time: string) => Date.parse(`2026-10-05T${time}+08:00`);
+  // A fixed 15:00 clock: woke at 07:00, then napped 09:00-12:40 (3h 40m).
   const sessions = [
-    { startedAt: now - 20 * hour, endedAt: now - 7 * hour },
-    { startedAt: now - 3 * hour - 50 * 60 * 1000, endedAt: now - 10 * 60 * 1000 },
+    { startedAt: sgt("00:00:00") - 5 * hour, endedAt: sgt("07:00:00") },
+    { startedAt: sgt("09:00:00"), endedAt: sgt("12:40:00") },
   ];
-  const near = renderToStaticMarkup(createElement(DailyNapSummary, { sessions, maxDaytimeMs: 4 * hour }));
-  // Only meaningful once the day has started (after the 05:00 morning wake); skip the glow check otherwise.
-  if (!near.includes("Waiting for morning wake")) {
-    assert.match(near, /data-nap-total-status="near"/);
-    assert.match(near, /Nearing the usual 4h 0m of daytime sleep/);
-    assert.match(renderToStaticMarkup(createElement(DailyNapSummary, { sessions, maxDaytimeMs: 3 * hour })), /data-nap-total-status="past"/);
-  }
-  assert.doesNotMatch(renderToStaticMarkup(createElement(DailyNapSummary, { sessions, maxDaytimeMs: null })), /data-nap-total-status/);
+  const render = (maxDaytimeMs: number | null) => renderToStaticMarkup(createElement(DailyNapSummary, { sessions, maxDaytimeMs, initialNow: sgt("15:00:00") }));
+  const near = render(4 * hour);
+  assert.match(near, />3h 40m/);
+  assert.match(near, /data-nap-total-status="near"/);
+  assert.match(near, /Nearing the usual 4h 0m of daytime sleep/);
+  assert.match(render(3.5 * hour), /data-nap-total-status="past"/);
+  assert.doesNotMatch(render(5 * hour), /data-nap-total-status/);
+  assert.doesNotMatch(render(null), /data-nap-total-status/);
 });

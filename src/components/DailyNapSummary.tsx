@@ -17,14 +17,17 @@ export function DailyNapSummary({
   confirmedCoverage = [],
   trailingAction,
   maxDaytimeMs = null,
+  initialNow,
 }: {
   sessions: readonly DailyNapSession[];
   confirmedCoverage?: readonly ConfirmedSleepCoverage[];
   trailingAction?: ReactNode;
   /** Usual maximum daytime nap total for his age; the total glows as it nears this. Null for no glow (e.g. while sick). */
   maxDaytimeMs?: number | null;
+  /** Starting clock, for tests; the summary then ticks on the real clock. */
+  initialNow?: number;
 }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => initialNow ?? Date.now());
   const [showInfo, setShowInfo] = useState(false);
   const infoId = useId();
 

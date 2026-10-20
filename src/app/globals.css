@@ -1025,7 +1025,11 @@ body {
   transform: scaleX(-1);
   animation: sb-kid-bee-turn 10s steps(1) infinite;
 }
-.sb-kid-bee .sb-bee-rock { animation: sb-bee-rock 1.8s ease-in-out infinite alternate; }
+/* The kid's track is short (he has to stay clear of the timer and the
+   "Sleep" strip), so the bee hovers on its own: a small looping drift up,
+   down and sideways with a tilt, so it reads as flying even when he's near
+   an end of his run. */
+.sb-kid-bee .sb-bee-rock { animation: sb-bee-hover 2.2s ease-in-out infinite; }
 
 .sb-home-wrap .sb-home { width: 100%; height: 100%; }
 .sb-smoke-rise { animation: sb-smoke-curl 5s ease-out infinite; transform-origin: 50% 100%; }
@@ -1045,9 +1049,11 @@ html:not([data-care-mode="sick"])[data-theme="dark"] .sb-smoke-rise { filter: no
   from { transform: translateX(-14px); }
   to { transform: translateX(26px); }
 }
-@keyframes sb-bee-rock {
-  from { transform: translateY(-1px) rotate(-3deg); }
-  to { transform: translateY(1px) rotate(3deg); }
+@keyframes sb-bee-hover {
+  0%, 100% { transform: translate(0, 0) rotate(-4deg); }
+  25% { transform: translate(4px, -7px) rotate(5deg); }
+  50% { transform: translate(-1px, -3px) rotate(-2deg); }
+  75% { transform: translate(-4px, -8px) rotate(6deg); }
 }
 @keyframes sb-moon-sway {
   0%, 100% { transform: rotate(-6deg); }
