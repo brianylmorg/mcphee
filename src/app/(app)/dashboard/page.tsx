@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId, useMemo, type CSSProperties } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, ChartScatter, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Eye, EyeOff, Heart, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, ChartScatter, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -25,6 +25,8 @@ import MedicationLogModal from "@/components/MedicationLogModal";
 import CaretakerImportModal from "@/components/CaretakerImportModal";
 import ChildcareStatusTrigger from "@/components/ChildcareStatusTrigger";
 import ChildcareModePanel from "@/components/ChildcareModePanel";
+import ChildcareHandoverCard from "@/components/ChildcareHandoverCard";
+import { childcareHandover } from "@/lib/childcare-handover";
 import MedicationDoseEditModal from "@/components/MedicationDoseEditModal";
 import MedicationPrescriptionModal from "@/components/MedicationPrescriptionModal";
 import SickMilkProgress from "@/components/SickMilkProgress";
@@ -1840,20 +1842,13 @@ export default function DashboardPage() {
 
       <div className="dashboard-overview max-w-lg mx-auto px-3 py-3 sm:px-5 sm:py-4 space-y-2">
         {childcareMode.activeSession && (
-          <div className="childcare-dim-banner flex min-h-11 items-center justify-between gap-3 rounded-lg border border-terracotta/25 bg-terracotta/10 px-3 py-1.5">
-            <p className="min-w-0 text-sm font-medium text-warm-brown">
-              {baby?.name || "Baby"} is at childcare
-            </p>
-            <button
-              type="button"
-              onClick={() => setChildcareBrowseSessionId(childcareDimmed ? childcareMode.activeSession?.id ?? null : null)}
-              aria-pressed={!childcareDimmed}
-              className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border border-terracotta/30 bg-surface px-3 text-xs font-semibold text-accent-strong transition-colors hover:bg-surface-muted"
-            >
-              {childcareDimmed ? <Eye aria-hidden="true" className="h-3.5 w-3.5" /> : <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
-              {childcareDimmed ? "Browse anyway" : "Grey out again"}
-            </button>
-          </div>
+          <ChildcareHandoverCard
+            babyName={baby?.name || "Baby"}
+            checkedInAt={childcareMode.activeSession.checkedInAt}
+            handover={childcareHandover(activities)}
+            dimmed={childcareDimmed}
+            onToggleBrowse={() => setChildcareBrowseSessionId(childcareDimmed ? childcareMode.activeSession?.id ?? null : null)}
+          />
         )}
         <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none"} aria-label="Sleep status">
           <SleepStateControl
