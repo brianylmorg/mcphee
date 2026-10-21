@@ -46,6 +46,7 @@ import {
   type CaretakerOcrProgress,
 } from "@/lib/caretaker-import-client";
 import CaretakerImportInfo from "@/components/CaretakerImportInfo";
+import CareEndEditor, { type CareEndSaveResult } from "@/components/CareEndEditor";
 import { resolveCaretakerCareWindow } from "@/lib/caretaker-care-window";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
@@ -524,6 +525,7 @@ export default function CaretakerImportModal({
   onClose,
   onImported,
   onFinishChildcare,
+  onEditCareEnd,
   childcareSession = null,
 }: {
   babyId: string;
@@ -531,6 +533,8 @@ export default function CaretakerImportModal({
   onClose: () => void;
   onImported: () => Promise<void>;
   onFinishChildcare?: (session: ChildcareSessionSummary, checkedOutAt: number) => Promise<ChildcareSessionSummary | null>;
+  /** Corrects a closed stay's check-out time, keeping its check-in. */
+  onEditCareEnd?: (session: ChildcareSessionSummary, checkedOutAt: number) => Promise<CareEndSaveResult>;
   childcareSession?: ChildcareSessionSummary | null;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -1201,6 +1205,19 @@ export default function CaretakerImportModal({
                   </label>
                   <p className="mt-1 text-xs text-muted">Reading will also check out of childcare.</p>
                 </>
+              ) : onEditCareEnd && linkedSession.checkedOutAt != null ? (
+                <CareEndEditor
+                  session={{ ...linkedSession, checkedOutAt: linkedSession.checkedOutAt }}
+                  disabled={Boolean(busy) || joining}
+                  onSave={async checkedOutAt => {
+                    const result = await onEditCareEnd(linkedSession, checkedOutAt);
+                    if ("session" in result) {
+                      setLinkedSession(result.session);
+                      setCareEndedAt(singaporeDateTimeInput(result.session.checkedOutAt));
+                    }
+                    return result;
+                  }}
+                />
               ) : (
                 <p className="mt-1 text-muted">Care end <span className="font-semibold text-warm-brown">{singaporeDateTimeInput(linkedSession.checkedOutAt).slice(11, 16)}</span></p>
               )}
@@ -1316,6 +1333,22 @@ export default function CaretakerImportModal({
               <div className="rounded-lg border border-border bg-surface px-3 py-2">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong">From childcare check-in/out</p>
                 <p className="mt-1 text-sm font-medium tabular-nums text-warm-brown">{formatSingaporeCoverage(linkedCoverage)}</p>
+                {onEditCareEnd && linkedCareSession?.checkedOutAt != null && (
+                  <CareEndEditor
+                    session={{ ...linkedCareSession, checkedOutAt: linkedCareSession.checkedOutAt }}
+                    disabled={Boolean(busy)}
+                    disabledReason={reviewDirty ? "Save your review changes first, then you can edit the check-out time." : undefined}
+                    onSave={async checkedOutAt => {
+                      const result = await onEditCareEnd(linkedCareSession, checkedOutAt);
+                      if ("session" in result) {
+                        setLinkedSession(result.session);
+                        // The server clears this review's saved sleep plan; reload it so the new care end applies.
+                        await loadLatest();
+                      }
+                      return result;
+                    }}
+                  />
+                )}
               </div>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">

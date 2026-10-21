@@ -1241,12 +1241,13 @@ export default function DashboardPage() {
   };
 
 
-  const updateChildcareHistory = async (
+  /** Resolves to the saved session, or the error message (also shown in the childcare panel). */
+  const postChildcareHistory = async (
     action: "editSession" | "dismissImport" | "removeSession",
     session: ChildcareSessionSummary,
     times?: { checkedInAt: number; checkedOutAt: number },
-  ): Promise<boolean> => {
-    if (!baby?.id || childcareBusy) return false;
+  ): Promise<{ session: ChildcareSessionSummary } | { error: string }> => {
+    if (!baby?.id || childcareBusy) return { error: "Another childcare change is still saving. Try again in a moment." };
     setChildcareBusy(true);
     setChildcareError(null);
     try {
@@ -1271,15 +1272,22 @@ export default function DashboardPage() {
       });
       setActivityFilterRefresh(value => value + 1);
       await fetchData({ refreshMilkHistory: false });
-      return true;
+      return { session: (payload.session as ChildcareSessionSummary | undefined) ?? { ...session, ...times } };
     } catch (caught) {
-      setChildcareError(caught instanceof Error ? caught.message : "Could not update this childcare session.");
+      const message = caught instanceof Error ? caught.message : "Could not update this childcare session.";
+      setChildcareError(message);
       await fetchData({ refreshMilkHistory: false });
-      return false;
+      return { error: message };
     } finally {
       setChildcareBusy(false);
     }
   };
+
+  const updateChildcareHistory = async (
+    action: "editSession" | "dismissImport" | "removeSession",
+    session: ChildcareSessionSummary,
+    times?: { checkedInAt: number; checkedOutAt: number },
+  ): Promise<boolean> => "session" in await postChildcareHistory(action, session, times);
 
 
   const getLastActivity = (type: string) => {
@@ -2606,6 +2614,8 @@ export default function DashboardPage() {
             });
             return result?.session ?? null;
           }}
+          onEditCareEnd={(session, checkedOutAt) =>
+            postChildcareHistory("editSession", session, { checkedInAt: session.checkedInAt, checkedOutAt })}
           onClose={() => { setShowCaretakerImport(false); setCaretakerImportSession(null); }}
           onImported={async () => {
             await Promise.all([
