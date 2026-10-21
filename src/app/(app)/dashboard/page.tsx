@@ -1864,6 +1864,8 @@ export default function DashboardPage() {
             handover={childcareHandover(activities)}
             dimmed={childcareDimmed}
             onToggleBrowse={() => setChildcareBrowseSessionId(childcareDimmed ? childcareMode.activeSession?.id ?? null : null)}
+            onCheckOut={(at) => { void mutateChildcareMode("checkOut", at); }}
+            busy={childcareBusy}
           />
         )}
         <section data-sleep-state={sleepState.state} className={"sleep-status-card rounded-xl border p-2.5 shadow-sm transition-[background-color,border-color] duration-700 motion-reduce:transition-none"} aria-label="Sleep status">
@@ -2614,8 +2616,7 @@ export default function DashboardPage() {
             });
             return result?.session ?? null;
           }}
-          onEditCareEnd={(session, checkedOutAt) =>
-            postChildcareHistory("editSession", session, { checkedInAt: session.checkedInAt, checkedOutAt })}
+          onEditCareTimes={(session, times) => postChildcareHistory("editSession", session, times)}
           onClose={() => { setShowCaretakerImport(false); setCaretakerImportSession(null); }}
           onImported={async () => {
             await Promise.all([

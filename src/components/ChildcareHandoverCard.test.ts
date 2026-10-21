@@ -15,6 +15,7 @@ function render(props: Partial<ChildcareHandoverCardProps> = {}): string {
     handover: { bottle: null, diaper: null },
     dimmed: true,
     onToggleBrowse: () => {},
+    onCheckOut: () => {},
     now: NOW,
   };
   return renderToStaticMarkup(createElement(ChildcareHandoverCard, { ...defaults, ...props }));
@@ -66,4 +67,17 @@ test("toggle label and pressed state follow dimmed state", () => {
 
 test("keeps childcare-dim-banner on the root section", () => {
   assert.match(render(), /<section aria-label="Childcare summary" class="childcare-dim-banner[^>]*>/);
+});
+
+test("check out is the main action on the day of check-in", () => {
+  const html = render();
+  assert.match(html, /<button[^>]*>[\s\S]*?Check out<\/button>/);
+  assert.ok(!html.includes("Check out at this time"));
+});
+
+test("a stay left open from an earlier day asks when they left", () => {
+  const html = render({ checkedInAt: Date.parse("2026-10-20T01:00:00Z") });
+  assert.ok(html.includes("What time did Aria leave that day?"));
+  assert.ok(html.includes("Check out at this time"));
+  assert.ok(html.includes("since 20 Oct, 09:00"));
 });
