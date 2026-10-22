@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
 import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk-calculation";
 import { activityNoteText } from "@/lib/activity-note";
+import { clampNearFutureToNow, minuteOptionsIncluding } from "@/lib/activity-time";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
 import { SleepWindowsChart } from "@/components/SleepWindowsChart";
 import { NapZonesSummary } from "@/components/NapZonesSummary";
@@ -258,6 +259,7 @@ export default function DashboardPage() {
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>([]);
   const [isActivityFilterLoading, setIsActivityFilterLoading] = useState(false);
   const [activityFilterRefresh, setActivityFilterRefresh] = useState(0);
+  const lastLoadedActivityViewKeyRef = useRef<string | null>(null);
 
   const sgtDateKey = (offsetDays = 0): string => {
     const parts = new Intl.DateTimeFormat("en-CA", {
@@ -688,13 +690,19 @@ export default function DashboardPage() {
     }
   }, [householdId, baby?.id, activityDateFilter, activityTypeFilters, showHistory, todayDateKey, activityFilterRefresh]);
 
+  const activityViewKey = JSON.stringify([baby?.id, activityDateFilter, showHistory, todayDateKey, activityTypeFilters]);
+
   useEffect(() => {
     if (!householdId || !baby?.id) return;
+
+    // Keep the current list visible while refreshing the same diary view.
+    const viewChanged = lastLoadedActivityViewKeyRef.current !== activityViewKey;
+    lastLoadedActivityViewKeyRef.current = activityViewKey;
 
     // A user changing the selected diary view owns the newest request even if
     // a manual group is still settling. The superseded group reports partial;
     // interval/focus refreshes below remain suppressed during manual work.
-    void fetchFilteredActivities({ showLoading: true });
+    void fetchFilteredActivities({ showLoading: viewChanged });
     const refreshIfVisible = () => {
       if (document.visibilityState === "visible") void fetchFilteredActivities({ background: true });
     };
@@ -709,7 +717,7 @@ export default function DashboardPage() {
       activityRequestRef.current?.abort();
       activityRequestRef.current = null;
     };
-  }, [householdId, baby?.id, fetchFilteredActivities]);
+  }, [householdId, baby?.id, activityViewKey, fetchFilteredActivities]);
 
   const refreshExplicitlyBlocked = isLoading
     || showLogModal
@@ -2857,7 +2865,6 @@ function LogModal({
 
   const [when, setWhen] = useState(isEditing ? "custom" : "now");
   const pad2 = (value: number) => String(value).padStart(2, "0");
-  const roundToMinuteStep = (minute: number) => Math.min(55, Math.round(minute / 5) * 5);
   const getSGTParts = (epochMs?: number): { date: string; h: number; m: number } => {
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Singapore",
@@ -2873,7 +2880,7 @@ function LogModal({
     return {
       date: [part("year"), part("month"), part("day")].join("-"),
       h: Number(part("hour")),
-      m: roundToMinuteStep(Number(part("minute"))),
+      m: Number(part("minute")),
     };
   };
   const initialSGT = getSGTParts(isEditing && activity ? activity.started_at : undefined);
@@ -2974,7 +2981,8 @@ function LogModal({
   const [endHour, setEndHour] = useState(initialEndSGT.h);
   const [endMinute, setEndMinute] = useState(initialEndSGT.m);
   const hourOptions = Array.from({ length: 24 }, (_, hour) => hour);
-  const minuteOptions = Array.from({ length: 12 }, (_, index) => index * 5);
+  const minuteOptions = minuteOptionsIncluding(initialSGT.m);
+  const endMinuteOptions = minuteOptionsIncluding(initialEndSGT.m);
   const amountPresets = [30, 60, 90, 120, 150, 180];
   const suggestedPreset = Number(suggestedBottleAmount);
   const bottleAmountOptions = suggestedPreset > 0
@@ -3054,6 +3062,7 @@ function LogModal({
       }
       startedAt = parsed;
     }
+    startedAt = clampNearFutureToNow(startedAt);
     if ((type === "note" || type === "temperature") && startedAt > Date.now() + 2 * 60 * 1000) {
       alert("Time cannot be in the future.");
       setIsLoading(false);
@@ -3065,6 +3074,7 @@ function LogModal({
       endedAt = activity?.ended_at == null
         ? null
         : Date.parse(endDate + "T" + pad2(endHour) + ":" + pad2(endMinute) + ":00+08:00");
+      if (endedAt != null) endedAt = clampNearFutureToNow(endedAt);
       if (endedAt != null && (!Number.isFinite(endedAt) || endedAt < startedAt)) {
         alert("Wake time must be after sleep time.");
         setIsLoading(false);
@@ -3280,7 +3290,7 @@ function LogModal({
                     onChange={(event) => setEndMinute(Number(event.target.value))}
                     className="flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-center text-lg tabular-nums outline-none focus:border-accent-strong"
                   >
-                    {minuteOptions.map((minute) => <option key={minute} value={minute}>{pad2(minute)}</option>)}
+                    {endMinuteOptions.map((minute) => <option key={minute} value={minute}>{pad2(minute)}</option>)}
                   </select>
                 </div>
               </div>

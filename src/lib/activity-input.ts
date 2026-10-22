@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client";
 
+import { FUTURE_CLOCK_SKEW_MS } from "./activity-time";
 import type { MilkLedgerActivity } from "./milk-bank-ledger";
 import { parseActivityDetails } from "./milk-volumes";
 
@@ -14,7 +15,6 @@ const VALID_TYPES = new Set([
   "note",
   "temperature",
 ]);
-const FUTURE_CLOCK_SKEW_MS = 2 * 60 * 1000;
 
 function isValidTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;

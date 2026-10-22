@@ -10,6 +10,7 @@ import { readActivityTimeline, TIMELINE_TYPES } from "@/lib/activity-timeline";
 import { projectCaretakerActivityLog } from "@/lib/caretaker-activity-log";
 import { parseHistoricalMedicationDetails } from "@/lib/historical-medication";
 import { milkLedgerForHousehold, validateActivityInput } from "@/lib/activity-input";
+import { clampNearFutureActivityTimes } from "@/lib/activity-time";
 import { childcareCreationGuard } from "@/lib/childcare-mode-server";
 import { projectChildcareSessionLog } from "@/lib/childcare-activity-log";
 
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const inputError = validateActivityInput(body);
     if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
+    clampNearFutureActivityTimes(body);
 
     const db = createDB();
     const isBottlefeed = body.type === "bottlefeed";
@@ -256,6 +258,7 @@ export async function PUT(request: NextRequest) {
 
     const inputError = validateActivityInput(body);
     if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
+    clampNearFutureActivityTimes(body);
 
     const babyError = await requireBabyInHousehold(db, body.babyId, householdId);
     if (babyError) return babyError;
