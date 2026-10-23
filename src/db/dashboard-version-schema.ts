@@ -5,6 +5,9 @@ import type { Client } from "@libsql/client";
 // counter unchanged can answer 304 after reading one row instead of
 // replaying the whole activity history. Triggers live in the database so no
 // write path (API route, admin script, migration) can forget to bump it.
+// The sick-mode tables aren't read by the dashboard itself, but the client
+// only refetches sick mode (and the diary) when this counter moves, so they
+// bump it too.
 // Schema changes don't fire triggers, so applying this schema (run by every
 // migration, after the other schemas) bumps the counter once more itself.
 export const DASHBOARD_VERSION_TABLES = [
@@ -16,6 +19,9 @@ export const DASHBOARD_VERSION_TABLES = [
   "measurements",
   "childcare_sessions",
   "paper_log_import_batches",
+  "sick_mode_episodes",
+  "sick_mode_medications",
+  "sick_mode_doses",
 ] as const;
 
 const OPERATIONS = ["INSERT", "UPDATE", "DELETE"] as const;

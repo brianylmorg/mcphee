@@ -294,8 +294,28 @@ test("every insert, update and delete on a dashboard input invalidates the tag",
       "UPDATE paper_log_import_batches SET status = 'committed' WHERE id = 'batch-x'",
       "DELETE FROM paper_log_import_batches WHERE id = 'batch-x'",
     ],
+    sick_mode_episodes: [
+      `INSERT INTO sick_mode_episodes (id, baby_id, started_at, baseline_daily_ml, baseline_kind, baseline_available_day_count, baseline_source_days, created_at) VALUES ('sick-x', 'baby-1', ${NOW}, 500, 'manual', 0, '[]', ${NOW})`,
+      "UPDATE sick_mode_episodes SET baseline_daily_ml = 600 WHERE id = 'sick-x'",
+      "DELETE FROM sick_mode_episodes WHERE id = 'sick-x'",
+    ],
+    sick_mode_medications: [
+      `INSERT INTO sick_mode_medications (id, episode_id, name, dose_text, as_needed, created_at, updated_at) VALUES ('med-x', 'sick-parent', 'Medicine', '5 ml', 1, ${NOW}, ${NOW})`,
+      "UPDATE sick_mode_medications SET dose_text = '6 ml' WHERE id = 'med-x'",
+      "DELETE FROM sick_mode_medications WHERE id = 'med-x'",
+    ],
+    sick_mode_doses: [
+      `INSERT INTO sick_mode_doses (id, medication_id, given_at, dose_text, request_id, created_at, updated_at) VALUES ('dose-x', 'med-parent', ${NOW}, '5 ml', 'dose-request-x', ${NOW}, ${NOW})`,
+      "UPDATE sick_mode_doses SET dose_text = '6 ml' WHERE id = 'dose-x'",
+      "DELETE FROM sick_mode_doses WHERE id = 'dose-x'",
+    ],
   };
   assert.deepEqual(Object.keys(writes).sort(), [...DASHBOARD_VERSION_TABLES].sort(), "every covered table is exercised");
+
+  // The per-table loop deletes each inserted row before reaching its children.
+  // Keep closed parents available for the medication and dose INSERT cases.
+  await client.execute(`INSERT INTO sick_mode_episodes (id, baby_id, started_at, ended_at, baseline_daily_ml, baseline_kind, baseline_available_day_count, baseline_source_days, created_at) VALUES ('sick-parent', 'baby-1', ${NOW - 1000}, ${NOW - 500}, 500, 'manual', 0, '[]', ${NOW - 1000})`);
+  await client.execute(`INSERT INTO sick_mode_medications (id, episode_id, name, dose_text, as_needed, created_at, updated_at) VALUES ('med-parent', 'sick-parent', 'Parent medicine', '5 ml', 1, ${NOW - 1000}, ${NOW - 1000})`);
 
   let tag = etag(await getDashboard(dashboardRequest()));
   for (const [table, statements] of Object.entries(writes)) {

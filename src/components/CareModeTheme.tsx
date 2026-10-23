@@ -5,6 +5,12 @@ import { HeartPulse } from "lucide-react";
 import { useHousehold } from "@/lib/context/household-context";
 import { CARE_MODE_EVENT, isCareModeUpdate } from "@/lib/care-mode";
 
+// The dashboard publishes the care-mode state whenever it loads sick mode (on
+// any change, and at least every 10 minutes), so this only fetches on pages
+// without it, or when nothing has confirmed the state for a while.
+const CONFIRMED_FRESH_MS = 11 * 60_000;
+const CHECK_MS = 60_000;
+
 export default function CareModeTheme({ initialHouseholdId, initialBabyId, initialActive = false }: {
   initialHouseholdId?: string;
   initialBabyId?: string;
@@ -18,9 +24,11 @@ export default function CareModeTheme({ initialHouseholdId, initialBabyId, initi
     let cancelled = false;
     let request = 0;
     let babyId = householdId === initialHouseholdId ? initialBabyId : undefined;
+    let confirmedAt = 0;
     setState(current => current.householdId === householdId ? current : { householdId, active: false });
     const refresh = async () => {
       if (!householdId || document.visibilityState === "hidden") return;
+      if (Date.now() - confirmedAt < CONFIRMED_FRESH_MS) return;
       const sequence = ++request;
       try {
         if (!babyId) {
@@ -36,6 +44,7 @@ export default function CareModeTheme({ initialHouseholdId, initialBabyId, initi
         const data = await response.json();
         if (cancelled || sequence !== request) return;
         if (typeof data.schemaReady !== "boolean") return;
+        confirmedAt = Date.now();
         setState({ householdId, active: data.schemaReady && Boolean(data.activeEpisode) });
       } catch {
         // Keep this household's last confirmed theme when offline. Never infer an end.
@@ -46,12 +55,13 @@ export default function CareModeTheme({ initialHouseholdId, initialBabyId, initi
       if (!isCareModeUpdate(update) || update.householdId !== householdId || (babyId && update.babyId !== babyId)) return;
       ++request; // A confirmed dashboard mutation wins over an older in-flight poll.
       babyId = update.babyId;
+      confirmedAt = Date.now();
       setState({ householdId, active: update.active });
     };
     window.addEventListener(CARE_MODE_EVENT, onUpdate);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
-    const interval = window.setInterval(refresh, 30_000);
+    const interval = window.setInterval(refresh, CHECK_MS);
     void refresh();
     return () => {
       cancelled = true;

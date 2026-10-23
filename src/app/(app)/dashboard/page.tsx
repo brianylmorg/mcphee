@@ -129,6 +129,11 @@ const sgtHourFormatter = new Intl.DateTimeFormat("en-SG", {
 // Bank transfers are edited and deleted through the milk-bank ledger, never
 // through the generic activity API, so the diary routes them separately.
 const BANK_TRANSFER_TYPES = new Set(["bankfreeze", "bankthaw", "bankdiscard"]);
+// One cheap dashboard poll (usually a 204) drives every refresh on this page.
+const DASHBOARD_POLL_MS = 30_000;
+const POLL_DEDUPE_MS = 2_000;
+// Sick mode's summary and milk history depend on the clock as well as the data.
+const DEPENDENT_BACKSTOP_MS = 10 * 60_000;
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -236,6 +241,13 @@ export default function DashboardPage() {
   // Tag of the dashboard payload currently on screen; the API answers 204
   // (one row read) while nothing it depends on has changed.
   const dashboardEtagRef = useRef<string | null>(null);
+  // Sick mode, milk history and the diary refetch only when a dashboard poll
+  // sees the version counter move (or, for the two time-dependent ones, after
+  // DEPENDENT_BACKSTOP_MS), instead of each polling every 30s.
+  const dependentsStaleRef = useRef(false);
+  const sickModeFetchedAtRef = useRef(0);
+  const milkHistoryFetchedAtRef = useRef(0);
+  const lastPollAtRef = useRef(0);
   const manualRefreshActiveRef = useRef(false);
   const manualRefreshPromiseRef = useRef<Promise<DashboardRefreshResult> | null>(null);
   const refreshFeedbackTimerRef = useRef<number | null>(null);
@@ -423,6 +435,7 @@ export default function DashboardPage() {
       setMilkHistory(Array.isArray(data.days) ? data.days : []);
       const cutoffAt = Number(data.asOfTimestamp);
       setMilkHistoryCutoffAt(Number.isFinite(cutoffAt) ? cutoffAt : null);
+      milkHistoryFetchedAtRef.current = Date.now();
       return "success";
     } catch (error) {
       if (requestId !== milkHistoryRequestRef.current) return "superseded";
@@ -446,6 +459,7 @@ export default function DashboardPage() {
       if (requestId !== sickModeRequestRef.current) return "superseded";
       if (response.ok && data) {
         sickModeDataBabyIdRef.current = babyId;
+        sickModeFetchedAtRef.current = Date.now();
         setSickMode(data);
         setSickModeIsStale(false);
         publishCareMode({ householdId, babyId, active: data.schemaReady && Boolean(data.activeEpisode) });
@@ -470,7 +484,7 @@ export default function DashboardPage() {
   }, [householdId]);
 
   const fetchData = useCallback(async (
-    options: { manual?: boolean; background?: boolean; refreshMilkHistory?: boolean } = {},
+    options: { manual?: boolean; background?: boolean; refreshMilkHistory?: boolean; refreshDependents?: boolean } = {},
   ): Promise<RefreshTaskResult> => {
     if (!householdId) return "skipped";
     if (shouldSkipForManualRefresh(manualRefreshActiveRef.current, Boolean(options.background))) return "skipped";
@@ -491,7 +505,14 @@ export default function DashboardPage() {
       const data = await res.json();
       if (controller.signal.aborted) return "superseded";
       const snapshot = JSON.stringify(data);
-      dashboardEtagRef.current = res.headers.get("X-Dashboard-Tag");
+      const previousTag = dashboardEtagRef.current;
+      const nextTag = res.headers.get("X-Dashboard-Tag");
+      dashboardEtagRef.current = nextTag;
+      // No tag means the server can't vouch for "unchanged" (triggers missing),
+      // so the dependents refresh every poll, as they did before tags.
+      if (options.refreshDependents !== false && (nextTag == null || (previousTag != null && nextTag !== previousTag))) {
+        dependentsStaleRef.current = true;
+      }
       if (snapshot === dashboardSnapshotRef.current) return "success";
       dashboardSnapshotRef.current = snapshot;
 
@@ -583,12 +604,18 @@ export default function DashboardPage() {
       router.push("/");
       return;
     }
-    const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") void fetchData({ background: true });
+    // focus and visibilitychange fire together on return, so one poll covers both.
+    const refreshIfVisible = async () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastPollAtRef.current < POLL_DEDUPE_MS) return;
+      lastPollAtRef.current = now;
+      const result = await fetchData({ background: true, refreshMilkHistory: false });
+      if (result === "success") refreshDependentsRef.current();
     };
     fetchData();
 
-    const interval = window.setInterval(refreshIfVisible, 30_000);
+    const interval = window.setInterval(refreshIfVisible, DASHBOARD_POLL_MS);
     window.addEventListener("focus", refreshIfVisible);
     document.addEventListener("visibilitychange", refreshIfVisible);
 
@@ -602,31 +629,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!baby?.id) return;
-    const refreshMilkHistory = () => {
-      if (document.visibilityState === "visible") void fetchMilkHistory(baby.id, false, { background: true });
-    };
     fetchMilkHistory(baby.id);
-    document.addEventListener("visibilitychange", refreshMilkHistory);
-    return () => {
-      document.removeEventListener("visibilitychange", refreshMilkHistory);
-    };
   }, [baby?.id, fetchMilkHistory, activityFilterRefresh]);
 
   useEffect(() => {
     if (!baby?.id) return;
-    const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") void fetchSickMode(baby.id, { background: true });
-    };
     void fetchSickMode(baby.id);
-    const interval = window.setInterval(refreshIfVisible, 30_000);
-    window.addEventListener("focus", refreshIfVisible);
-    document.addEventListener("visibilitychange", refreshIfVisible);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refreshIfVisible);
-      document.removeEventListener("visibilitychange", refreshIfVisible);
-    };
   }, [baby?.id, fetchSickMode, activityFilterRefresh]);
+
+  // A local change bumps activityFilterRefresh, which refetches all three
+  // dependents itself, so the dashboard fetch it made needn't trigger them again.
+  useEffect(() => {
+    dependentsStaleRef.current = false;
+  }, [activityFilterRefresh]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -701,23 +716,37 @@ export default function DashboardPage() {
 
     // A user changing the selected diary view owns the newest request even if
     // a manual group is still settling. The superseded group reports partial;
-    // interval/focus refreshes below remain suppressed during manual work.
+    // background refreshes (refreshDependents) remain suppressed during manual work.
     void fetchFilteredActivities({ showLoading: viewChanged });
-    const refreshIfVisible = () => {
-      if (document.visibilityState === "visible") void fetchFilteredActivities({ background: true });
-    };
-    const interval = window.setInterval(refreshIfVisible, 30_000);
-    window.addEventListener("focus", refreshIfVisible);
-    document.addEventListener("visibilitychange", refreshIfVisible);
 
     return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refreshIfVisible);
-      document.removeEventListener("visibilitychange", refreshIfVisible);
       activityRequestRef.current?.abort();
       activityRequestRef.current = null;
     };
   }, [householdId, baby?.id, activityViewKey, fetchFilteredActivities]);
+
+  // Called after each successful background dashboard poll.
+  const refreshDependents = useCallback(() => {
+    if (!baby?.id) return;
+    const babyId = baby.id;
+    const now = Date.now();
+    const stale = dependentsStaleRef.current;
+    dependentsStaleRef.current = false;
+    const retryOnFailure = (result: RefreshTaskResult) => {
+      if (result === "failed") dependentsStaleRef.current = true;
+    };
+    if (stale) void fetchFilteredActivities({ background: true }).then(retryOnFailure);
+    if (stale || now - sickModeFetchedAtRef.current >= DEPENDENT_BACKSTOP_MS) {
+      void fetchSickMode(babyId, { background: true }).then(retryOnFailure);
+    }
+    if (stale || now - milkHistoryFetchedAtRef.current >= DEPENDENT_BACKSTOP_MS) {
+      void fetchMilkHistory(babyId, false, { background: true }).then(retryOnFailure);
+    }
+  }, [baby?.id, fetchFilteredActivities, fetchSickMode, fetchMilkHistory]);
+  const refreshDependentsRef = useRef(refreshDependents);
+  useEffect(() => {
+    refreshDependentsRef.current = refreshDependents;
+  }, [refreshDependents]);
 
   const refreshExplicitlyBlocked = isLoading
     || showLogModal
@@ -763,7 +792,7 @@ export default function DashboardPage() {
       let result: DashboardRefreshResult;
       try {
         const outcomes = await Promise.all([
-          fetchData({ manual: true, refreshMilkHistory: false }),
+          fetchData({ manual: true, refreshMilkHistory: false, refreshDependents: false }),
           fetchSickMode(baby.id, { manual: true }),
           fetchMilkHistory(baby.id, false, { manual: true }),
           fetchFilteredActivities({ manual: true }),
@@ -2620,7 +2649,7 @@ export default function DashboardPage() {
           onClose={() => { setShowCaretakerImport(false); setCaretakerImportSession(null); }}
           onImported={async () => {
             await Promise.all([
-              fetchData({ refreshMilkHistory: false }),
+              fetchData({ refreshMilkHistory: false, refreshDependents: false }),
               fetchFilteredActivities({ showLoading: true }),
               fetchMilkHistory(baby.id, false),
               fetchSickMode(baby.id),
