@@ -49,6 +49,7 @@ import CaretakerImportInfo from "@/components/CaretakerImportInfo";
 import CareTimesEditor, { type CareTimesSaveResult } from "@/components/CareTimesEditor";
 import { resolveCaretakerCareWindow } from "@/lib/caretaker-care-window";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
+import { evaluateAmountExpression, isAmountExpression } from "@/lib/amount-expression";
 
 type View = "select" | "scanning" | "review" | "success";
 type RowAction = "include" | "exclude";
@@ -220,7 +221,9 @@ function localBlockingIssues(row: CaretakerImportRow, draft: ReviewDraft, select
   if (draft.note.length > 500) issues.push("Keep the note to 500 characters or fewer.");
 
   if (draft.type === "bottlefeed") {
-    if (!(Number(draft.amount) > 0)) issues.push("Enter the amount consumed.");
+    const amount = evaluateAmountExpression(draft.amount);
+    if (amount == null && draft.amount.trim()) issues.push("Check the amount sum, e.g. 120-40.");
+    else if (!(amount != null && amount > 0)) issues.push("Enter the amount consumed.");
     if (draft.milkType !== "breastmilk" && draft.milkType !== "formula") issues.push("Choose a milk type.");
   } else if (draft.type === "sleep") {
     const endedAt = parseSingaporeDateTime(draft.endedAt);
@@ -246,7 +249,7 @@ function reviewInput(row: CaretakerImportRow, draft: ReviewDraft): CaretakerRevi
   if (draft.action === "exclude") return { id: row.id, action: "exclude" };
   const details = draft.type === row.draft.type ? { ...row.draft.details } : {};
   if (draft.type === "bottlefeed") {
-    details.amount = Number(draft.amount);
+    details.amount = evaluateAmountExpression(draft.amount) ?? Number(draft.amount);
     details.milkType = draft.milkType;
   } else if (draft.type === "diaper") {
     details.peeUnits = Number(draft.peeUnits);
@@ -294,7 +297,8 @@ function rowSummaryParts(draft: ReviewDraft, selectedDate: string): string[] {
   }
 
   if (draft.type === "bottlefeed") {
-    parts.push(draft.amount ? `${draft.amount} ml` : "Amount missing");
+    const amount = evaluateAmountExpression(draft.amount);
+    parts.push(amount != null ? `${amount} ml` : draft.amount ? "Check amount" : "Amount missing");
     parts.push(draft.milkType === "breastmilk" ? "Breastmilk" : draft.milkType === "formula" ? "Formula" : "Milk type missing");
   } else if (draft.type === "diaper") {
     parts.push(draft.peeUnits ? `${draft.peeUnits} pee units` : "Pee units missing");
@@ -461,9 +465,36 @@ function ReviewRowCard({
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-2">
               <label className="text-xs font-medium text-warm-brown">Consumed
                 <span className="mt-1 flex min-h-11 items-center rounded-lg border border-border bg-surface focus-within:ring-2 focus-within:ring-accent-strong/45">
-                  <input inputMode="decimal" type="number" min="0.1" step="0.1" value={draft.amount} disabled={disabled || !included} onChange={event => onChange({ amount: event.target.value })} className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none" />
+                  <input
+                    inputMode="decimal"
+                    type="text"
+                    autoComplete="off"
+                    enterKeyHint="done"
+                    value={draft.amount}
+                    disabled={disabled || !included}
+                    onChange={event => onChange({ amount: event.target.value })}
+                    onBlur={() => {
+                      const amount = evaluateAmountExpression(draft.amount);
+                      if (amount != null && isAmountExpression(draft.amount)) onChange({ amount: String(amount) });
+                    }}
+                    className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
+                  />
+                  {/* The iOS decimal keypad has no minus key; this keeps focus so the keypad stays up. */}
+                  <button
+                    type="button"
+                    aria-label="Subtract wastage"
+                    disabled={disabled || !included}
+                    onPointerDown={event => event.preventDefault()}
+                    onClick={() => onChange({ amount: `${draft.amount.trimEnd()}-` })}
+                    className="hit-44 px-2 text-base font-semibold text-warm-brown disabled:opacity-40"
+                  >−</button>
                   <span className="pr-3 text-xs text-muted">ml</span>
                 </span>
+                {isAmountExpression(draft.amount) && (
+                  <span className="mt-1 block font-normal text-muted" aria-live="polite">
+                    {evaluateAmountExpression(draft.amount) != null ? `= ${evaluateAmountExpression(draft.amount)} ml` : "Finish the sum"}
+                  </span>
+                )}
               </label>
               <label className="text-xs font-medium text-warm-brown">Milk type
                 <select value={draft.milkType} disabled={disabled || !included} onChange={event => onChange({ milkType: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm">
@@ -633,7 +664,7 @@ export default function CaretakerImportModal({
   const sourceNapRows = rows.filter(row => row.draft.type === "sleep");
   const selectedBreastmilk = selectedRows.reduce((total, row) => {
     const draft = drafts[row.id];
-    return total + (draft?.type === "bottlefeed" && draft.milkType === "breastmilk" ? Number(draft.amount) || 0 : 0);
+    return total + (draft?.type === "bottlefeed" && draft.milkType === "breastmilk" ? evaluateAmountExpression(draft.amount) ?? 0 : 0);
   }, 0);
   const localBlockers = selectedRows.flatMap(row => localBlockingIssues(row, drafts[row.id], snapshot?.batch.selectedDate ?? selectedDate));
   const serverBlockers = selectedRows.flatMap(row => row.issues.filter(issue => issue.blocking));
