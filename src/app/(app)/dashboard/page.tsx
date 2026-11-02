@@ -1253,7 +1253,7 @@ export default function DashboardPage() {
       };
       setChildcareMode(result);
       childcareCommandRef.current = null;
-      if (action === "checkOut" && !options.suppressImportPrompt && window.confirm("Childcare check-out saved. Import the childcare screenshot now?")) {
+      if (action === "checkOut" && !options.suppressImportPrompt) {
         openCaretakerImport(payload.session);
       }
       setActivityFilterRefresh((value) => value + 1);

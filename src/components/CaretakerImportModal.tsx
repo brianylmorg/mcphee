@@ -14,7 +14,6 @@ import {
   Moon,
   RotateCcw,
   ScanLine,
-  ShieldCheck,
   UtensilsCrossed,
   X,
 } from "lucide-react";
@@ -40,6 +39,7 @@ import {
   type CaretakerReviewRowInput,
   type CaretakerStageResponse,
 } from "@/lib/caretaker-import-contract";
+import { parseFeedLeftover } from "@/lib/caretaker-import";
 import { stitchScreenshots } from "@/lib/screenshot-stitch";
 import {
   recognizeCaretakerScreenshot,
@@ -65,7 +65,6 @@ type ReviewDraft = {
   poop: string;
   note: string;
   resolvedOrigin: "" | "caretaker" | "household";
-  confirmLowConfidence: boolean;
 };
 
 type StageAttempt = {
@@ -170,7 +169,6 @@ function draftFromRow(row: CaretakerImportRow): ReviewDraft {
     poop,
     note,
     resolvedOrigin: row.origin === "uncertain" ? "" : row.origin,
-    confirmLowConfidence: row.lowConfidenceConfirmed,
   };
 }
 
@@ -190,7 +188,7 @@ function sleepReviewFromSnapshot(snapshot: CaretakerImportSnapshot) {
   };
 }
 
-function formatSingaporeCoverage(coverage: { startedAt: number; endedAt: number }): string {
+function formatSingaporeCoverage(coverage: { startedAt: number; endedAt: number }, selectedDate?: string): string {
   const date = new Intl.DateTimeFormat("en-SG", {
     timeZone: "Asia/Singapore",
     day: "numeric",
@@ -199,10 +197,14 @@ function formatSingaporeCoverage(coverage: { startedAt: number; endedAt: number 
   }).format(new Date(coverage.startedAt));
   const time = new Intl.DateTimeFormat("en-SG", {
     timeZone: "Asia/Singapore",
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
-  return `${date}, ${time.format(new Date(coverage.startedAt))}–${time.format(new Date(coverage.endedAt))} SGT`;
+  const hours = `${time.format(new Date(coverage.startedAt))}–${time.format(new Date(coverage.endedAt))}`;
+  return singaporeDate(new Date(coverage.startedAt)) === selectedDate && singaporeDate(new Date(coverage.endedAt)) === selectedDate
+    ? hours
+    : `${date}, ${hours} SGT`;
 }
 
 function isLowConfidence(row: CaretakerImportRow): boolean {
@@ -217,7 +219,6 @@ function localBlockingIssues(row: CaretakerImportRow, draft: ReviewDraft, select
   else if (!draft.startedAt.startsWith(`${selectedDate}T`)) issues.push("The start time must be on the selected date.");
   if (row.origin === "uncertain" && !draft.resolvedOrigin) issues.push("Choose who entered this source row.");
   if (draft.resolvedOrigin === "household") issues.push("Household entries must stay excluded.");
-  if (isLowConfidence(row) && !draft.confirmLowConfidence) issues.push("Check this entry before final approval.");
   if (draft.note.length > 500) issues.push("Keep the note to 500 characters or fewer.");
 
   if (draft.type === "bottlefeed") {
@@ -265,7 +266,7 @@ function reviewInput(row: CaretakerImportRow, draft: ReviewDraft): CaretakerRevi
     endedAt: draft.type === "sleep" ? parseSingaporeDateTime(draft.endedAt) : null,
     details,
     note: draft.note.trim() || null,
-    confirmLowConfidence: isLowConfidence(row) ? draft.confirmLowConfidence : undefined,
+    confirmLowConfidence: isLowConfidence(row) ? true : undefined,
     resolvedOrigin: row.origin === "uncertain" && draft.resolvedOrigin ? draft.resolvedOrigin : undefined,
   };
 }
@@ -285,33 +286,58 @@ function draftClock(draftValue: string, selectedDate: string): string {
   return date === selectedDate ? time : `${date} ${time}`;
 }
 
-function rowSummaryParts(draft: ReviewDraft, selectedDate: string): string[] {
-  const parts: string[] = [];
-  const startedAt = draftClock(draft.startedAt, selectedDate);
-  if (draft.type === "sleep") {
-    parts.push(startedAt ? `Start ${startedAt}` : "Start time missing");
-    const endedAt = draftClock(draft.endedAt, selectedDate);
-    parts.push(endedAt ? `End ${endedAt}` : "End time missing");
-  } else {
-    parts.push(startedAt || "Time missing");
-  }
+function napMinutes(draft: ReviewDraft): number {
+  const start = parseSingaporeDateTime(draft.startedAt);
+  const end = parseSingaporeDateTime(draft.endedAt);
+  return start != null && end != null && end > start ? Math.round((end - start) / 60000) : 0;
+}
 
-  if (draft.type === "bottlefeed") {
-    const amount = evaluateAmountExpression(draft.amount);
-    parts.push(amount != null ? `${amount} ml` : draft.amount ? "Check amount" : "Amount missing");
-    parts.push(draft.milkType === "breastmilk" ? "Breastmilk" : draft.milkType === "formula" ? "Formula" : "Milk type missing");
-  } else if (draft.type === "diaper") {
-    parts.push(draft.peeUnits ? `${draft.peeUnits} pee units` : "Pee units missing");
-    if (draft.poop === "M") parts.push("Medium poop");
-    else if (draft.poop === "L") parts.push("Large poop");
-    else if (draft.poop === "yes") parts.push("Poop shown, size not given");
-    else parts.push("No poop shown");
-  } else if (draft.type === "note") {
-    const note = draft.note.replace(/\s+/g, " ").trim();
-    parts.push(note ? (note.length > 48 ? `${note.slice(0, 47)}…` : note) : "Note missing");
-  }
+function durationLabel(minutes: number): string {
+  return minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}` : `${minutes}m`;
+}
 
-  return parts;
+// Server issues the client checks again locally. Once a row is edited these
+// go stale, so only the local check counts until the next save re-validates.
+const LOCALLY_RECHECKED_ISSUES = ["INVALID_DETAILS", "MISSING_TIME", "MISSING_END", "INVALID_TIME", "LOW_CONFIDENCE", "ORIGIN_UNCERTAIN"];
+
+function shownServerIssues(row: CaretakerImportRow, edited: boolean): CaretakerImportRow["issues"] {
+  return edited ? row.issues.filter(issue => !LOCALLY_RECHECKED_ISSUES.includes(issue.code)) : row.issues;
+}
+
+function rowNeedsAttention(row: CaretakerImportRow, draft: ReviewDraft, date: string, edited = false): boolean {
+  return draft.action === "include" && (
+    localBlockingIssues(row, draft, date).length > 0
+    || shownServerIssues(row, edited).some(issue => issue.blocking)
+    || (row.origin === "uncertain" && !draft.resolvedOrigin)
+  );
+}
+
+function RowSummary({ row, draft, selectedDate, muted }: {
+  row: CaretakerImportRow; draft: ReviewDraft; selectedDate: string; muted: boolean;
+}) {
+  const start = draftClock(draft.startedAt, selectedDate);
+  const end = draftClock(draft.endedAt, selectedDate);
+  const amount = evaluateAmountExpression(draft.amount);
+  const leftover = parseFeedLeftover(row.sourceText);
+  const wet = Number(draft.peeUnits) > 0 ? `Wet${Number(draft.peeUnits) !== 3 ? ` (${draft.peeUnits})` : ""}` : "";
+  const poo = draft.poop === "M" ? "medium poo" : draft.poop === "L" ? "large poo" : draft.poop === "yes" ? "poo" : "";
+  return (
+    <span className={`block text-[17px] leading-snug ${muted ? "text-muted" : "text-warm-brown"} ${draft.type === "note" ? "line-clamp-2" : ""}`}>
+      <span className={`mr-3 font-semibold tabular-nums ${muted ? "line-through" : ""}`}>
+        <span className={!start && !muted ? "text-warning" : undefined}>{start || "Time?"}</span>
+        {draft.type === "sleep" && `–${end || "?"}`}
+      </span>
+      {draft.type === "bottlefeed" ? <>
+        {amount != null ? `${amount} ml` : "Amount?"}
+        {leftover != null && amount != null && amount === Number(row.draft.details.amount) && <span className="ml-1 text-sm text-muted">({amount + leftover} − {leftover})</span>}
+        <span className={`ml-3 ${!["breastmilk", "formula"].includes(draft.milkType) && !muted ? "text-warning" : ""}`}>
+          {draft.milkType === "breastmilk" ? "Breastmilk" : draft.milkType === "formula" ? "Formula" : "Milk type?"}
+        </span>
+      </> : draft.type === "sleep" ? end ? durationLabel(napMinutes(draft)) : <span className={muted ? "" : "text-warning"}>End time?</span>
+        : draft.type === "diaper" ? wet && poo ? `${wet} + ${poo}` : wet || (poo === "poo" ? "Poo" : poo) || "Contents?"
+          : draft.note.replace(/^\s*Solids:\s*/i, "").trim() || "Note?"}
+    </span>
+  );
 }
 
 function SectionHeading({ icon, children }: { icon: ReactNode; children: ReactNode }) {
@@ -365,33 +391,44 @@ function ReviewRowCard({
   draft,
   selectedDate,
   disabled,
+  openRequest,
+  edited,
   onChange,
 }: {
   row: CaretakerImportRow;
   draft: ReviewDraft;
   selectedDate: string;
   disabled: boolean;
+  openRequest: number;
+  edited: boolean;
   onChange: (change: Partial<ReviewDraft>) => void;
 }) {
   const localIssues = localBlockingIssues(row, draft, selectedDate);
   const included = draft.action === "include";
   const duplicate = row.status === "duplicate" || row.issues.some(issue => issue.code === "EXACT_DUPLICATE");
-  const conflict = row.issues.some(issue => issue.code === "ACTIVITY_CONFLICT");
-  const missingOrOverlap = row.issues.some(issue => ["MISSING_END", "NAP_OVERLAP"].includes(issue.code));
-  const needsAttention = included && (
-    localIssues.length > 0
-    || row.issues.some(issue => issue.blocking)
-    || row.origin === "uncertain"
-    || isLowConfidence(row)
-  );
-  const [editingOpen, setEditingOpen] = useState(needsAttention);
-  const summaryParts = rowSummaryParts(draft, selectedDate);
-  if (draft.type === "diaper" && draft.peeUnits === "3" && row.draft.details.peeUnitsSource) {
-    summaryParts[1] += " (Wet default)";
-  }
+  const missingStart = parseSingaporeDateTime(draft.startedAt) == null;
+  const missingEnd = draft.type === "sleep" && parseSingaporeDateTime(draft.endedAt) == null;
+  const missingMilk = draft.type === "bottlefeed" && !["breastmilk", "formula"].includes(draft.milkType);
+  const uncertain = row.origin === "uncertain" && !draft.resolvedOrigin;
+  const handledLocal = ["Add a valid start time.", "Add a valid nap end time or exclude this row.", "Choose a milk type.", "Choose who entered this source row."];
+  const handledServer = ["MISSING_TIME", "MISSING_END", "UNKNOWN_MILK_TYPE", "MISSING_MILK_TYPE", "ORIGIN_UNCERTAIN", "LOW_CONFIDENCE"];
+  const otherIssues = [...new Set([
+    ...localIssues.filter(message => !handledLocal.includes(message)),
+    ...shownServerIssues(row, edited).filter(issue => !handledServer.includes(issue.code)).map(issue => issue.message),
+  ])];
+  const otherIssueMessage = otherIssues.join(" ");
+  const [editingOpen, setEditingOpen] = useState(included && Boolean(otherIssueMessage));
+  useEffect(() => {
+    if (included && otherIssueMessage) setEditingOpen(true);
+  }, [included, otherIssueMessage]);
+  useEffect(() => {
+    if (openRequest) setEditingOpen(true);
+  }, [openRequest]);
+  const showEditor = editingOpen;
+  const fixButton = "min-h-11 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-warm-brown";
 
   return (
-    <article id={`caretaker-row-${row.id}`} className={`scroll-mt-24 rounded-xl border p-2.5 ${included ? "border-terracotta/35 bg-surface" : "border-border bg-surface-muted/45"}`}>
+    <article id={`caretaker-row-${row.id}`} className={`scroll-mt-24 rounded-xl border p-2.5 ${included ? "border-terracotta/35 bg-surface" : "border-border bg-surface-muted"}`}>
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -399,41 +436,38 @@ function ReviewRowCard({
           disabled={disabled || duplicate}
           aria-label={`Include ${rowLabel(draft.type)} row ${row.rowIndex + 1}`}
           onChange={event => onChange({ action: event.target.checked ? "include" : "exclude" })}
-          className="mt-1 h-5 w-5 shrink-0 accent-terracotta-dark"
+          className="mt-2.5 h-6 w-6 shrink-0 accent-terracotta-dark"
         />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-sm font-semibold text-warm-brown">{rowLabel(draft.type)}</span>
-            {duplicate && <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-semibold text-muted">Already logged — excluded</span>}
-            {conflict && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">Conflict</span>}
-            {missingOrOverlap && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">Needs correction</span>}
-            {isLowConfidence(row) && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">Check carefully</span>}
-          </div>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
-            {summaryParts.map((part, index) => (
-              <span key={`${index}:${part}`} className="inline-flex items-center gap-2">
-                {index > 0 && <span aria-hidden="true" className="text-border">·</span>}
-                <span className={index === 0 ? "tabular-nums" : undefined}>{part}</span>
-              </span>
-            ))}
-          </p>
+          {duplicate ? <div className="py-2"><RowSummary row={row} draft={draft} selectedDate={selectedDate} muted /><p className="text-sm text-muted">Already in the diary</p></div> : (
+            <button type="button" disabled={disabled || !included} aria-expanded={included && showEditor} onClick={() => setEditingOpen(open => !open)} className="min-h-11 w-full text-left">
+              <RowSummary row={row} draft={draft} selectedDate={selectedDate} muted={!included} />
+            </button>
+          )}
+          {included && !duplicate && <div className="space-y-2">
+            {missingMilk && <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={disabled} onClick={() => onChange({ milkType: "breastmilk" })} className={fixButton}>Breastmilk</button>
+              <button type="button" disabled={disabled} onClick={() => onChange({ milkType: "formula" })} className={fixButton}>Formula</button>
+            </div>}
+            {missingStart && <label className="block text-sm text-warning">Start time
+              <input type="time" aria-label="Missing start time" disabled={disabled} value={draft.startedAt.slice(11, 16)} onChange={event => onChange({ startedAt: event.target.value ? `${selectedDate}T${event.target.value}` : "" })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-warm-brown" />
+            </label>}
+            {missingEnd && <label className="block text-sm text-warning">End time
+              <input type="time" aria-label="Missing end time" disabled={disabled} value={draft.endedAt.slice(11, 16)} onChange={event => onChange({ endedAt: event.target.value ? `${selectedDate}T${event.target.value}` : "" })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-warm-brown" />
+            </label>}
+            {uncertain && <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={disabled} onClick={() => onChange({ resolvedOrigin: "caretaker" })} className={fixButton}>Infant care</button>
+              <button type="button" disabled={disabled} onClick={() => onChange({ resolvedOrigin: "household", action: "exclude" })} className={fixButton}>Household — skip</button>
+            </div>}
+            {isLowConfidence(row) && <p className="text-sm text-muted">Check against the screenshot</p>}
+            {otherIssues.length > 0 && <p role="status" className="text-sm text-warning">{otherIssueMessage}</p>}
+          </div>}
         </div>
       </div>
 
-      <details
-        className="group mt-1.5"
-        open={editingOpen}
-        onToggle={event => setEditingOpen(event.currentTarget.open)}
-      >
-        <summary className="inline-flex w-fit min-h-9 cursor-pointer list-none items-center gap-2 rounded-md bg-surface-muted/50 px-2.5 text-xs font-semibold text-warm-brown focus:outline-none focus-visible:ring-2 focus-visible:ring-terracotta/30 [&::-webkit-details-marker]:hidden">
-          <span>Edit</span>
-          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-muted transition-transform group-open:rotate-180 motion-reduce:transition-none" />
-        </summary>
-        <div className={`mt-1.5 grid gap-3 ${included ? "" : "opacity-65"}`}>
-          <details className="text-xs text-muted">
-            <summary className="inline-flex min-h-9 cursor-pointer list-none items-center underline-offset-2 hover:underline [&::-webkit-details-marker]:hidden">Source text</summary>
-            <p className="mt-1 break-words rounded-lg bg-surface-muted px-2.5 py-2 leading-relaxed">{row.sourceText || "No readable source text"}</p>
-          </details>
+      {included && !duplicate && showEditor && (
+        <div className="mt-3 grid gap-3">
+          <p className="break-words text-sm leading-relaxed text-muted">{row.sourceText || "No readable source text"}</p>
           <label className="text-xs font-medium text-warm-brown">Activity
             <select value={draft.type} disabled={disabled || !included} onChange={event => onChange({ type: event.target.value as ReviewDraft["type"] })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm">
               <option value="bottlefeed">Feed</option>
@@ -510,7 +544,6 @@ function ReviewRowCard({
             <div className="grid grid-cols-2 gap-2">
               <label className="text-xs font-medium text-warm-brown">Pee units
                 <input inputMode="numeric" type="number" min="0" max="5" step="1" value={draft.peeUnits} disabled={disabled || !included} onChange={event => onChange({ peeUnits: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm" />
-                <span className="mt-1 block font-normal text-muted">Wet defaults to 3 units</span>
               </label>
               <label className="text-xs font-medium text-warm-brown">Poop
                 <select value={draft.poop} disabled={disabled || !included} onChange={event => onChange({ poop: event.target.value })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm">
@@ -527,25 +560,18 @@ function ReviewRowCard({
             <textarea rows={2} maxLength={500} value={draft.note} disabled={disabled || !included} onChange={event => onChange({ note: event.target.value })} className="mt-1 w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
           </label>
 
-          {row.origin === "uncertain" && included && (
-            <label className="rounded-lg border border-warning/35 bg-warning/10 p-2.5 text-xs font-medium text-warning">Who entered this source row?
-              <select value={draft.resolvedOrigin} disabled={disabled} onChange={event => onChange({ resolvedOrigin: event.target.value as ReviewDraft["resolvedOrigin"] })} className="mt-2 min-h-11 w-full rounded-lg border border-warning/35 bg-surface px-3 text-sm text-warm-brown">
+          {row.origin === "uncertain" && (
+            <label className="text-xs font-medium text-warm-brown">Origin
+              <select value={draft.resolvedOrigin} disabled={disabled} onChange={event => onChange({ resolvedOrigin: event.target.value as ReviewDraft["resolvedOrigin"], ...(event.target.value === "household" ? { action: "exclude" as const } : {}) })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-sm">
                 <option value="">Choose one</option>
                 <option value="caretaker">Infant care</option>
-                <option value="household">Household member — exclude</option>
+                <option value="household">Household — skip</option>
               </select>
             </label>
           )}
-
-        </div>
-      </details>
-
-      {included && (row.issues.length > 0 || localIssues.length > 0) && (
-        <div className="mt-3 space-y-1 rounded-lg bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning" role="status">
-          {row.issues.map((issue, index) => <p key={`${issue.code}:${index}`}>{issue.message}</p>)}
-          {localIssues.map((issue, index) => <p key={`local:${index}`}>{issue}</p>)}
         </div>
       )}
+
     </article>
   );
 }
@@ -589,10 +615,11 @@ export default function CaretakerImportModal({
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
   const [careStartedAt, setCareStartedAt] = useState(() => singaporeDateTimeInput(childcareSession?.checkedInAt ?? null));
   const [careEndedAt, setCareEndedAt] = useState(() => singaporeDateTimeInput(childcareSession?.checkedOutAt ?? null));
-  const [napsChecked, setNapsChecked] = useState(false);
   const [reviewDirty, setReviewDirty] = useState(false);
   const [hasSavedReview, setHasSavedReview] = useState(false);
-  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [rowOpenRequests, setRowOpenRequests] = useState<Record<string, number>>({});
+  const [editedRowIds, setEditedRowIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [successRefreshFinished, setSuccessRefreshFinished] = useState(false);
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState<"save" | "commit" | "refresh" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -652,13 +679,30 @@ export default function CaretakerImportModal({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  useEffect(() => {
+    if (view !== "success" || !successRefreshFinished || refreshWarning) return;
+    const timer = window.setTimeout(onClose, 1500);
+    return () => window.clearTimeout(timer);
+  }, [view, successRefreshFinished, refreshWarning, onClose]);
+
   const rows = snapshot?.rows ?? [];
   const householdRows = rows.filter(row => row.origin === "household" || row.status === "blue_excluded");
   const visibleRows = rows.filter(row => !householdRows.includes(row));
+  // Rows needing a fix go first, ranked once per loaded snapshot so a row
+  // does not jump away while it is being fixed.
+  const attentionFirst = useMemo(() => {
+    const rank = new Map<string, number>();
+    for (const row of snapshot?.rows ?? []) {
+      rank.set(row.id, rowNeedsAttention(row, draftFromRow(row), snapshot!.batch.selectedDate) ? 0 : 1);
+    }
+    return rank;
+  }, [snapshot]);
   const groupedRows = useMemo(() => {
     const order: ReviewDraft["type"][] = ["bottlefeed", "sleep", "diaper", "note"];
-    return order.map(type => ({ type, rows: visibleRows.filter(row => (drafts[row.id]?.type ?? row.draft.type) === type) })).filter(group => group.rows.length > 0);
-  }, [drafts, visibleRows]);
+    return order.map(type => ({ type, rows: visibleRows.filter(row => (drafts[row.id]?.type ?? row.draft.type) === type).sort((a, b) =>
+      (attentionFirst.get(a.id) ?? 1) - (attentionFirst.get(b.id) ?? 1) || a.rowIndex - b.rowIndex) })).filter(group => group.rows.length > 0);
+  }, [drafts, visibleRows, attentionFirst]);
+  const attentionRows = groupedRows.flatMap(group => group.rows).filter(row => rowNeedsAttention(row, drafts[row.id], snapshot?.batch.selectedDate ?? selectedDate, editedRowIds.has(row.id)));
   const selectedRows = visibleRows.filter(row => drafts[row.id]?.action === "include");
   const selectedNaps = selectedRows.filter(row => drafts[row.id]?.type === "sleep");
   const sourceNapRows = rows.filter(row => row.draft.type === "sleep");
@@ -666,8 +710,6 @@ export default function CaretakerImportModal({
     const draft = drafts[row.id];
     return total + (draft?.type === "bottlefeed" && draft.milkType === "breastmilk" ? evaluateAmountExpression(draft.amount) ?? 0 : 0);
   }, 0);
-  const localBlockers = selectedRows.flatMap(row => localBlockingIssues(row, drafts[row.id], snapshot?.batch.selectedDate ?? selectedDate));
-  const serverBlockers = selectedRows.flatMap(row => row.issues.filter(issue => issue.blocking));
   const linkedCareSession = snapshot?.childcareSession ?? null;
   const careWindow = resolveCaretakerCareWindow(
     linkedCareSession,
@@ -701,35 +743,6 @@ export default function CaretakerImportModal({
     return [...new Set(errors)];
   })();
   const savedSleepPlan = hasSavedReview && !reviewDirty ? snapshot?.sleepReconciliation ?? null : null;
-  const canCommit = Boolean(
-    snapshot
-    && hasSavedReview
-    && !reviewDirty
-    && !stale
-    && localBlockers.length === 0
-    && serverBlockers.length === 0
-    && sleepPlanErrors.length === 0
-    && napsChecked
-    && reviewConfirmed
-    && !busy,
-  );
-  const applyRequirements = [
-    ...(!hasSavedReview || reviewDirty
-      ? [reviewDirty ? "Save your latest care review." : "Save the care review."]
-      : []),
-    ...sleepPlanErrors,
-    ...selectedRows.flatMap(row => [
-      ...localBlockingIssues(row, drafts[row.id], snapshot?.batch.selectedDate ?? selectedDate)
-        .map(message => `Entry ${row.rowIndex + 1} (${rowLabel(drafts[row.id].type)}): ${message}`),
-      ...row.issues.filter(issue => issue.blocking)
-        .map(issue => `Entry ${row.rowIndex + 1} (${rowLabel(drafts[row.id].type)}): ${issue.message}`),
-    ]),
-    ...(!reviewConfirmed
-      ? ["Confirm the final review, including the complete sleep record for the care hours."]
-      : []),
-    ...(stale ? ["Load the latest review before applying."] : []),
-  ];
-
   const resetImport = (keepDate = true) => {
     scanAbortRef.current?.abort();
     scanAbortRef.current = null;
@@ -744,13 +757,13 @@ export default function CaretakerImportModal({
     setDrafts({});
     setCareStartedAt(singaporeDateTimeInput(linkedSession?.checkedInAt ?? null));
     setCareEndedAt(singaporeDateTimeInput(linkedSession?.checkedOutAt ?? null));
-    setNapsChecked(false);
+
     setReviewDirty(false);
     setHasSavedReview(false);
-    setReviewConfirmed(false);
     setStale(false);
     setBusy(null);
     setSuccess(null);
+    setSuccessRefreshFinished(false);
     setRefreshWarning(null);
     setResumeBatchId(null);
     setResumedReview(false);
@@ -770,12 +783,18 @@ export default function CaretakerImportModal({
     onClose();
   };
 
+  const careEndTimestamp = parseSingaporeDateTime(careEndedAt);
+  const validCareEnd = careEndTimestamp != null && careEndedAt.startsWith(`${selectedDate}T`)
+    && careEndTimestamp > (linkedSession?.checkedInAt ?? 0) && careEndTimestamp <= Date.now();
+  const canAutoRead = !needsCareEnd || validCareEnd;
+
   const joinSources = async (list: File[]) => {
     setSources(list);
     setJoinNote(null);
     stageAttemptRef.current = null;
     if (list.length === 1) {
       setFile(list[0]);
+      if (canAutoRead) void stageScreenshot(list[0]);
       return;
     }
     setFile(null);
@@ -784,6 +803,7 @@ export default function CaretakerImportModal({
       const joined = await stitchScreenshots(list, CARETAKER_IMPORT_MAX_IMAGE_BYTES);
       setFile(joined.file);
       setJoinNote({ duplicates: joined.duplicates, unaligned: joined.unaligned, count: joined.imageCount });
+      if (joined.unaligned.length === 0 && canAutoRead) void stageScreenshot(joined.file);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "These screenshots could not be joined.");
     } finally {
@@ -858,10 +878,12 @@ export default function CaretakerImportModal({
     setView("success");
     try { await onImported(); } catch {
       setRefreshWarning("The reviewed care log was already applied, but the dashboard could not refresh. Close this window and refresh when you are online.");
+    } finally {
+      setSuccessRefreshFinished(true);
     }
   };
 
-  const stageScreenshot = async () => {
+  const stageScreenshot = async (file: File) => {
     if (!file || !selectedDate || view === "scanning" || busy) return;
     let sessionForStage = linkedSession;
     if (sessionForStage && sessionForStage.checkedOutAt == null) {
@@ -938,14 +960,13 @@ export default function CaretakerImportModal({
         return;
       }
       setSnapshot(staged);
+      setEditedRowIds(new Set());
       setDrafts(draftsFromSnapshot(staged));
       const sleepReview = sleepReviewFromSnapshot(staged);
       setCareStartedAt(sleepReview.careStartedAt);
       setCareEndedAt(sleepReview.careEndedAt);
-      setNapsChecked(sleepReview.napsChecked);
       setReviewDirty(false);
       setHasSavedReview(sleepReview.napsChecked);
-      setReviewConfirmed(false);
       setStale(false);
       setView("review");
     } catch (caught) {
@@ -979,14 +1000,13 @@ export default function CaretakerImportModal({
       if (previous.batch.status === "expired" || !previous.batch.sourceAvailable) return expireImport();
       setSnapshot(previous);
       setLinkedSession(previous.childcareSession);
+      setEditedRowIds(new Set());
       setDrafts(draftsFromSnapshot(previous));
       const sleepReview = sleepReviewFromSnapshot(previous);
       setCareStartedAt(sleepReview.careStartedAt);
       setCareEndedAt(sleepReview.careEndedAt);
-      setNapsChecked(sleepReview.napsChecked);
       setHasSavedReview(sleepReview.napsChecked);
       setReviewDirty(false);
-      setReviewConfirmed(false);
       setStale(false);
       setResumedReview(true);
       commitAttemptRef.current = null;
@@ -999,15 +1019,13 @@ export default function CaretakerImportModal({
   };
 
   const updateDraft = (rowId: string, change: Partial<ReviewDraft>) => {
-    const changesNap = drafts[rowId]?.type === "sleep" || change.type === "sleep";
+    setEditedRowIds(current => current.has(rowId) ? current : new Set(current).add(rowId));
     setDrafts(current => {
       const next = { ...current[rowId], ...change };
       if (change.resolvedOrigin === "household") next.action = "exclude";
       return { ...current, [rowId]: next };
     });
-    if (changesNap) setNapsChecked(false);
     setReviewDirty(true);
-    setReviewConfirmed(false);
     setHasSavedReview(false);
     setStale(false);
     setError(null);
@@ -1020,48 +1038,20 @@ export default function CaretakerImportModal({
   }) => {
     if (change.careStartedAt != null) setCareStartedAt(change.careStartedAt);
     if (change.careEndedAt != null) setCareEndedAt(change.careEndedAt);
-    setNapsChecked(false);
     setReviewDirty(true);
-    setReviewConfirmed(false);
     setHasSavedReview(false);
     setStale(false);
     setError(null);
     commitAttemptRef.current = null;
   };
 
-  const updateReviewConfirmation = (checked: boolean) => {
-    setDrafts(current => Object.fromEntries(rows.map(row => {
-      const draft = current[row.id];
-      return [row.id, isLowConfidence(row) && draft.action === "include"
-        ? { ...draft, confirmLowConfidence: checked }
-        : draft];
-    })));
-    setReviewConfirmed(checked);
-    setNapsChecked(checked);
-    if (napsChecked !== checked) {
-      setReviewDirty(true);
-      setHasSavedReview(false);
-      setStale(false);
-      setError(null);
-      commitAttemptRef.current = null;
-    }
+  const highlightProblem = (rowId?: string) => {
+    if (rowId) setRowOpenRequests(current => ({ ...current, [rowId]: (current[rowId] ?? 0) + 1 }));
+    document.getElementById(rowId ? `caretaker-row-${rowId}` : "caretaker-care-hours")?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  const saveReview = async () => {
-    if (!snapshot || busy) return;
-    const includedWithLocalErrors = rows.filter(row => localBlockingIssues(row, drafts[row.id], snapshot.batch.selectedDate).length > 0);
-    if (includedWithLocalErrors.length > 0) {
-      setError("Fix or exclude every highlighted row before saving the review.");
-      return;
-    }
-    if (sleepPlanErrors.length > 0 || careStart == null || careEnd == null) {
-      setError(sleepPlanErrors.join(" ") || "Enter a valid care start and end before saving the review.");
-      return;
-    }
-    if (!reviewConfirmed) {
-      setError("Confirm the final review before saving the care log.");
-      return;
-    }
+  const saveReview = async (): Promise<CaretakerImportSnapshot | null> => {
+    if (!snapshot || busy) return null;
     setBusy("save");
     setError(null);
     try {
@@ -1079,20 +1069,26 @@ export default function CaretakerImportModal({
           },
         }),
       });
-      if (updated.batch.status === "expired" || !updated.batch.sourceAvailable) return expireImport();
+      if (updated.batch.status === "expired" || !updated.batch.sourceAvailable) {
+        expireImport();
+        return null;
+      }
       setSnapshot(updated);
+      setEditedRowIds(new Set());
       setDrafts(draftsFromSnapshot(updated));
       const sleepReview = sleepReviewFromSnapshot(updated);
       setCareStartedAt(sleepReview.careStartedAt);
       setCareEndedAt(sleepReview.careEndedAt);
-      setNapsChecked(sleepReview.napsChecked);
       setReviewDirty(false);
       setHasSavedReview(sleepReview.napsChecked);
-      setReviewConfirmed(sleepReview.napsChecked);
       setStale(false);
       commitAttemptRef.current = null;
+      return updated;
     } catch (caught) {
-      if (caught instanceof CaretakerRequestError && caught.code.includes("EXPIRED")) return expireImport();
+      if (caught instanceof CaretakerRequestError && caught.code.includes("EXPIRED")) {
+        expireImport();
+        return null;
+      }
       if (caught instanceof CaretakerRequestError && ["REVISION_CONFLICT", "ALREADY_COMMITTED"].includes(caught.code)) {
         setStale(true);
         setError("This review changed elsewhere. Your edits are still here. Load the latest copy, then review it again.");
@@ -1102,6 +1098,7 @@ export default function CaretakerImportModal({
     } finally {
       setBusy(null);
     }
+    return null;
   };
 
   const loadLatest = async () => {
@@ -1116,14 +1113,13 @@ export default function CaretakerImportModal({
       }
       if (latest.batch.status === "expired" || !latest.batch.sourceAvailable) return expireImport();
       setSnapshot(latest);
+      setEditedRowIds(new Set());
       setDrafts(draftsFromSnapshot(latest));
       const sleepReview = sleepReviewFromSnapshot(latest);
       setCareStartedAt(sleepReview.careStartedAt);
       setCareEndedAt(sleepReview.careEndedAt);
-      setNapsChecked(sleepReview.napsChecked);
       setReviewDirty(false);
       setHasSavedReview(sleepReview.napsChecked);
-      setReviewConfirmed(false);
       setStale(false);
       commitAttemptRef.current = null;
     } catch (caught) {
@@ -1135,8 +1131,27 @@ export default function CaretakerImportModal({
   };
 
   const commit = async () => {
-    if (!snapshot || !canCommit || busy) return;
-    const signature = `${snapshot.batch.id}:${snapshot.batch.revision}`;
+    if (!snapshot || stale || busy) return;
+    const invalidRow = selectedRows.find(row => localBlockingIssues(row, drafts[row.id], snapshot.batch.selectedDate).length > 0);
+    if (invalidRow) {
+      highlightProblem(invalidRow.id);
+      setError("Fix the highlighted entry first.");
+      return;
+    }
+    if (sleepPlanErrors.length > 0) {
+      highlightProblem();
+      setError(sleepPlanErrors[0]);
+      return;
+    }
+    const saved = !hasSavedReview || reviewDirty ? await saveReview() : snapshot;
+    if (!saved) return;
+    const blockedRow = saved.rows.find(row => drafts[row.id]?.action === "include" && row.issues.some(issue => issue.blocking));
+    if (blockedRow) {
+      highlightProblem(blockedRow.id);
+      setError(blockedRow.issues.find(issue => issue.blocking)!.message);
+      return;
+    }
+    const signature = `${saved.batch.id}:${saved.batch.revision}`;
     if (!commitAttemptRef.current || commitAttemptRef.current.signature !== signature) {
       commitAttemptRef.current = { signature, requestId: crypto.randomUUID() };
     }
@@ -1148,8 +1163,8 @@ export default function CaretakerImportModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          batchId: snapshot.batch.id,
-          expectedRevision: snapshot.batch.revision,
+          batchId: saved.batch.id,
+          expectedRevision: saved.batch.revision,
           requestId: attempt.requestId,
         }),
       });
@@ -1159,6 +1174,8 @@ export default function CaretakerImportModal({
         await onImported();
       } catch {
         setRefreshWarning("The reviewed care log was applied, but the dashboard could not refresh. Close this window and refresh when you are online.");
+      } finally {
+        setSuccessRefreshFinished(true);
       }
     } catch (caught) {
       if (caught instanceof CaretakerRequestError && caught.code.includes("EXPIRED")) return expireImport();
@@ -1167,12 +1184,10 @@ export default function CaretakerImportModal({
         || caught.status === 409
         || (caught.issues?.length ?? 0) > 0
       )) {
-        setReviewConfirmed(false);
         setStale(true);
         commitAttemptRef.current = null;
         setError(`Nothing was imported. ${caught.message} Load the latest copy and review the highlighted rows.`);
       } else if (caught instanceof CaretakerRequestError) {
-        setReviewConfirmed(false);
         setHasSavedReview(false);
         commitAttemptRef.current = null;
         setError(`Nothing was imported. ${caught.message} Correct or exclude the affected entries, then save the review again.`);
@@ -1211,7 +1226,6 @@ export default function CaretakerImportModal({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-warm-brown">Choose screenshot</h2>
-              <p className="mt-1 text-sm text-muted">Next: check care hours and entries, then approve.</p>
             </div>
             <CaretakerImportInfo label="About screenshot imports">
               <p>The screenshot is read on this device with local OCR. No paid service or external AI is used. Screenshots and extracted drafts are kept privately for up to 7 days so your household can finish the review.</p>
@@ -1257,9 +1271,12 @@ export default function CaretakerImportModal({
           )}
 
           <div>
-            <label htmlFor="caretaker-screenshot" className="block text-sm font-semibold">Screenshot</label>
-            <p className="mt-1 text-xs text-muted">One long screenshot, or several overlapping screenshots of the same page (up to {CARETAKER_IMPORT_MAX_SCREENSHOTS}). Repeated parts are removed before reading.</p>
-            <input ref={fileInputRef} id="caretaker-screenshot" type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy) || joining} onChange={chooseFile} className="mt-2 block w-full cursor-pointer rounded-xl border border-dashed border-terracotta/45 bg-terracotta/5 p-3 text-sm file:mr-3 file:min-h-9 file:rounded-lg file:border-0 file:bg-terracotta-dark file:px-3 file:text-sm file:font-semibold file:text-on-accent" />
+            <p className="text-xs text-muted">One long screenshot, or several overlapping screenshots of the same page (up to {CARETAKER_IMPORT_MAX_SCREENSHOTS}). Repeated parts are removed before reading.</p>
+            <label className="relative mt-2 flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm hover:bg-warm-brown focus-within:ring-2 focus-within:ring-accent-strong">
+              <ImageUp aria-hidden="true" className="h-5 w-5" />Choose screenshot
+              <input ref={fileInputRef} id="caretaker-screenshot" type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy) || joining} onChange={chooseFile} className="sr-only" />
+            </label>
+            {!file && sources.length === 0 && <button type="button" onClick={onClose} className="mt-2 min-h-11 w-full text-sm text-muted underline underline-offset-2">Later</button>}
           </div>
 
           {sources.length > 1 && (
@@ -1279,7 +1296,7 @@ export default function CaretakerImportModal({
                 {joining
                   ? "Joining screenshots…"
                   : joinNote
-                    ? `Joined ${joinNote.count - joinNote.duplicates} screenshots into one page${joinNote.duplicates ? `, skipping ${joinNote.duplicates} repeated ${joinNote.duplicates === 1 ? "copy" : "copies"}` : ""}. Check the preview below.`
+                    ? `Joined ${joinNote.count - joinNote.duplicates} screenshots into one page${joinNote.duplicates ? `, skipping ${joinNote.duplicates} repeated ${joinNote.duplicates === 1 ? "copy" : "copies"}` : ""}.`
                     : ""}
               </p>
               {joinNote && joinNote.unaligned.length > 0 && (
@@ -1290,21 +1307,11 @@ export default function CaretakerImportModal({
             </div>
           )}
 
-          {previewUrl && (
-            <details className="overflow-hidden rounded-xl border border-border bg-surface-muted">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold">View screenshot</summary>
-              {/* Blob URLs are local previews and cannot use Next's image optimizer. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewUrl} alt="Selected caretaker screenshot" className="max-h-48 w-full object-contain" />
-              {file?.name && <p className="truncate border-t border-border px-3 py-2 text-xs text-muted">{file.name}</p>}
-            </details>
-          )}
-
           {error && <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
           {resumeBatchId && <button type="button" disabled={Boolean(busy)} onClick={() => { void resumePreviousReview(); }} className="min-h-12 w-full rounded-xl border border-terracotta px-4 py-3 text-sm font-semibold text-accent-strong disabled:opacity-45">{busy === "refresh" ? "Opening review…" : "Resume previous review"}</button>}
-          <button type="button" onClick={() => { void stageScreenshot(); }} disabled={!file || joining || !selectedDate || (needsCareEnd && !careEndedAt)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
-            <ImageUp aria-hidden="true" className="h-5 w-5" />{needsCareEnd ? "End care & read screenshot" : (stageAttemptRef.current?.lines ? "Retry preparing review" : "Read screenshot")}
-          </button>
+          {file && <button type="button" onClick={() => { void stageScreenshot(file); }} disabled={joining || !selectedDate || (needsCareEnd && !validCareEnd)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
+            <ImageUp aria-hidden="true" className="h-5 w-5" />{error ? "Try again" : needsCareEnd ? "End care & read screenshot" : "Read screenshot"}
+          </button>}
         </div>
       )}
 
@@ -1326,20 +1333,18 @@ export default function CaretakerImportModal({
 
       {view === "review" && snapshot && (
         <div className="space-y-5 p-4 sm:p-5">
-          {resumedReview && <p role="status" className="rounded-lg bg-surface-muted px-3 py-2 text-sm">Previous review resumed. Check its original care hours below.</p>}
-          <section className="space-y-2 rounded-xl border border-border bg-surface-muted/45 p-3">
-            <details className="overflow-hidden rounded-lg border border-border bg-surface">
+          {resumedReview && <p role="status" className="text-sm text-muted">Previous review resumed. Check its original care hours below.</p>}
+          <details className="overflow-hidden rounded-xl border border-border bg-surface">
               <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-accent-strong">View screenshot</summary>
-              <div className="border-t border-border">
+              <div>
                 {previewUrl ? <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={previewUrl} alt="Source caretaker screenshot" className="max-h-48 w-full object-contain" />
                 </> : <div className="flex min-h-24 items-center justify-center text-xs text-muted">Source image unavailable</div>}
               </div>
-            </details>
-          </section>
+          </details>
 
-          <section id="caretaker-care-hours" className="scroll-mt-24 space-y-2 rounded-xl border border-terracotta/30 bg-terracotta/5 p-3" aria-labelledby="care-hours-title">
+          <section id="caretaker-care-hours" className="scroll-mt-24 space-y-3" aria-labelledby="care-hours-title">
             <div className="flex items-start justify-between gap-2">
               <SectionHeading icon={<Moon className="h-4 w-4" />}>
                 <span id="care-hours-title">Care hours</span>
@@ -1359,12 +1364,9 @@ export default function CaretakerImportModal({
               </CaretakerImportInfo>
             </div>
 
-            <p className="text-xs leading-relaxed text-muted">Only the listed naps count as sleep during care.</p>
-
             {linkedCoverage ? (
-              <div className="rounded-lg border border-border bg-surface px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong">From childcare check-in/out</p>
-                <p className="mt-1 text-sm font-medium tabular-nums text-warm-brown">{formatSingaporeCoverage(linkedCoverage)}</p>
+              <div className="space-y-2">
+                <p className="mt-1 text-sm font-medium tabular-nums text-warm-brown">Care {formatSingaporeCoverage(linkedCoverage, snapshot.batch.selectedDate)}</p>
                 {onEditCareTimes && linkedCareSession?.checkedOutAt != null && (
                   <CareTimesEditor
                     session={{ ...linkedCareSession, checkedOutAt: linkedCareSession.checkedOutAt }}
@@ -1413,26 +1415,26 @@ export default function CaretakerImportModal({
             )}
 
             {!snapshot.batch.napSectionDetected && (
-              <p role="alert" className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/10 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+              <p role="alert" className="flex items-start gap-2 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                 Full nap history was not detected. Check the screenshot covers every nap.
               </p>
             )}
             {snapshot.batch.napSectionDetected && sourceNapRows.length === 0 && (
-              <p role="alert" className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/10 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+              <p role="alert" className="flex items-start gap-2 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                 No naps detected. Confirm only if baby was awake throughout care.
               </p>
             )}
             {sourceNapRows.length > 0 && selectedNaps.length === 0 && (
-              <p role="status" className="flex items-start gap-2 rounded-lg border border-warning/35 bg-warning/10 px-3 py-2.5 text-xs font-medium leading-relaxed text-warning">
+              <p role="status" className="flex items-start gap-2 text-xs font-medium leading-relaxed text-warning">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                 No naps included: the whole care period will be recorded as awake.
               </p>
             )}
 
             {sleepPlanErrors.length > 0 && (
-              <div role="status" className="space-y-1 rounded-lg bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning">
+              <div role="status" className="space-y-1 text-sm leading-relaxed text-warning">
                 {sleepPlanErrors.map(message => <p key={message}>{message}</p>)}
               </div>
             )}
@@ -1440,67 +1442,51 @@ export default function CaretakerImportModal({
           </section>
 
           {householdRows.length > 0 && (
-            <details className="rounded-xl border border-frozen/30 bg-frozen/10">
-              <summary className="flex min-h-12 cursor-pointer items-center gap-2 px-3 py-2 text-sm font-semibold text-frozen-strong">
-                <ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0" />
-                {householdRows.length} household {householdRows.length === 1 ? "entry" : "entries"} (blue) — excluded
+            <details className="text-sm text-muted">
+              <summary className="min-h-11 cursor-pointer py-2">
+                {householdRows.length} household {householdRows.length === 1 ? "entry" : "entries"} (blue) skipped
               </summary>
-              <div className="border-t border-frozen/30 px-3 py-2 text-xs text-frozen-strong">
-                {householdRows.map(row => <p key={row.id} className="border-b border-frozen/30 py-2 last:border-0">{row.sourceText || rowLabel(row.draft.type)}</p>)}
+              <div className="space-y-2">
+                {householdRows.map(row => <p key={row.id}>{row.sourceText || rowLabel(row.draft.type)}</p>)}
               </div>
             </details>
           )}
 
+          {attentionRows.length > 0 && (
+            <button type="button" disabled={Boolean(busy)} onClick={() => highlightProblem(attentionRows[0].id)} className="min-h-11 text-left text-warning">
+              {attentionRows.length} {attentionRows.length === 1 ? "entry needs" : "entries need"} a look
+            </button>
+          )}
+
           {visibleRows.length === 0 ? (
-            <p className="rounded-xl border border-border bg-surface-muted p-4 text-sm text-muted">No additional infant-care activity rows are available. You can still apply the reviewed sleep schedule for this care period.</p>
+            <p className="text-sm text-muted">No additional infant-care activity rows are available. You can still apply the reviewed sleep schedule for this care period.</p>
           ) : groupedRows.map(group => (
             <section key={group.type} className="space-y-2.5">
               <SectionHeading icon={group.type === "bottlefeed" ? <Milk className="h-4 w-4" /> : group.type === "sleep" ? <Moon className="h-4 w-4" /> : group.type === "diaper" ? <Baby className="h-4 w-4" /> : <UtensilsCrossed className="h-4 w-4" />}>
                 {group.type === "bottlefeed" ? "Feeds" : group.type === "sleep" ? "Naps" : group.type === "diaper" ? "Diapers" : "Solids and notes"}
+                <span className="font-normal text-muted">
+                  {group.rows.filter(row => drafts[row.id].action === "include").length}
+                  {group.type === "bottlefeed" ? ` · ${group.rows.reduce((total, row) => total + (drafts[row.id].action === "include" ? evaluateAmountExpression(drafts[row.id].amount) ?? 0 : 0), 0)} ml`
+                    : group.type === "sleep" ? ` · ${durationLabel(group.rows.reduce((total, row) => total + (drafts[row.id].action === "include" ? napMinutes(drafts[row.id]) : 0), 0))}` : ""}
+                </span>
               </SectionHeading>
-              {group.rows.map(row => <ReviewRowCard key={row.id} row={row} draft={drafts[row.id]} selectedDate={snapshot.batch.selectedDate} disabled={Boolean(busy)} onChange={change => updateDraft(row.id, change)} />)}
+              {group.rows.map(row => <ReviewRowCard key={row.id} openRequest={rowOpenRequests[row.id] ?? 0} edited={editedRowIds.has(row.id)} row={row} draft={drafts[row.id]} selectedDate={snapshot.batch.selectedDate} disabled={Boolean(busy)} onChange={change => updateDraft(row.id, change)} />)}
             </section>
           ))}
 
-          {error && <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm leading-relaxed text-danger">{error}</p>}
+          {error && <p role="alert" className="text-sm leading-relaxed text-danger">{error}</p>}
           {stale && (
-            <button type="button" disabled={Boolean(busy)} onClick={() => { void loadLatest(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 text-sm font-semibold text-warning disabled:opacity-50">
+            <button type="button" disabled={Boolean(busy)} onClick={() => { void loadLatest(); }} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-semibold text-warning disabled:opacity-50">
               <RotateCcw aria-hidden="true" className={`h-4 w-4 ${busy === "refresh" ? "animate-spin motion-reduce:animate-none" : ""}`} />{busy === "refresh" ? "Loading latest…" : "Load latest copy and review again"}
             </button>
           )}
 
-          <div id="caretaker-approval" className="scroll-mt-24 -mx-4 space-y-3 border-t border-border bg-surface/95 px-4 pb-4 pt-3 backdrop-blur sm:-mx-5 sm:px-5 sm:pb-5">
-            <label className="flex items-start gap-3 rounded-xl border border-border p-3 text-sm leading-relaxed">
-              <input type="checkbox" checked={reviewConfirmed} disabled={Boolean(busy)} onChange={event => updateReviewConfirmation(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-terracotta-dark" />
-              <span className="space-y-1">
-                <span className="block font-medium">I checked the entries and approve this care log.</span>
-              </span>
-            </label>
-            {selectedBreastmilk > 0 && (
-              <ul className="list-disc pl-5 text-sm text-warm-brown">
-                <li>Deduct {selectedBreastmilk} ml from breastmilk bank</li>
-              </ul>
-            )}
-            <button type="button" disabled={Boolean(busy) || !reviewConfirmed || (hasSavedReview && !reviewDirty)} onClick={() => { void saveReview(); }} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold ${hasSavedReview && !reviewDirty ? "border-border bg-surface-muted text-muted" : "border-terracotta-dark bg-terracotta-dark text-on-accent hover:bg-warm-brown"} disabled:border-border disabled:bg-surface-muted disabled:text-muted`}>
-              {busy === "save" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-4 w-4" />}
-              {busy === "save" ? "Checking review…" : hasSavedReview && !reviewDirty ? "Care review saved" : "Save care review"}
-            </button>
-            <div role="status" aria-live="polite" className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${canCommit ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
-              {canCommit ? (
-                <p>Ready to apply.</p>
-              ) : (
-                <>
-                  <p className="font-semibold">To apply, complete:</p>
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                    {applyRequirements.map((requirement, index) => <li key={`${index}:${requirement}`}>{requirement}</li>)}
-                    {busy && <li>Wait for the current action to finish.</li>}
-                  </ul>
-                </>
-              )}
-            </div>
-            <button type="button" disabled={!canCommit} onClick={() => { void commit(); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
-              {busy === "commit" ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin motion-reduce:animate-none" /> : <ImageUp aria-hidden="true" className="h-5 w-5" />}
-              {busy === "commit" ? "Applying…" : selectedRows.length === 0 ? "Apply sleep schedule" : "Apply reviewed care log"}
+          {/* Stays in reach at the bottom of the window, so saving never needs a scroll. */}
+          <div className="sticky -bottom-4 -mx-4 space-y-3 border-t border-border bg-surface px-4 pb-4 pt-3 sm:-bottom-5 sm:-mx-5 sm:px-5 sm:pb-5">
+            {selectedBreastmilk > 0 && <p className="text-sm text-warm-brown">Takes {selectedBreastmilk} ml from the breastmilk bank.</p>}
+            <button type="button" disabled={Boolean(busy) || stale} onClick={() => { void commit(); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent shadow-sm transition-colors hover:bg-warm-brown disabled:opacity-45">
+              {busy ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin motion-reduce:animate-none" /> : <Check aria-hidden="true" className="h-5 w-5" />}
+              {busy ? "Saving…" : selectedRows.length === 0 ? "Save sleep schedule" : "Save to diary"}
             </button>
           </div>
         </div>
@@ -1508,7 +1494,7 @@ export default function CaretakerImportModal({
 
       {view === "success" && success && (
         <div className="flex min-h-[440px] flex-col items-center justify-center p-6 text-center">
-          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-success/10 text-success"><CheckCircle2 aria-hidden="true" className="h-11 w-11" /></span>
+          <span className="flex h-20 w-20 items-center justify-center rounded-xl bg-success/10 text-success"><CheckCircle2 aria-hidden="true" className="h-11 w-11" /></span>
           <h3 className="mt-5 font-display text-2xl font-semibold">{success.sleepReconciliation ? "Care log applied" : "Import complete"}</h3>
           {success.sleepReconciliation ? (
             <div className="mt-2 max-w-sm text-sm leading-relaxed text-muted">
@@ -1530,8 +1516,7 @@ export default function CaretakerImportModal({
             </p>
           )}
           {refreshWarning && <p role="alert" className="mt-4 max-w-sm rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">{refreshWarning}</p>}
-          <div className="mt-7 grid w-full max-w-sm gap-2 sm:grid-cols-2">
-            <button type="button" onClick={() => { setError(null); resetImport(true); }} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border px-4 text-sm font-semibold"><ImageUp aria-hidden="true" className="h-4 w-4" />Import another</button>
+          <div className="mt-7 grid w-full max-w-sm gap-2">
             <button type="button" onClick={onClose} autoFocus className="min-h-11 rounded-xl bg-terracotta-dark px-4 text-sm font-semibold text-on-accent">Done</button>
           </div>
         </div>
