@@ -16,8 +16,24 @@ type ParsedGroup = {
 };
 
 const TIME_RE = /\b(\d{1,2})\s*[:.]\s*(\d{2})\s*([ap])\s*\.?\s*m\.?\b/i;
+// "Balance 40ml" (the childcare app's remark) wins over "40ml balance", so
+// "150ml Balance 40ml" on one line reads 40 as the leftover, not 150.
+const LEFTOVER_WORDS = "balance|bal|wastage|wasted|waste|left\\s*over";
+const FEED_LEFTOVER_BEFORE_RE = new RegExp(`\\b(?:${LEFTOVER_WORDS})\\s*[:\\-–—]?\\s*(\\d+(?:\\.\\d+)?)\\s*m\\s*l\\b`, "i");
+const FEED_LEFTOVER_AFTER_RE = new RegExp(`\\b(\\d+(?:\\.\\d+)?)\\s*m\\s*l\\s*[:\\-–—]?\\s*(?:${LEFTOVER_WORDS}|left)\\b`, "i");
 const SINGAPORE_OFFSET_MS = 8 * 60 * 60 * 1000;
 const FUTURE_CLOCK_SKEW_MS = 2 * 60 * 1000;
+
+export function parseFeedLeftover(text: string): number | null {
+  const match = FEED_LEFTOVER_BEFORE_RE.exec(text) ?? FEED_LEFTOVER_AFTER_RE.exec(text);
+  return match ? Number(match[1]) : null;
+}
+
+function offeredFeedAmounts(text: string): RegExpMatchArray[] {
+  const match = FEED_LEFTOVER_BEFORE_RE.exec(text) ?? FEED_LEFTOVER_AFTER_RE.exec(text);
+  const offeredText = match ? text.slice(0, match.index) + text.slice(match.index + match[0].length) : text;
+  return [...offeredText.matchAll(/\b(\d+(?:\.\d+)?)\s*m\s*l\b/gi)];
+}
 
 export function isRealDateKey(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -153,7 +169,8 @@ function parseTimedGroups(
   const contains = (items: CaretakerOcrLine[], pattern: RegExp) => items.some((item) => pattern.test(item.text));
   const repeatsActivityFact = (items: CaretakerOcrLine[], next: CaretakerOcrLine) => {
     if (section === "milk") {
-      return (/\b\d+(?:\.\d+)?\s*m\s*l\b/i.test(next.text) && contains(items, /\b\d+(?:\.\d+)?\s*m\s*l\b/i))
+      if (parseFeedLeftover(next.text) != null) return false;
+      return (offeredFeedAmounts(next.text).length > 0 && items.some((item) => offeredFeedAmounts(item.text).length > 0))
         || (/breast\s*milk|\bformula\b/i.test(next.text) && contains(items, /breast\s*milk|\bformula\b/i));
     }
     if (section === "diaper") {
@@ -183,8 +200,14 @@ function parseTimedGroups(
     const activityStart = startedAt ?? Date.parse(`${dateKey}T00:00:00+08:00`);
 
     if (section === "milk") {
-      const amountMatches = [...text.matchAll(/\b(\d+(?:\.\d+)?)\s*m\s*l\b/gi)];
+      const amountMatches = offeredFeedAmounts(text);
       const amountMatch = amountMatches[0];
+      const offered = amountMatch ? Number(amountMatch[1]) : null;
+      const leftover = parseFeedLeftover(text);
+      const invalidLeftover = offered != null && leftover != null && leftover >= offered;
+      if (invalidLeftover) {
+        common.push(issue("INVALID_DETAILS", "The leftover is not less than the amount offered; correct the consumed amount."));
+      }
       const milkTypeMatches = text.match(/breast\s*milk|\bformula\b/gi) ?? [];
       const milkType = /breast\s*milk/i.test(text)
         ? "breastmilk"
@@ -197,7 +220,7 @@ function parseTimedGroups(
         endedAt: null,
         details: {
           ...(milkType ? { milkType } : {}),
-          ...(amountMatch ? { amount: Number(amountMatch[1]) } : {}),
+          ...(offered != null ? { amount: leftover != null && !invalidLeftover ? offered - leftover : offered } : {}),
         },
         note: null,
       };

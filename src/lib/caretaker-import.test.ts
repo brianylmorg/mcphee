@@ -5,6 +5,7 @@ import {
   compareCaretakerActivities,
   isRealDateKey,
   parseCaretakerOcrLines,
+  parseFeedLeftover,
   singaporeTimestamp,
   validateCaretakerDraft,
 } from "./caretaker-import";
@@ -25,6 +26,101 @@ function line(
     origin: { classification: origin, confidence: 0.95, blueRatio: origin === "household" ? 0.8 : 0 },
   };
 }
+
+test("feed leftovers recognise prefix and suffix phrases", () => {
+  for (const text of [
+    "Balance 40ml", "Bal 40 ml", "Balance: 40ml", "Wastage 40ml",
+    "Wasted 40ml", "Waste 40 ml", "Leftover 40ml", "Left over 40ml",
+    "40ml balance", "40 ml wasted", "40ml left", "BALANCE - 40ML",
+    "Remarks: left over: 40 ml", "40ml - wasted",
+  ]) {
+    assert.equal(parseFeedLeftover(text), 40, text);
+  }
+  assert.equal(parseFeedLeftover("Breast Milk, 150ml"), null);
+  assert.equal(parseFeedLeftover("Balance 0ml"), 0);
+  assert.equal(parseFeedLeftover("Wastage 12.5 ml"), 12.5);
+  // One OCR line holding both amounts: the leftover phrase wins, not "150ml Balance".
+  assert.equal(parseFeedLeftover("Formula Milk, 150ml Balance 40ml"), 40);
+});
+
+test("sample OCR balance remark stays with its feed and metadata creates no rows", () => {
+  // Text and vertical positions copied from .scratch/sample-lines.json.
+  const rows = parseCaretakerOcrLines([
+    line("line-1", 93, "A wik"),
+    line("line-2", 224, "Past Milk Feeds:"),
+    line("line-3", 286, "02:40 PM - Formula Milk, 150ml"),
+    line("line-4", 333, "Added By: Nur Aini Binti Jum'adi"),
+    line("line-5", 406, "11:34 AM - Breast Milk, 150ml"),
+    line("line-6", 453, "Added By: Li Linwei"),
+    line("line-7", 507, "Edited By: Li Linwei at 12:45 PM"),
+    line("line-8", 561, "Remarks: Balance 40ml"),
+    line("line-9", 635, "08:50 AM - Breast Milk, 150ml"),
+    line("line-10", 682, "Added By: Nur Aini Binti Jum'adi"),
+    line("line-11", 755, "04:35 AM - Formula Milk, 70ml"),
+    line("line-12", 802, "Added By: Yap Li Ming Brian", "household"),
+    line("line-18", 1467, "Past diaper changes:"),
+    line("line-19", 1529, "12:50 PM - Routine, Wet"),
+    line("line-20", 1576, "Added By: Nur Aini Binti Jum'adi"),
+    line("line-21", 1649, "09:47 AM - Routine, Wet"),
+    line("line-22", 1696, "Added By: Kasthuri Devi Kumaran"),
+    line("line-23", 1750, "Remarks: Change clothes"),
+    line("line-24", 1824, "07:07 AM - Routine, Poo"),
+    line("line-25", 1871, "Added By: Yap Li Ming Brian", "household"),
+  ], "2026-10-14");
+  const feeds = rows.filter((row) => row.draft.type === "bottlefeed");
+  assert.equal(feeds.length, 4);
+  assert.deepEqual(feeds.map((row) => row.draft.details.amount), [150, 110, 150, 70]);
+  assert.equal(feeds[1].draft.startedAt, singaporeTimestamp("2026-10-14", "11:34 AM"));
+  assert.deepEqual(feeds[1].draft.details, { milkType: "breastmilk", amount: 110 });
+  assert.equal(feeds[1].status, "staged");
+  assert.equal(feeds.some((row) => row.draft.details.amount === 40), false);
+  assert.equal(rows.some((row) => row.sourceText.includes("12:45 PM")), false);
+  const diapers = rows.filter((row) => row.draft.type === "diaper");
+  assert.equal(diapers.length, 3);
+  assert.match(diapers[1].sourceText, /Remarks: Change clothes/);
+  assert.equal(diapers[1].draft.details.peeUnits, "3");
+  assert.equal(diapers[1].draft.details.poop, "no");
+  assert.equal(diapers[1].status, "staged");
+});
+
+test("leftover volumes are excluded from offered amounts and multiple-feed checks", () => {
+  for (const text of [
+    "9:00 AM Breast Milk, 150ml Remarks: Balance 40ml",
+    "9:00 AM Balance 40ml Breast Milk, 150ml",
+    "9:00 AM Breast Milk, 150ml Remarks: 40 ml wasted",
+  ]) {
+    const rows = parseCaretakerOcrLines([
+      line("heading", 0, "Past Milk Feeds"), line("feed", 10, text),
+    ], "2026-10-14");
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0].draft.details, { milkType: "breastmilk", amount: 110 });
+    assert.equal(rows[0].status, "staged");
+  }
+  const missing = parseCaretakerOcrLines([
+    line("heading", 0, "Past Milk Feeds"),
+    line("feed", 10, "9:00 AM Breast Milk"), line("remark", 20, "Remarks: Balance 40ml"),
+  ], "2026-10-14");
+  assert.equal(missing.length, 1);
+  assert.deepEqual(missing[0].draft.details, { milkType: "breastmilk" });
+  assert.ok(missing[0].issues.some((entry) => entry.code === "INVALID_DETAILS" && entry.blocking));
+});
+
+test("leftover at least as large as offered keeps offered amount and blocks import", () => {
+  for (const leftover of [150, 160]) {
+    const rows = parseCaretakerOcrLines([
+      line("heading", 0, "Past Milk Feeds"),
+      line("feed", 10, "9:00 AM Breast Milk, 150ml"),
+      line("remark", 20, `Remarks: Balance ${leftover}ml`),
+    ], "2026-10-14");
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0].draft.details, { milkType: "breastmilk", amount: 150 });
+    assert.ok(rows[0].issues.some((entry) => entry.code === "INVALID_DETAILS"
+      && entry.message === "The leftover is not less than the amount offered; correct the consumed amount."
+      && entry.blocking));
+    assert.equal(rows[0].canInclude, false);
+    assert.equal(rows[0].issues.some((entry) => entry.code === "UNSUPPORTED_LAYOUT"), false);
+  }
+});
 
 test("known caretaker layout preserves display nap groups and locks blue activity groups", () => {
   const rows = parseCaretakerOcrLines([
