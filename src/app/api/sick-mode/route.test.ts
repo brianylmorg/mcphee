@@ -812,3 +812,54 @@ test("resume reopens the same ended episode continuously without rewriting its c
     client.close();
   }
 });
+
+test("summary reads only the episode's days but still finds older latest readouts", async () => {
+  const originalNow = Date.now;
+  Date.now = () => FIXED_NOW;
+  const dbPath = `/tmp/mcphee-sick-window-${process.pid}-${Math.random().toString(36).slice(2)}.db`;
+  process.env.TURSO_DATABASE_URL = `file:${dbPath}`;
+  delete process.env.TURSO_AUTH_TOKEN;
+  const client = createClient({ url: process.env.TURSO_DATABASE_URL });
+  try {
+    await createBaseSchema(client);
+    await applySickModeSchema(client);
+    const feed = (id: string, at: number, amount: number) => ({
+      sql: "INSERT INTO activities VALUES (?, ?, 'bottlefeed', ?, NULL, ?, ?, ?)",
+      args: [id, "baby-1", at, JSON.stringify({ milkType: "formula", amount }), at, "Parent One"],
+    });
+    const diaper = (id: string, at: number, peeUnits: string) => ({
+      sql: "INSERT INTO activities VALUES (?, ?, 'diaper', ?, NULL, ?, ?, ?)",
+      args: [id, "baby-1", at, JSON.stringify({ peeUnits, poop: "no" }), at, "Parent One"],
+    });
+    const temperature = (id: string, at: number, celsius: number) => ({
+      sql: "INSERT INTO activities VALUES (?, ?, 'temperature', ?, NULL, ?, ?, ?)",
+      args: [id, "baby-1", at, JSON.stringify({ celsius }), at, "Parent One"],
+    });
+    // 60 older dry diapers push the last wet one past the first older page.
+    const olderDry = Array.from({ length: 60 }, (_, index) =>
+      diaper(`dry-${index}`, ts("2026-10-02", "12:00") + index * 60_000, "0"));
+    await client.batch([
+      ...["2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03"]
+        .map((date, index) => feed(`source-${index}`, ts(date), 800)),
+      diaper("old-wet", ts("2026-10-01", "12:00"), "2"),
+      ...olderDry,
+      temperature("old-temp", ts("2026-10-03", "08:00"), 37.4),
+      temperature("old-bad-temp", ts("2026-10-03", "09:00"), 12),
+      feed("today-feed", ts("2026-10-06", "09:00"), 90),
+      diaper("today-dry", ts("2026-10-06", "09:30"), "0"),
+    ], "write");
+    const started = await post({ action: "start", babyId: "baby-1", startedAt: ts("2026-10-06", "08:00"), manualBaselineMl: 800 });
+    assert.equal(started.status, 200);
+
+    const summary = (await (await GET(request("/api/sick-mode?babyId=baby-1"))).json()).summary;
+    assert.equal(summary.todayConsumedMl, 90, "older days never count toward today");
+    assert.deepEqual(summary.latestFeeds.map((item: { id: string }) => item.id), ["today-feed", "source-6", "source-5"]);
+    assert.deepEqual(summary.latestDiapers.map((item: { id: string }) => item.id), ["today-dry", "dry-59", "dry-58"]);
+    assert.equal(summary.lastWetAt, ts("2026-10-01", "12:00"));
+    assert.equal(summary.latestTemperature.id, "old-temp", "invalid older readings are skipped");
+    assert.equal(summary.wetDiaperCountToday, 0);
+  } finally {
+    Date.now = originalNow;
+    client.close();
+  }
+});

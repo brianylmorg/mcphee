@@ -292,14 +292,21 @@ async function loadSummary(
   episode: SickEpisode,
   asOfTimestamp: number,
 ): Promise<SickModeSummary> {
+  const today = sgtDateKey(asOfTimestamp);
+  const onsetDate = sgtDateKey(episode.startedAt);
+  // Totals only need the episode's own days, so read just those. Reading the
+  // whole history here cost ~2.7k rows per call and doubled prod reads while
+  // sick mode was on. Older rows are fetched per type, a page at a time, only
+  // when a "latest" readout isn't filled from the episode's days.
+  const windowStart = sgtDayStart(onsetDate < today ? onsetDate : today);
   const result = await db.execute({
     sql: `SELECT id, type, started_at, created_at, details FROM activities
-          WHERE baby_id = ? AND type IN ('bottlefeed', 'diaper', 'temperature') AND started_at <= ?
+          WHERE baby_id = ? AND type IN ('bottlefeed', 'diaper', 'temperature')
+            AND started_at >= ? AND started_at <= ?
           ORDER BY started_at DESC, created_at DESC, id DESC`,
-    args: [babyId, asOfTimestamp],
+    args: [babyId, windowStart, asOfTimestamp],
   });
   const rows = result.rows as unknown as SickActivityRow[];
-  const today = sgtDateKey(asOfTimestamp);
   const latestFeeds: SickModeSummary["latestFeeds"] = [];
   const latestDiapers: SickModeSummary["latestDiapers"] = [];
   let latestTemperature: SickModeSummary["latestTemperature"] = null;
@@ -312,15 +319,15 @@ async function loadSummary(
   let lastWetAt: number | null = null;
   const consumedByDate = new Map<string, number>();
 
-  for (const row of rows) {
+  const handleRow = (row: SickActivityRow) => {
     const startedAt = Number(row.started_at);
-    if (!Number.isFinite(startedAt)) continue;
+    if (!Number.isFinite(startedAt)) return;
     const date = sgtDateKey(startedAt);
     const details = parseActivityDetails(row.details);
     if (row.type === "bottlefeed") {
       const volumes = bottleVolumes(details);
       const totalMl = volumes.breastmilkMl + volumes.formulaMl;
-      if (totalMl <= 0) continue;
+      if (totalMl <= 0) return;
       consumedByDate.set(date, (consumedByDate.get(date) ?? 0) + totalMl);
       if (date === today) {
         todayConsumedMl += totalMl;
@@ -337,7 +344,7 @@ async function loadSummary(
           formulaMl: volumes.formulaMl,
         });
       }
-      continue;
+      return;
     }
     if (row.type === "diaper") {
       const peeUnits = parsePeeUnits(details);
@@ -359,7 +366,7 @@ async function loadSummary(
             : null,
         });
       }
-      continue;
+      return;
     }
     if (row.type === "temperature" && latestTemperature == null) {
       const celsius = Number(details.celsius);
@@ -372,10 +379,31 @@ async function loadSummary(
         };
       }
     }
-  }
+  };
+
+  for (const row of rows) handleRow(row);
+
+  const olderPageSize = 25;
+  const needsOlder: Record<string, () => boolean> = {
+    bottlefeed: () => latestFeeds.length < 3,
+    diaper: () => latestDiapers.length < 3 || lastWetAt == null,
+    temperature: () => latestTemperature == null,
+  };
+  await Promise.all(Object.entries(needsOlder).map(async ([type, needed]) => {
+    for (let offset = 0; needed(); offset += olderPageSize) {
+      const older = await db.execute({
+        sql: `SELECT id, type, started_at, created_at, details FROM activities
+              WHERE baby_id = ? AND type = ? AND started_at < ?
+              ORDER BY started_at DESC, created_at DESC, id DESC
+              LIMIT ? OFFSET ?`,
+        args: [babyId, type, windowStart, olderPageSize, offset],
+      });
+      for (const row of older.rows as unknown as SickActivityRow[]) handleRow(row);
+      if (older.rows.length < olderPageSize) break;
+    }
+  }));
 
   const thresholdMl = Math.round(episode.baselineDailyMl * 50) / 100;
-  const onsetDate = sgtDateKey(episode.startedAt);
   let lastCompletedDayConcern: SickModeSummary["lastCompletedDayConcern"] = null;
   for (let date = shiftSgtDate(today, -1); date >= onsetDate; date = shiftSgtDate(date, -1)) {
     const totalMl = consumedByDate.get(date);
