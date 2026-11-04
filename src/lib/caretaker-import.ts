@@ -220,7 +220,12 @@ function parseTimedGroups(
         endedAt: null,
         details: {
           ...(milkType ? { milkType } : {}),
-          ...(offered != null ? { amount: leftover != null && !invalidLeftover ? offered - leftover : offered } : {}),
+          ...(offered != null
+            ? leftover != null && leftover > 0 && !invalidLeftover
+              // Same shape as a "150-40" bottle entry: the bank deducts the full bottle.
+              ? { amount: offered - leftover, amountExpression: `${offered}-${leftover}`, wastedAmount: leftover }
+              : { amount: offered }
+            : {}),
         },
         note: null,
       };

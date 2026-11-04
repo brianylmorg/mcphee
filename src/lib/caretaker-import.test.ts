@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { bottleBreastmilkLibraryDeduction } from "./milk-calculation";
 import test from "node:test";
 
 import {
@@ -71,7 +72,11 @@ test("sample OCR balance remark stays with its feed and metadata creates no rows
   assert.equal(feeds.length, 4);
   assert.deepEqual(feeds.map((row) => row.draft.details.amount), [150, 110, 150, 70]);
   assert.equal(feeds[1].draft.startedAt, singaporeTimestamp("2026-10-14", "11:34 AM"));
-  assert.deepEqual(feeds[1].draft.details, { milkType: "breastmilk", amount: 110 });
+  assert.deepEqual(feeds[1].draft.details, {
+    milkType: "breastmilk", amount: 110, amountExpression: "150-40", wastedAmount: 40,
+  });
+  assert.equal(bottleBreastmilkLibraryDeduction(feeds[1].draft.details), 150);
+  assert.deepEqual(feeds[0].draft.details, { milkType: "formula", amount: 150 });
   assert.equal(feeds[1].status, "staged");
   assert.equal(feeds.some((row) => row.draft.details.amount === 40), false);
   assert.equal(rows.some((row) => row.sourceText.includes("12:45 PM")), false);
@@ -93,7 +98,9 @@ test("leftover volumes are excluded from offered amounts and multiple-feed check
       line("heading", 0, "Past Milk Feeds"), line("feed", 10, text),
     ], "2026-10-14");
     assert.equal(rows.length, 1);
-    assert.deepEqual(rows[0].draft.details, { milkType: "breastmilk", amount: 110 });
+    assert.deepEqual(rows[0].draft.details, {
+      milkType: "breastmilk", amount: 110, amountExpression: "150-40", wastedAmount: 40,
+    });
     assert.equal(rows[0].status, "staged");
   }
   const missing = parseCaretakerOcrLines([

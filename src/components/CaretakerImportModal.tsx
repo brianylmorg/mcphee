@@ -39,7 +39,7 @@ import {
   type CaretakerReviewRowInput,
   type CaretakerStageResponse,
 } from "@/lib/caretaker-import-contract";
-import { parseFeedLeftover } from "@/lib/caretaker-import";
+import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { stitchScreenshots } from "@/lib/screenshot-stitch";
 import {
   recognizeCaretakerScreenshot,
@@ -49,7 +49,7 @@ import CaretakerImportInfo from "@/components/CaretakerImportInfo";
 import CareTimesEditor, { type CareTimesSaveResult } from "@/components/CareTimesEditor";
 import { resolveCaretakerCareWindow } from "@/lib/caretaker-care-window";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
-import { evaluateAmountExpression, isAmountExpression } from "@/lib/amount-expression";
+import { BOTTLE_AMOUNT_DETAIL_KEYS, bottleAmountDetails, evaluateAmountExpression, isAmountExpression } from "@/lib/amount-expression";
 
 type View = "select" | "scanning" | "review" | "success";
 type RowAction = "include" | "exclude";
@@ -163,7 +163,9 @@ function draftFromRow(row: CaretakerImportRow): ReviewDraft {
     type: row.draft.type,
     startedAt: sourceTimeMissing ? "" : singaporeDateTimeInput(row.draft.startedAt),
     endedAt: singaporeDateTimeInput(row.draft.endedAt),
-    amount: detailsNumber(details, "amount"),
+    amount: typeof details.amountExpression === "string" && details.amountExpression.trim()
+      ? details.amountExpression.trim()
+      : detailsNumber(details, "amount"),
     milkType,
     peeUnits: detailsNumber(details, "peeUnits") || detailsNumber(details, "peeSize") || (row.draft.type === "diaper" ? "3" : ""),
     poop,
@@ -250,7 +252,8 @@ function reviewInput(row: CaretakerImportRow, draft: ReviewDraft): CaretakerRevi
   if (draft.action === "exclude") return { id: row.id, action: "exclude" };
   const details = draft.type === row.draft.type ? { ...row.draft.details } : {};
   if (draft.type === "bottlefeed") {
-    details.amount = evaluateAmountExpression(draft.amount) ?? Number(draft.amount);
+    for (const key of BOTTLE_AMOUNT_DETAIL_KEYS) delete details[key];
+    Object.assign(details, bottleAmountDetails(draft.amount) ?? { amount: Number(draft.amount) });
     details.milkType = draft.milkType;
   } else if (draft.type === "diaper") {
     details.peeUnits = Number(draft.peeUnits);
@@ -312,13 +315,12 @@ function rowNeedsAttention(row: CaretakerImportRow, draft: ReviewDraft, date: st
   );
 }
 
-function RowSummary({ row, draft, selectedDate, muted }: {
-  row: CaretakerImportRow; draft: ReviewDraft; selectedDate: string; muted: boolean;
+function RowSummary({ draft, selectedDate, muted }: {
+  draft: ReviewDraft; selectedDate: string; muted: boolean;
 }) {
   const start = draftClock(draft.startedAt, selectedDate);
   const end = draftClock(draft.endedAt, selectedDate);
   const amount = evaluateAmountExpression(draft.amount);
-  const leftover = parseFeedLeftover(row.sourceText);
   const wet = Number(draft.peeUnits) > 0 ? `Wet${Number(draft.peeUnits) !== 3 ? ` (${draft.peeUnits})` : ""}` : "";
   const poo = draft.poop === "M" ? "medium poo" : draft.poop === "L" ? "large poo" : draft.poop === "yes" ? "poo" : "";
   return (
@@ -329,7 +331,7 @@ function RowSummary({ row, draft, selectedDate, muted }: {
       </span>
       {draft.type === "bottlefeed" ? <>
         {amount != null ? `${amount} ml` : "Amount?"}
-        {leftover != null && amount != null && amount === Number(row.draft.details.amount) && <span className="ml-1 text-sm text-muted">({amount + leftover} − {leftover})</span>}
+        {amount != null && isAmountExpression(draft.amount) && <span className="ml-1 text-sm text-muted">({draft.amount.replace(/\s+/g, "").replace(/[-−–]/g, " − ").replace(/\+/g, " + ")})</span>}
         <span className={`ml-3 ${!["breastmilk", "formula"].includes(draft.milkType) && !muted ? "text-warning" : ""}`}>
           {draft.milkType === "breastmilk" ? "Breastmilk" : draft.milkType === "formula" ? "Formula" : "Milk type?"}
         </span>
@@ -439,9 +441,9 @@ function ReviewRowCard({
           className="mt-2.5 h-6 w-6 shrink-0 accent-terracotta-dark"
         />
         <div className="min-w-0 flex-1">
-          {duplicate ? <div className="py-2"><RowSummary row={row} draft={draft} selectedDate={selectedDate} muted /><p className="text-sm text-muted">Already in the diary</p></div> : (
+          {duplicate ? <div className="py-2"><RowSummary draft={draft} selectedDate={selectedDate} muted /><p className="text-sm text-muted">Already in the diary</p></div> : (
             <button type="button" disabled={disabled || !included} aria-expanded={included && showEditor} onClick={() => setEditingOpen(open => !open)} className="min-h-11 w-full text-left">
-              <RowSummary row={row} draft={draft} selectedDate={selectedDate} muted={!included} />
+              <RowSummary draft={draft} selectedDate={selectedDate} muted={!included} />
             </button>
           )}
           {included && !duplicate && <div className="space-y-2">
@@ -507,10 +509,6 @@ function ReviewRowCard({
                     value={draft.amount}
                     disabled={disabled || !included}
                     onChange={event => onChange({ amount: event.target.value })}
-                    onBlur={() => {
-                      const amount = evaluateAmountExpression(draft.amount);
-                      if (amount != null && isAmountExpression(draft.amount)) onChange({ amount: String(amount) });
-                    }}
                     className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
                   />
                   {/* The iOS decimal keypad has no minus key; this keeps focus so the keypad stays up. */}
@@ -708,7 +706,9 @@ export default function CaretakerImportModal({
   const sourceNapRows = rows.filter(row => row.draft.type === "sleep");
   const selectedBreastmilk = selectedRows.reduce((total, row) => {
     const draft = drafts[row.id];
-    return total + (draft?.type === "bottlefeed" && draft.milkType === "breastmilk" ? evaluateAmountExpression(draft.amount) ?? 0 : 0);
+    if (draft?.type !== "bottlefeed" || draft.milkType !== "breastmilk") return total;
+    const details = bottleAmountDetails(draft.amount);
+    return total + (details ? bottleBreastmilkLibraryDeduction({ milkType: "breastmilk", ...details }) : 0);
   }, 0);
   const linkedCareSession = snapshot?.childcareSession ?? null;
   const careWindow = resolveCaretakerCareWindow(
