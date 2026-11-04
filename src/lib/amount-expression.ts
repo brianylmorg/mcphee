@@ -1,3 +1,5 @@
+import { parseMlCalculation } from "./milk-calculation";
+
 // Evaluates a simple arithmetic entry such as "120-40" or "2*60+15" typed into an ml field.
 // Supports + - * / and parentheses. Returns null for anything else or a non-finite result.
 export function evaluateAmountExpression(input: string): number | null {
@@ -56,4 +58,22 @@ export function evaluateAmountExpression(input: string): number | null {
 
 export function isAmountExpression(input: string): boolean {
   return /\d\s*[+\-−–*×x/÷]/i.test(input.trim().replace(/^[-−–]/, ""));
+}
+
+export const BOTTLE_AMOUNT_DETAIL_KEYS = ["amount", "amountExpression", "wastedAmount"] as const;
+
+// Bottle details for an ml entry, stored the way the regular bottle form stores them.
+// "150-40" keeps the sum and the 40 ml wastage, so the milk bank deducts 150 ml
+// while the day counts 110 ml consumed. Sums with * / or brackets save only the result.
+export function bottleAmountDetails(input: string): Record<string, number | string> | null {
+  const calculation = parseMlCalculation(input.replace(/[−–]/g, "-"));
+  if (calculation) {
+    return {
+      amount: calculation.effectiveMl,
+      ...(calculation.hasCalculation ? { amountExpression: calculation.normalized } : {}),
+      ...(calculation.wastedMl > 0 ? { wastedAmount: calculation.wastedMl } : {}),
+    };
+  }
+  const amount = evaluateAmountExpression(input);
+  return amount != null ? { amount } : null;
 }

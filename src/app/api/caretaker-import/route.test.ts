@@ -625,3 +625,50 @@ test("review rejects invalid origin, oversized details and future or changed-dat
     if (previousMigrationKey === undefined) delete process.env.MIGRATION_KEY; else process.env.MIGRATION_KEY = previousMigrationKey;
   }
 });
+
+test("a feed's leftover is deducted from the milk bank with the feed", async () => {
+  const originalNow = Date.now;
+  Date.now = () => NOW;
+  process.env.TURSO_DATABASE_URL = `file:/tmp/mcphee-caretaker-wastage-${process.pid}-${Math.random().toString(36).slice(2)}.db`;
+  delete process.env.TURSO_AUTH_TOKEN;
+  const client = createClient({ url: process.env.TURSO_DATABASE_URL });
+  try {
+    await createBaseSchema(client);
+    await applyCaretakerImportSchema(client);
+    // The bank holds 500 ml. 520 ml offered with 40 ml left is 480 ml drunk but 520 ml out of the bank.
+    const staged = await stageImport(stageRequest([
+      line("heading", 0, "Past Milk Feeds"),
+      line("feed", 10, "9:00 AM - Breast Milk, 520ml"),
+      line("remark", 20, "Remarks: Balance 40ml"),
+    ], "stage-wastage", 140));
+    assert.equal(staged.status, 200);
+    const body = await staged.json();
+    const rowId = body.rows[0].id;
+    assert.deepEqual(body.rows[0].draft.details, {
+      milkType: "breastmilk", amount: 480, amountExpression: "520-40", wastedAmount: 40,
+    });
+    const review = (expectedRevision: number, details?: Record<string, unknown>) => reviewImport(jsonRequest("/api/caretaker-import/review", "PATCH", {
+      batchId: body.batch.id, expectedRevision, rows: [{ id: rowId, action: "include", ...(details ? { details } : {}) }],
+    }));
+    const commit = (expectedRevision: number, requestId: string) => commitImport(jsonRequest("/api/caretaker-import/commit", "POST", {
+      batchId: body.batch.id, requestId, expectedRevision,
+    }));
+
+    assert.equal((await review(1)).status, 200);
+    const tooMuch = await commit(2, "commit-wastage-over");
+    assert.equal(tooMuch.status, 400);
+    assert.equal((await tooMuch.json()).code, "INSUFFICIENT_BREASTMILK", "the leftover counts against the bank");
+
+    // The review form saves a typed "500-40" in the same shape.
+    assert.equal((await review(2, { milkType: "breastmilk", amount: 460, amountExpression: "500-40", wastedAmount: 40 })).status, 200);
+    assert.equal((await commit(3, "commit-wastage-fits")).status, 200);
+    const saved = (await client.execute("SELECT details FROM activities WHERE type = 'bottlefeed'")).rows;
+    assert.equal(saved.length, 1);
+    assert.deepEqual(JSON.parse(String(saved[0].details)), {
+      milkType: "breastmilk", amount: 460, amountExpression: "500-40", wastedAmount: 40,
+    });
+  } finally {
+    client.close();
+    Date.now = originalNow;
+  }
+});
