@@ -32,51 +32,12 @@
 - The copy's data stops at its copy date, so time-based hints (milk glow, recent nap zones) need a backdated test entry to show on a preview.
 - Release flow: the user checks the preview, then says "go live"; `main` is fast-forwarded and Vercel deploys prod. Prod database commands only with the user's explicit go-ahead.
 
-## Features by Stage
+## Feature map and verification
 
-### Stage 1 — Scaffold + Household Setup
-- Welcome screen: create OR join household
-- Baby profile form (name + optional birth date)
-- Dashboard: baby name, age display, invite code
-- Leave-household action
-
-### Stage 1 — Scaffold + Household Setup ✅
-- Welcome screen: create OR join household
-- Baby profile form (name + optional birth date)
-- Dashboard: baby name, age display, invite code
-- Leave-household action
-
-### Stage 2 — Core Logging ✅
-- Bottlefeed (formula/breastmilk subtypes), Pump, Diaper activities
-- Dashboard cards with time-since-last + predicted-next (median, 3+ entries)
-- "Overdue" accent state (terracotta when past median × 1.2)
-- Recent activity list (last 6, expand to all) + full history grouped by day
-- Edit/delete entries, backfill timestamps
-- "When" quick chips: Now / 5m / 15m / 30m / 1h / 2h + custom picker
-
-### Stage 3 — Breastfeed Live Timer ✅
-- Tap breastfeed card to start live timer (server-side active_timers row)
-- Live elapsed time ticker (MM:SS or H:MM:SS)
-- L/R side toggle — each switch appended to side_switches JSON array
-- Safety prompt at 2h runtime (amber "Safety check" badge)
-- Stop & log atomically creates activity entry with full side history
-
-### Stage 4 — Growth Tracking
-- Weight (g), length (mm), optional head (mm), backdatable
-- Chart view (recharts)
-- WHO percentile overlays (Day 2)
-
-### Stage 5 — PWA + Push
-- Manifest, service worker, standalone mode
-- iOS HCTA prompt
-- Push subscriptions per device
-- Vercel Cron → check overdue → fire push notifications
-- Rate-limit via `notification_log`
-
-### Stage 6 — Nudges + Fussing Predictor
-- Fussing button → ranked list by overdue score
-- Post-log nudges (context-aware)
-- Adaptive nudges (Day 2)
+- Read FEATURES.md first for any bug or change: find the feature, read its traps, and choose its fixture.
+- Run `pnpm verify:fast` for every change; run `pnpm verify:ui` for anything visible. UI verification uses a throwaway file DB and fixtures, with screenshots in `.verify/shots/` and evidence in `.verify/last.json`.
+- Reproduce bugs with a fixture and a failing spec before fixing them.
+- Update FEATURES.md when adding a page, API route or component; the feature-map check fails otherwise.
 
 ## Design
 - Warm journal aesthetic, not clinical
