@@ -240,6 +240,15 @@ Use a throwaway file: database for local reproduction. Never point local runs at
 - **Tests:** `src/components/BabyCareMenu.test.ts`, `e2e/dashboard.spec.ts` (seeded authenticated dashboard only; setup is not covered).
 - **Traps:** Household membership and cookies supply context; each fixture needs its own household and user cookies. The dashboard selects the first returned baby. Birth date is collected on creation, while the current settings sheet edits baby name. Do not infer auth behavior from the stale “signed cookie” description; inspect the routes/context before changing membership. UI verification seeds cookies instead of exercising setup.
 
+### Garmin watch logging {#garmin-watch}
+- **B calls it:** watch, Garmin, Venu, log from the watch, watch app
+- **Reach it:** No web UI. The McPhee Connect IQ app on the Venu 3S (`watch/` in this repo) calls /api/watch with a bearer token: Sleep/Wake toggle, Feed (Breast milk or Formula, then ml), Diaper (Pee / Poo / Both).
+- **Fixture:** none
+- **Code:** `src/app/api/watch/route.ts`, `src/lib/watch-api.ts`, `watch/source/McpheeApp.mc`
+- **API / tables:** /api/watch GET (status) and POST (sleep, wake, feed, diaper); relays to /api/sleep-state and /api/activities; activities, babies, users, childcare_sessions. Env: MCPHEE_WATCH_TOKEN (32+ chars), MCPHEE_WATCH_HOUSEHOLD_ID, optional MCPHEE_WATCH_USER_ID.
+- **Tests:** `src/app/api/watch/route.test.ts`.
+- **Traps:** Without the env vars the route answers 404, so prod is inert until configured. Writes go through the existing handlers on purpose; do not copy their SQL here. Childcare check-in blocks watch writes (AT_CHILDCARE) by B's choice; the watch never sends childcareOverride. Diaper buttons map Pee to peeUnits 3/poop no, Poo to poop M/peeUnits no, Both to M/3. Feeds have no leftover; fix those on the phone. A failed status read after a write still reports success, so a retry cannot duplicate the entry. The watch re-checks a status older than 15 s before applying its local childcare block, and refreshes a menu older than 60 s when it comes back into view. The watch sends sleep or wake explicitly from the state it shows, so a double tap cannot flip it twice. The baby is the household's first by created_at.
+
 ### Schema migrations, admin imports and verification {#data-infra}
 - **B calls it:** database setup, missing data, preview stale, paper log import, backfill, verify
 - **Reach it:** There is no dashboard button for admin migrations/imports. “Sick mode unavailable” or missing childcare controls can indicate schema readiness. Reproduce against a throwaway file: DB via `scripts/verify.sh`; inspect protected admin routes in code, not by invoking them on a shared deployment.
