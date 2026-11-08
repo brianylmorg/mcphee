@@ -20,7 +20,7 @@ Without the first two, `/api/watch` answers 404.
 
 1. Toolchain: a JDK and the Connect IQ SDK in `~/opt/ciq` (`jdk-*/` and `sdk/`).
 2. Device files: the Venu 3S profile in `~/.Garmin/ConnectIQ/Devices/venu3s/`. Garmin's SDK Manager downloads it after a Garmin login (on a Mac it lives in `~/Library/Application Support/Garmin/ConnectIQ/Devices/venu3s`; copy that folder).
-3. Secrets: `~/.config/mcphee-watch/token` and `~/.config/mcphee-watch/url` (the https base URL; use a preview URL to test). Both stay outside the repo.
+3. Secrets: `~/.config/mcphee-watch/token` and `~/.config/mcphee-watch/url` (the https base URL; use a preview URL to test). Both stay outside the repo. For a protected Vercel preview, also put the project's Protection Bypass for Automation secret in `~/.config/mcphee-watch/bypass`; leave it out for prod.
 4. Run `./build.sh`. It writes `source/Secrets.mc` (git-ignored), creates a developer key on the first run, and outputs `bin/McPhee-venu3s.prg`.
 
 ## Install (sideload)

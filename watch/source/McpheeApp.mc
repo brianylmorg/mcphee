@@ -54,12 +54,16 @@ class McpheeApi {
     }
 
     function options(method as Communications.HttpRequestMethod) as Dictionary {
+        var headers = {
+            "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON,
+            "Authorization" => "Bearer " + WATCH_TOKEN
+        };
+        if (!WATCH_BYPASS.equals("")) {
+            headers["x-vercel-protection-bypass"] = WATCH_BYPASS;
+        }
         return {
             :method => method,
-            :headers => {
-                "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON,
-                "Authorization" => "Bearer " + WATCH_TOKEN
-            },
+            :headers => headers,
             :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
         };
     }
