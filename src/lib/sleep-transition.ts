@@ -2,6 +2,7 @@ export type SleepUndoToken = {
   kind: "started-sleep" | "woke";
   activityId: string;
   changedAt: number;
+  issuedAt?: number;
 };
 
 export type SleepWindowSnapshot = {
@@ -18,10 +19,15 @@ export function isSleepUndoToken(value: unknown): value is SleepUndoToken {
     && token.activityId.length > 0
     && typeof token.changedAt === "number"
     && Number.isFinite(token.changedAt)
-    && token.changedAt > 0;
+    && token.changedAt > 0
+    && (token.issuedAt === undefined || (
+      typeof token.issuedAt === "number"
+      && Number.isFinite(token.issuedAt)
+      && token.issuedAt > 0
+    ));
 }
 
-export const SLEEP_UNDO_WINDOW_MS = 10_000;
+export const SLEEP_UNDO_WINDOW_MS = 30_000;
 
 /** Checks an undo token against authoritative server rows, including later transitions. */
 export function canUndoSleepTransition(
@@ -29,7 +35,12 @@ export function canUndoSleepTransition(
   rows: SleepWindowSnapshot[],
   now = Date.now(),
 ): boolean {
-  if (now - token.changedAt > SLEEP_UNDO_WINDOW_MS) return false;
+  if (token.issuedAt !== undefined && (
+    !Number.isFinite(token.issuedAt)
+    || token.issuedAt > now + 2 * 60_000
+    || token.issuedAt < token.changedAt
+  )) return false;
+  if (now - (token.issuedAt ?? token.changedAt) > SLEEP_UNDO_WINDOW_MS) return false;
   const target = rows.find((row) => row.id === token.activityId);
   if (!target) return false;
 

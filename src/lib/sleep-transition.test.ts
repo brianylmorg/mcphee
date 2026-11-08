@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canUndoSleepTransition, type SleepUndoToken } from "./sleep-transition";
+import { canUndoSleepTransition, isSleepUndoToken, type SleepUndoToken } from "./sleep-transition";
 
 test("the latest untouched sleep start can be undone", () => {
   const token: SleepUndoToken = { kind: "started-sleep", activityId: "sleep-1", changedAt: 100 };
@@ -40,11 +40,11 @@ test("undoing wake is stale when a newer sleep starts in the same millisecond", 
   ], 125), false);
 });
 
-test("the server rejects an otherwise current undo after ten seconds", () => {
+test("the server rejects an otherwise current undo after thirty seconds", () => {
   const token: SleepUndoToken = { kind: "woke", activityId: "sleep-1", changedAt: 1_000 };
   assert.equal(canUndoSleepTransition(token, [
     { id: "sleep-1", startedAt: 100, endedAt: 1_000 },
-  ], 11_001), false);
+  ], 31_001), false);
 });
 
 test("a token cannot target a fabricated or mismatched transition", () => {
@@ -53,4 +53,31 @@ test("a token cannot target a fabricated or mismatched transition", () => {
     [{ id: "sleep-1", startedAt: 100, endedAt: 120 }],
     121,
   ), false);
+});
+
+const backdatedRows = [{ id: "sleep-1", startedAt: 1_000, endedAt: null }];
+const issuedToken: SleepUndoToken = {
+  kind: "started-sleep", activityId: "sleep-1", changedAt: 1_000, issuedAt: 1_801_000,
+};
+
+test("a backdated transition is undoable for thirty seconds from issue", () => {
+  assert.equal(canUndoSleepTransition(issuedToken, backdatedRows, 1_831_000), true);
+  assert.equal(canUndoSleepTransition(issuedToken, backdatedRows, 1_831_001), false);
+});
+
+test("legacy tokens measure the thirty-second window from changedAt", () => {
+  const { issuedAt, ...legacy } = issuedToken;
+  assert.equal(canUndoSleepTransition(legacy, backdatedRows, 31_000), true);
+  assert.equal(canUndoSleepTransition(legacy, backdatedRows, 31_001), false);
+});
+
+test("issuedAt must be a valid timestamp, not too far ahead or before the transition", () => {
+  for (const issuedAt of [null, "1801000", 0, -1, NaN, Infinity]) {
+    assert.equal(isSleepUndoToken({ ...issuedToken, issuedAt }), false);
+  }
+  assert.equal(isSleepUndoToken(issuedToken), true);
+  const { issuedAt, ...legacy } = issuedToken;
+  assert.equal(isSleepUndoToken(legacy), true);
+  assert.equal(canUndoSleepTransition({ ...issuedToken, issuedAt: 1_801_001 }, backdatedRows, 1_681_000), false);
+  assert.equal(canUndoSleepTransition({ ...issuedToken, issuedAt: 999 }, backdatedRows, 1_001), false);
 });

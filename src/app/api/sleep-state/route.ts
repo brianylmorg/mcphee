@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
           id,
           state: "sleeping",
           startedAt: changedAt,
-          undoToken: { kind: "started-sleep", activityId: id, changedAt },
+          undoToken: { kind: "started-sleep", activityId: id, changedAt, issuedAt: Date.now() },
         });
       }
 
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
         id: row.id,
         state: "awake",
         startedAt: changedAt,
-        undoToken: { kind: "woke", activityId: row.id, changedAt },
+        undoToken: { kind: "woke", activityId: row.id, changedAt, issuedAt: Date.now() },
       });
     } catch (error) {
       try { await tx.rollback(); } catch {}

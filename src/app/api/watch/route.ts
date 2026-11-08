@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
-import { POST as postActivity } from "@/app/api/activities/route";
+import { POST as postActivity, DELETE as deleteActivity } from "@/app/api/activities/route";
 import { POST as postSleepState } from "@/app/api/sleep-state/route";
+import { isSleepUndoToken } from "@/lib/sleep-transition";
 import {
   DIAPER_DETAILS, feedDetails, firstBaby, innerRequest, MAX_FEED_ML, MIN_FEED_ML,
-  NO_STORE, relay, watchConfig, watchStatus,
+  NO_STORE, parseWatchUndo, relay, sleepUndoString, watchConfig, watchStatus,
 } from "@/lib/watch-api";
 
 // Garmin watch companion. The watch cannot hold the household cookie, so it
@@ -47,11 +48,38 @@ export async function POST(request: NextRequest) {
 
     let result: Awaited<ReturnType<typeof relay>>;
     const now = Date.now();
-    if (body.action === "sleep" || body.action === "wake") {
+    const minutesAgo = body.minutesAgo === undefined ? 0 : body.minutesAgo;
+    if ((body.action === "sleep" || body.action === "wake" || body.action === "feed" || body.action === "diaper")
+      && (typeof minutesAgo !== "number" || ![0, 5, 15, 30].includes(minutesAgo))) {
+      return NextResponse.json({ error: "minutesAgo must be 0, 5, 15 or 30" }, { status: 400, headers: NO_STORE });
+    }
+    const at = now - (typeof minutesAgo === "number" ? minutesAgo : 0) * 60_000;
+    if (body.action === "undo") {
+      const undo = parseWatchUndo(body.undo);
+      if (!undo) return NextResponse.json({ error: "Invalid undo token" }, { status: 400, headers: NO_STORE });
+      if ("activityId" in undo) {
+        const eligible = await db.execute({
+          sql: `SELECT id FROM activities WHERE id = ? AND baby_id = ?
+                AND type IN ('bottlefeed', 'diaper') AND created_at >= ? AND created_at <= ?`,
+          args: [undo.activityId, baby.id, now - 10 * 60_000, now],
+        });
+        if (eligible.rows.length === 0) {
+          result = { ok: false, status: 409, error: "Entry is no longer available to undo", code: "UNDO_EXPIRED" };
+        } else {
+          result = await relay(await deleteActivity(innerRequest(
+            request, `/api/activities?id=${encodeURIComponent(undo.activityId)}`, config, undefined, "DELETE",
+          )));
+        }
+      } else {
+        result = await relay(await postSleepState(innerRequest(request, "/api/sleep-state", config, {
+          babyId: baby.id, action: "undo", undoToken: undo.undoToken,
+        })));
+      }
+    } else if (body.action === "sleep" || body.action === "wake") {
       result = await relay(await postSleepState(innerRequest(request, "/api/sleep-state", config, {
         babyId: baby.id,
         action: body.action,
-        at: now,
+        at,
       })));
     } else if (body.action === "feed") {
       const milkType = body.milkType === "formula" ? "formula" : body.milkType === "breastmilk" ? "breastmilk" : null;
@@ -63,7 +91,7 @@ export async function POST(request: NextRequest) {
       result = await relay(await postActivity(innerRequest(request, "/api/activities", config, {
         babyId: baby.id,
         type: "bottlefeed",
-        startedAt: now,
+        startedAt: at,
         details: feedDetails(milkType, amount),
       })));
     } else if (body.action === "diaper") {
@@ -74,7 +102,7 @@ export async function POST(request: NextRequest) {
       result = await relay(await postActivity(innerRequest(request, "/api/activities", config, {
         babyId: baby.id,
         type: "diaper",
-        startedAt: now,
+        startedAt: at,
         details: { ...DIAPER_DETAILS[kind] },
       })));
     } else {
@@ -92,7 +120,10 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error, code: result.code, status }, { status: result.status, headers: NO_STORE });
     }
-    return NextResponse.json({ ok: true, status }, { headers: NO_STORE });
+    const undo = body.action === "sleep" || body.action === "wake"
+      ? (isSleepUndoToken(result.data.undoToken) ? sleepUndoString(result.data.undoToken) : undefined)
+      : body.action === "feed" || body.action === "diaper" ? `a:${result.data.id}` : undefined;
+    return NextResponse.json({ ok: true, status, undo }, { headers: NO_STORE });
   } catch (error) {
     console.error("Watch action error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500, headers: NO_STORE });

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
 import { activeChildcareSession } from "@/lib/childcare-mode-server";
 import { CHILDCARE_CONFIRMATION_REQUIRED } from "@/lib/childcare-mode-contract";
+import type { SleepUndoToken } from "@/lib/sleep-transition";
 
 // Garmin watch companion helpers (see src/app/api/watch/route.ts).
 
@@ -130,16 +131,33 @@ export async function watchStatus(db: DB, householdId: string) {
   };
 }
 
-export function innerRequest(request: NextRequest, path: string, config: WatchConfig, body: unknown) {
+export function innerRequest(request: NextRequest, path: string, config: WatchConfig, body: unknown, method: "POST" | "DELETE" = "POST") {
   const cookie = [
     `mcphee_hh=${encodeURIComponent(config.householdId)}`,
     ...(config.userId ? [`mcphee_user=${encodeURIComponent(config.userId)}`] : []),
   ].join("; ");
   return new NextRequest(new URL(path, request.url), {
-    method: "POST",
+    method,
     headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify(body),
+    ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
   });
+}
+
+// Keep millisecond timestamps opaque on the watch: Monkey C Number is 32-bit.
+export function sleepUndoString(token: SleepUndoToken): string {
+  return `s:${token.kind}:${token.activityId}:${token.changedAt}:${token.issuedAt}`;
+}
+
+export function parseWatchUndo(value: unknown): { activityId: string } | { undoToken: SleepUndoToken } | null {
+  if (typeof value !== "string") return null;
+  const activity = /^a:([A-Za-z0-9_-]{1,256})$/.exec(value);
+  if (activity && activity[0] === value) return { activityId: activity[1] };
+  const sleep = /^s:(started-sleep|woke):([A-Za-z0-9_-]{1,256}):([1-9][0-9]*):([1-9][0-9]*)$/.exec(value);
+  if (!sleep || sleep[0] !== value) return null;
+  const changedAt = Number(sleep[3]);
+  const issuedAt = Number(sleep[4]);
+  if (!Number.isSafeInteger(changedAt) || !Number.isSafeInteger(issuedAt)) return null;
+  return { undoToken: { kind: sleep[1] as SleepUndoToken["kind"], activityId: sleep[2], changedAt, issuedAt } };
 }
 
 export function feedDetails(milkType: "breastmilk" | "formula", amount: number) {

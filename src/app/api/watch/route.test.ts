@@ -4,6 +4,7 @@ import { createClient, type Client } from "@libsql/client";
 import { NextRequest } from "next/server";
 
 import { createDB } from "@/db";
+import { replayMilkLedger } from "@/lib/milk-bank-ledger";
 import { applyChildcareModeSchema } from "@/db/childcare-mode-schema";
 import { applyCaretakerImportSchema } from "@/db/caretaker-import-schema";
 import { POST as childcareMode } from "@/app/api/childcare-mode/route";
@@ -218,4 +219,140 @@ test("incoming cookies and body ids cannot redirect the watch to another househo
   assert.equal((await POST(request)).status, 200);
   const rows = await db.execute("SELECT baby_id, created_by FROM activities WHERE type = 'diaper'");
   assert.deepEqual(rows.rows.map((row) => [row.baby_id, row.created_by]), [["baby", "Parent"]]);
+}));
+
+for (const action of ["sleep", "wake", "feed", "diaper"]) {
+  for (const minutesAgo of [0, 5, 15, 30]) {
+    test(`${action} accepts minutesAgo=${minutesAgo} and stores the chosen time`, async () => fixture(async db => {
+      if (action === "wake") {
+        await db.execute({ sql: "UPDATE activities SET ended_at = NULL WHERE id = 'sleep1'", args: [] });
+      }
+      const response = await POST(watchRequest("POST", {
+        action, minutesAgo, milkType: "formula", amount: 60, kind: "both",
+      }));
+      assert.equal(response.status, 200);
+      const result = await json(response);
+      assert.equal(typeof result.undo, "string");
+      const expected = NOW - minutesAgo * 60_000;
+      if (action === "sleep" || action === "wake") {
+        const rows = await db.execute("SELECT started_at, ended_at FROM activities WHERE type = 'sleep' ORDER BY started_at DESC LIMIT 1");
+        assert.equal(Number(rows.rows[0][action === "sleep" ? "started_at" : "ended_at"]), expected);
+        assert.match(result.undo, new RegExp(`^s:${action === "sleep" ? "started-sleep" : "woke"}:[^:]+:${expected}:${NOW}$`));
+      } else {
+        const rows = await db.execute({ sql: "SELECT started_at FROM activities WHERE type = ?", args: [action === "feed" ? "bottlefeed" : "diaper"] });
+        assert.equal(Number(rows.rows[0].started_at), expected);
+        assert.match(result.undo, /^a:[^:]+$/);
+      }
+    }));
+  }
+  test(`${action} rejects invalid minutesAgo without writing`, async () => fixture(async db => {
+    if (action === "wake") await db.execute("UPDATE activities SET ended_at = NULL WHERE id = 'sleep1'");
+    const before = await db.execute("SELECT * FROM activities ORDER BY id");
+    for (const minutesAgo of [-1, 1, 10, 60, 5.5, "5", null, true, [], {}]) {
+      const response = await POST(watchRequest("POST", { action, minutesAgo, milkType: "formula", amount: 60, kind: "pee" }));
+      assert.equal(response.status, 400, JSON.stringify(minutesAgo));
+    }
+    assert.deepEqual((await db.execute("SELECT * FROM activities ORDER BY id")).rows, before.rows);
+  }));
+}
+
+async function availableMilk(db: Client) {
+  const rows = await db.execute("SELECT * FROM activities");
+  return replayMilkLedger(rows.rows.map(row => ({
+    id: String(row.id), type: String(row.type), startedAt: Number(row.started_at),
+    createdAt: Number(row.created_at), details: JSON.parse(String(row.details)),
+  })), Date.now()).availableMl;
+}
+
+test("feed undo deletes the row, restores the milk bank and clears import references", async () => fixture(async db => {
+  assert.equal(await availableMilk(db), 1000);
+  const saved = await json(await POST(watchRequest("POST", { action: "feed", milkType: "breastmilk", amount: 120, minutesAgo: 30 })));
+  assert.equal(await availableMilk(db), 880);
+  const id = saved.undo.slice(2);
+  await db.execute({
+    sql: "INSERT INTO paper_log_import_batches (id, household_id, baby_id, status, created_at) VALUES ('batch','house','baby','draft',?)", args: [NOW],
+  });
+  await db.execute({
+    sql: "INSERT INTO paper_log_import_rows (id,batch_id,row_index,status,duplicate_activity_id,imported_activity_id,created_at) VALUES ('ref','batch',0,'draft',?,?,?)", args: [id, id, NOW],
+  });
+  // Eligibility uses created_at, even for a backdated feed; the boundary is inclusive.
+  Date.now = () => NOW + 10 * 60_000;
+  const response = await POST(watchRequest("POST", { action: "undo", undo: saved.undo }));
+  assert.equal(response.status, 200);
+  assert.equal((await json(response)).status.lastFeed, null);
+  assert.equal((await db.execute({ sql: "SELECT id FROM activities WHERE id = ?", args: [id] })).rows.length, 0);
+  assert.equal(await availableMilk(db), 1000);
+  const refs = (await db.execute("SELECT duplicate_activity_id, imported_activity_id FROM paper_log_import_rows WHERE id = 'ref'")).rows[0];
+  assert.equal(refs.duplicate_activity_id, null);
+  assert.equal(refs.imported_activity_id, null);
+}));
+
+test("diaper undo removes the row and returns refreshed status", async () => fixture(async db => {
+  const saved = await json(await POST(watchRequest("POST", { action: "diaper", kind: "both" })));
+  const response = await POST(watchRequest("POST", { action: "undo", undo: saved.undo }));
+  assert.equal(response.status, 200);
+  assert.equal((await json(response)).status.lastDiaperAt, null);
+  assert.equal((await db.execute("SELECT id FROM activities WHERE type = 'diaper'")).rows.length, 0);
+}));
+
+for (const action of ["sleep", "wake"]) {
+  test(`${action} undo handles backdating and network delay, then expires after thirty seconds`, async () => fixture(async db => {
+    if (action === "wake") await db.execute("UPDATE activities SET ended_at = NULL WHERE id = 'sleep1'");
+    const save = async () => json(await POST(watchRequest("POST", { action, minutesAgo: 30 })));
+    const saved = await save();
+    Date.now = () => NOW + 15_000;
+    const response = await POST(watchRequest("POST", { action: "undo", undo: saved.undo }));
+    assert.equal(response.status, 200);
+    assert.equal((await json(response)).status.state, action === "sleep" ? "awake" : "sleeping");
+    assert.equal((await db.execute("SELECT id FROM activities WHERE type = 'sleep' AND ended_at IS NULL")).rows.length, action === "sleep" ? 0 : 1);
+    const next = await save();
+    Date.now = () => NOW + 45_001;
+    const expired = await POST(watchRequest("POST", { action: "undo", undo: next.undo }));
+    assert.equal(expired.status, 409);
+    assert.equal((await json(expired)).code, "STALE_UNDO");
+  }));
+}
+
+test("activity undo refuses expired, foreign, wrong-baby, non-watch and missing rows", async () => fixture(async db => {
+  await db.execute("INSERT INTO babies VALUES ('second-baby','house','Second',NULL,9999999999999)");
+  for (const [id, baby, type, at] of [
+    ["old", "baby", "diaper", NOW - 600_001],
+    ["foreign", "other-baby", "diaper", NOW],
+    ["second", "second-baby", "diaper", NOW],
+    ["pump", "baby", "pump", NOW],
+    ["future", "baby", "diaper", NOW + 1],
+  ] as const) {
+    await db.execute({ sql: "INSERT INTO activities VALUES (?,?,?, ?,NULL,'{}',?,'Parent')", args: [id, baby, type, NOW, at] });
+  }
+  const before = (await db.execute("SELECT * FROM activities ORDER BY id")).rows;
+  for (const id of ["old", "foreign", "second", "pump", "future", "missing"]) {
+    const response = await POST(watchRequest("POST", { action: "undo", undo: `a:${id}` }));
+    assert.equal(response.status, 409, id);
+    const result = await json(response);
+    assert.equal(result.code, "UNDO_EXPIRED");
+    assert.equal(result.status.babyId, "baby");
+  }
+  assert.deepEqual((await db.execute("SELECT * FROM activities ORDER BY id")).rows, before);
+}));
+
+test("undo parses opaque strings strictly without touching rows", async () => fixture(async db => {
+  const before = (await db.execute("SELECT * FROM activities ORDER BY id")).rows;
+  for (const undo of [undefined, null, 123, {}, "", "a:", "a:sleep1:extra", "a: sleep1", "a:sleep1\n", "x:pump1",
+    "s:woke:sleep1:123", "s:bad:sleep1:123:124", "s:woke::123:124", "s:woke:sleep1:0:124", "s:woke:sleep1:1e3:1234",
+    "s:woke:sleep1:123.5:124", "s:woke:sleep1:0123:124", "s:woke:sleep1:123:Infinity", "s:woke:sleep1:123:9007199254740992",
+    "s:woke:sleep1:123:124:extra"]) {
+    const response = await POST(watchRequest("POST", { action: "undo", undo }));
+    assert.equal(response.status, 400, JSON.stringify(undo));
+  }
+  assert.deepEqual((await db.execute("SELECT * FROM activities ORDER BY id")).rows, before);
+}));
+
+test("a wrong bearer token blocks every undo before it can touch data", async () => fixture(async db => {
+  const saved = await json(await POST(watchRequest("POST", { action: "diaper", kind: "pee" })));
+  const sleep = await json(await POST(watchRequest("POST", { action: "sleep" })));
+  const before = (await db.execute("SELECT * FROM activities ORDER BY id")).rows;
+  for (const undo of [saved.undo, sleep.undo, "malformed"]) {
+    assert.equal((await POST(watchRequest("POST", { action: "undo", undo }, "wrong"))).status, 401);
+  }
+  assert.deepEqual((await db.execute("SELECT * FROM activities ORDER BY id")).rows, before);
 }));
