@@ -77,7 +77,7 @@ export async function watchStatus(db: DB, householdId: string) {
     db.execute({
       sql: `SELECT started_at, details FROM activities
             WHERE baby_id = ? AND type = 'bottlefeed'
-            ORDER BY started_at DESC, created_at DESC, rowid DESC LIMIT 1`,
+            ORDER BY started_at DESC, created_at DESC, rowid DESC LIMIT 2`,
       args: [baby.id],
     }),
     db.execute({
@@ -94,18 +94,18 @@ export async function watchStatus(db: DB, householdId: string) {
     ? Number(openSleep.rows[0].started_at)
     : lastSleepEnd.rows[0] ? Number(lastSleepEnd.rows[0].ended_at) : null;
 
-  let feed: { at: number; milkType: "breastmilk" | "formula"; amount: number } | null = null;
-  if (lastFeed.rows[0]) {
-    const d = parseDetails(lastFeed.rows[0].details);
+  const feeds = lastFeed.rows.map((row) => {
+    const d = parseDetails(row.details);
     const breastmilk = positiveNumber(d.breastmilkAmount);
     const formula = positiveNumber(d.formulaAmount);
     const total = positiveNumber(d.amount) || breastmilk + formula;
-    feed = {
-      at: Number(lastFeed.rows[0].started_at),
-      milkType: formula > breastmilk || (d.milkType === "formula" && breastmilk === 0) ? "formula" : "breastmilk",
+    return {
+      at: Number(row.started_at),
+      milkType: formula > breastmilk || (d.milkType === "formula" && breastmilk === 0) ? "formula" as const : "breastmilk" as const,
       amount: Math.round(total),
     };
-  }
+  });
+  const feed = feeds[0] ?? null;
 
   // Garmin Monkey C numbers are 32-bit, so the watch reads these
   // "seconds ago" values instead of epoch milliseconds.
@@ -124,6 +124,8 @@ export async function watchStatus(db: DB, householdId: string) {
     serverTime: now,
     sinceAgoSec: agoSec(since),
     lastFeedAgoSec: agoSec(feed?.at),
+    // Newest first, at most two. lastFeed / lastFeedAgoSec stay for watch builds up to 1.0.0.
+    recentFeeds: feeds.map((item) => ({ milkType: item.milkType, amount: item.amount, agoSec: agoSec(item.at) })),
     lastDiaperAgoSec: agoSec(lastDiaperAt),
   };
 }

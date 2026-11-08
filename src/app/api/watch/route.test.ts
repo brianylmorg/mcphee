@@ -99,6 +99,7 @@ test("watch status reports the configured household's baby, awake time and last 
   assert.equal(status.since, NOW - 2 * 3600_000);
   assert.equal(status.sinceAgoSec, 7200);
   assert.equal(status.lastFeedAgoSec, null);
+  assert.deepEqual(status.recentFeeds, []);
   assert.equal(status.lastFeed, null);
   assert.equal(status.atChildcare, false);
 }));
@@ -143,6 +144,14 @@ test("feed saves the same bottlefeed shape as the phone form", async () => fixtu
   const status = await json(await GET(watchRequest("GET")));
   assert.equal(status.lastFeed.milkType, "formula");
   assert.equal(status.lastFeed.amount, 90);
+  assert.deepEqual(status.recentFeeds, [
+    { milkType: "formula", amount: 90, agoSec: 0 },
+    { milkType: "breastmilk", amount: 120, agoSec: 0 },
+  ]);
+
+  await POST(watchRequest("POST", { action: "feed", milkType: "breastmilk", amount: 60 }));
+  const three = await json(await GET(watchRequest("GET")));
+  assert.deepEqual(three.recentFeeds.map((item: { amount: number }) => item.amount), [60, 90]);
 }));
 
 test("feed validation rejects bad input and an overdrawn milk bank", async () => fixture(async () => {

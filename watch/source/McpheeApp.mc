@@ -155,6 +155,35 @@ class McpheeApi {
         return System.getTimer() - fetchedAt;
     }
 
+    // "60ml 2h10, 90ml 5h05": the last two feeds, newest first. Falls back
+    // to the single lastFeed field for older servers.
+    function recentFeedsText() as String {
+        if (status == null) {
+            return "";
+        }
+        var sinceFetch = (System.getTimer() - fetchedAt) / 1000;
+        var feeds = status["recentFeeds"];
+        var parts = [] as Array<String>;
+        if (feeds instanceof Array) {
+            for (var i = 0; i < feeds.size() && i < 2; i++) {
+                var item = feeds[i];
+                if (item instanceof Dictionary && item["agoSec"] instanceof Number) {
+                    parts.add(item["amount"] + "ml " + formatShort((item["agoSec"] as Number) + sinceFetch));
+                }
+            }
+        } else {
+            var feed = lastFeed();
+            var ago = agoSec("lastFeedAgoSec");
+            if (feed != null && ago != null) {
+                parts.add(feed["amount"] + "ml " + formatShort(ago));
+            }
+        }
+        if (parts.size() == 0) {
+            return "No feeds yet";
+        }
+        return parts.size() == 1 ? parts[0] + " ago" : parts[0] + ", " + parts[1];
+    }
+
     function isSleeping() as Boolean {
         return status != null && "sleeping".equals(status["state"]);
     }
@@ -181,6 +210,15 @@ function formatDuration(sec as Number?) as String {
         return minutes + "m";
     }
     return (minutes / 60) + "h " + (minutes % 60) + "m";
+}
+
+// "45m" under an hour, else "2h10".
+function formatShort(sec as Number) as String {
+    var minutes = sec / 60;
+    if (minutes < 60) {
+        return minutes + "m";
+    }
+    return (minutes / 60) + "h" + (minutes % 60).format("%02d");
 }
 
 // ---------------------------------------------------------------- Main menu
@@ -230,12 +268,7 @@ class McpheeMenu extends WatchUi.Menu2 {
             sleepItem.setSubLabel(since.equals("") ? "Awake" : "Awake " + since);
         }
 
-        var feed = api.lastFeed();
-        if (feed == null) {
-            feedItem.setSubLabel("No feeds yet");
-        } else {
-            feedItem.setSubLabel(feed["amount"] + " ml, " + formatDuration(api.agoSec("lastFeedAgoSec")) + " ago");
-        }
+        feedItem.setSubLabel(api.recentFeedsText());
 
         var diaperAgo = api.agoSec("lastDiaperAgoSec");
         diaperItem.setSubLabel(diaperAgo == null ? "None yet" : formatDuration(diaperAgo) + " ago");
