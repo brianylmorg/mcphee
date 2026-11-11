@@ -251,3 +251,19 @@ test("dashboard remains available before or during an incomplete caretaker schem
   assert.equal(partial.status, 200);
   assert.deepEqual((await partial.json()).sleepCoverages, []);
 }, false));
+
+
+test("finding 2: caretaker sleep replacement reconciles stranded blips and preserves current ones", async () => fixture(async db => {
+  await addSleep(db, "stale", "07:00", null);
+  for (const [id, time] of [["trimmed-blip", "07:30"], ["orphan-blip", "10:00"], ["nap-blip", "14:30"], ["current-blip", "17:45"]]) {
+    await db.execute({ sql: "INSERT INTO activities VALUES (?, 'baby','sleepblip',?,NULL,'{\"notes\":\"keep\"}',?,'Parent')", args: [id, at(time), at(time)] });
+  }
+  const staged = await stageRows(naps(), 8);
+  const reviewed = await save(staged);
+  assert.equal(reviewed.status, 200);
+  await addSleep(db, "home-later", "17:30", null);
+  assert.equal((await apply(await reviewed.json())).status, 200);
+  const rows = (await db.execute("SELECT id, ended_at, details FROM activities WHERE type='sleepblip' ORDER BY started_at")).rows;
+  assert.deepEqual(rows.map(row => row.ended_at), [at("08:00"), at("10:00"), at("15:00"), null]);
+  for (const row of rows.slice(0, 3)) assert.deepEqual(JSON.parse(String(row.details)), { notes: "keep", ending: "woke" });
+}));

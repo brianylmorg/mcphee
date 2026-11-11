@@ -7,6 +7,7 @@ import { createDB } from "@/db";
 import { applyCaretakerImportSchema } from "@/db/caretaker-import-schema";
 import { POST as sleepState } from "@/app/api/sleep-state/route";
 import { POST } from "./route";
+import { PUT as editActivity, DELETE as deleteActivity } from "@/app/api/activities/route";
 
 let clock = Date.parse("2026-11-10T02:00:00+08:00");
 
@@ -142,4 +143,129 @@ test("undoing a sleep start drops a blip opened inside it", () => fixture(async 
   await blip({ action: "start" });
   assert.equal((await sleep({ action: "undo", undoToken: started.undoToken })).status, 200);
   assert.equal((await blipRows(db)).length, 0);
+}, { asleep: false }));
+
+
+function edit(body: Record<string, unknown>) {
+  return editActivity(new NextRequest("http://localhost/api/activities", {
+    method: "PUT", headers: { "content-type": "application/json", cookie: "mcphee_hh=house" },
+    body: JSON.stringify({ babyId: "baby", details: {}, ...body }),
+  }));
+}
+function remove(id: string) {
+  return deleteActivity(new NextRequest(`http://localhost/api/activities?id=${id}`, {
+    method: "DELETE", headers: { cookie: "mcphee_hh=house" },
+  }));
+}
+
+test("finding 1: undo stop refuses an awake baby or a later open sleep", () => fixture(async (db) => {
+  await blip({ action: "start" });
+  clock += 1_000;
+  const stopped = await (await blip({ action: "stop", settledBy: "self" })).json();
+  clock += 1_000;
+  assert.equal((await sleep({ action: "wake" })).status, 200);
+  for (const nextSleep of [false, true]) {
+    if (nextSleep) {
+      clock += 1_000;
+      assert.equal((await sleep({ action: "sleep" })).status, 200);
+    }
+    const response = await blip({ action: "undo", undoToken: stopped.undoToken });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, "STALE_UNDO");
+    assert.notEqual((await blipRows(db))[0].endedAt, null);
+  }
+}));
+
+test("findings 1 and 2: start heals stranded open blips before checking BLIP_OPEN", () => fixture(async (db) => {
+  const oldStart = clock - 60_000;
+  await db.execute({ sql: "UPDATE activities SET ended_at = ? WHERE id = 'sleep1'", args: [clock - 30_000] });
+  await db.execute({
+    sql: "INSERT INTO activities VALUES ('stranded','baby','sleepblip',?,NULL,'{\"notes\":\"keep\"}',?,'Parent')",
+    args: [oldStart, oldStart],
+  });
+  assert.equal((await sleep({ action: "sleep" })).status, 200);
+  assert.equal((await blip({ action: "start" })).status, 200);
+  const [healed, current] = await blipRows(db);
+  assert.equal(healed.endedAt, clock - 30_000);
+  assert.equal(healed.ending, "woke");
+  assert.equal(current.endedAt, null);
+  const details = (await db.execute("SELECT details FROM activities WHERE id='stranded'")).rows[0].details;
+  assert.equal(JSON.parse(String(details)).notes, "keep");
+}));
+
+test("finding 2: closing or moving a sleep reconciles its open blip", () => fixture(async (db) => {
+  await blip({ action: "start" });
+  clock += 10_000;
+  assert.equal((await edit({ id: "sleep1", type: "sleep", startedAt: clock - 4 * 3600_000, endedAt: clock })).status, 200);
+  let [row] = await blipRows(db);
+  assert.equal(row.endedAt, clock);
+  assert.equal(row.ending, "woke");
+  await db.execute("DELETE FROM activities");
+  assert.equal((await sleep({ action: "sleep" })).status, 200);
+  await blip({ action: "start" });
+  const sleepId = (await db.execute("SELECT id FROM activities WHERE type='sleep'")).rows[0].id;
+  clock += 1_000;
+  assert.equal((await edit({ id: String(sleepId), type: "sleep", startedAt: clock, endedAt: null })).status, 200);
+  [row] = await blipRows(db);
+  assert.equal(row.endedAt, row.startedAt, "no containing completed sleep means a zero-duration close");
+  assert.equal(row.ending, "woke");
+  assert.equal((await blip({ action: "start" })).status, 200);
+}));
+
+test("finding 2: deleting open or completed sleep removes all and only its blips", () => fixture(async (db) => {
+  const start = clock - 4 * 3600_000;
+  for (const completed of [false, true]) {
+    await db.execute("DELETE FROM activities WHERE type='sleepblip'");
+    if (completed) await db.execute({ sql: "UPDATE activities SET ended_at=? WHERE id='sleep1'", args: [clock] });
+    for (const [id, at, end] of [["before", start - 1, start], ["lower", start, start], ["open", clock - 1, null], ["upper", clock, clock], ["after", clock + 1, clock + 1]] as const) {
+      await db.execute({ sql: "INSERT INTO activities VALUES (?,'baby','sleepblip',?,?,'{}',?,'Parent')", args: [id, at, end, at] });
+    }
+    assert.equal((await remove("sleep1")).status, 200);
+    assert.deepEqual((await blipRows(db)).map(row => row.id), ["before", "after"]);
+    assert.equal((await blipRows(db))[1].endedAt, clock + 1);
+    if (!completed) await db.execute({ sql: "INSERT INTO activities VALUES ('sleep1','baby','sleep',?,NULL,'{}',?,'Parent')", args: [start, start] });
+  }
+}));
+
+test("finding 3: stale diary saves with null or omitted end cannot reopen a closed blip", () => fixture(async (db) => {
+  await blip({ action: "start" });
+  const [original] = await blipRows(db);
+  clock += 1_000;
+  assert.equal((await sleep({ action: "wake" })).status, 200);
+  for (const end of [{ endedAt: null }, {}]) {
+    assert.equal((await edit({ id: original.id, type: "sleepblip", startedAt: original.startedAt, details: { notes: "edited" }, ...end })).status, 200);
+    const [saved] = await blipRows(db);
+    assert.equal(saved.endedAt, clock);
+    assert.equal(saved.ending, "woke");
+  }
+  assert.equal((await edit({ id: original.id, type: "sleepblip", startedAt: original.startedAt, endedAt: original.startedAt + 500 })).status, 200);
+  assert.equal((await blipRows(db))[0].endedAt, original.startedAt + 500, "explicit end corrections still work");
+}));
+
+test("finding 4: undo backdated wake reopens exactly its blips using wokeAt", () => fixture(async (db) => {
+  await blip({ action: "start" });
+  const [original] = await blipRows(db);
+  const wakeAt = clock - 5 * 60_000;
+  const woke = await (await sleep({ action: "wake", at: wakeAt })).json();
+  const [closed] = await blipRows(db);
+  assert.equal(closed.endedAt, original.startedAt, "end is clamped to blip start");
+  await db.execute({ sql: "INSERT INTO activities VALUES ('unrelated','baby','sleepblip',?,?,'{\"ending\":\"woke\"}',?,'Parent')", args: [wakeAt - 1_000, wakeAt, wakeAt] });
+  assert.equal((await sleep({ action: "undo", undoToken: woke.undoToken })).status, 200);
+  const rows = await blipRows(db);
+  assert.equal(rows.find(row => row.id === original.id)?.endedAt, null);
+  assert.equal(rows.find(row => row.id === "unrelated")?.endedAt, wakeAt);
+  const details = JSON.parse(String((await db.execute({ sql: "SELECT details FROM activities WHERE id=?", args: [original.id] })).rows[0].details));
+  assert.equal("ending" in details, false);
+  assert.equal("wokeAt" in details, false);
+}));
+
+test("finding 7: undo sleep start deletes finished and open blips but preserves older blips", () => fixture(async (db) => {
+  const started = await (await sleep({ action: "sleep" })).json();
+  await db.execute({ sql: "INSERT INTO activities VALUES ('older','baby','sleepblip',?,?,'{}',?,'Parent')", args: [clock - 2, clock - 1, clock - 2] });
+  await blip({ action: "start" });
+  clock += 1_000;
+  await blip({ action: "stop", settledBy: "us" });
+  await blip({ action: "start" });
+  assert.equal((await sleep({ action: "undo", undoToken: started.undoToken })).status, 200);
+  assert.deepEqual((await blipRows(db)).map(row => row.id), ["older"]);
 }, { asleep: false }));

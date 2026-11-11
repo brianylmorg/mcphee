@@ -113,3 +113,37 @@ test("durations read as minutes", () => {
   assert.equal(formatBlipDuration(4 * MIN), "4m");
   assert.equal(formatBlipDuration(65 * MIN), "1h 05m");
 });
+
+
+test("finding 5: longest stretch clips every intersecting blip across sleep intervals", () => {
+  const now = sgt("2026-11-10T12:00:00");
+  const sleeps = [
+    { startedAt: sgt("2026-11-09T19:00:00"), endedAt: sgt("2026-11-09T23:00:00") },
+    { startedAt: sgt("2026-11-09T23:30:00"), endedAt: sgt("2026-11-10T06:00:00") },
+  ];
+  const [night] = nightBlipSummaries(sleeps, [
+    { startedAt: sgt("2026-11-09T22:00:00"), endedAt: sgt("2026-11-10T00:30:00") },
+  ], now);
+  assert.equal(night.longestStretchMs, 330 * MIN);
+  assert.equal(night.blipCount, 1);
+  const [outsideStart] = nightBlipSummaries([sleeps[1]], [
+    { startedAt: sgt("2026-11-09T22:00:00"), endedAt: sgt("2026-11-10T00:30:00") },
+    { startedAt: sgt("2026-11-09T23:00:00"), endedAt: sgt("2026-11-10T01:00:00") },
+  ], now);
+  assert.equal(outsideStart.longestStretchMs, 300 * MIN);
+  assert.equal(outsideStart.blipCount, 0, "intersection affects quiet stretches, not start-based counts");
+});
+
+test("finding 6: since drops old logged nights and whole nights spanning the cutoff", () => {
+  const now = sgt("2026-11-10T12:00:00");
+  const since = now - 14 * 86400_000;
+  const sleeps = [
+    { startedAt: sgt("2026-10-01T19:00:00"), endedAt: sgt("2026-10-02T06:00:00") },
+    { startedAt: sgt("2026-10-26T19:00:00"), endedAt: sgt("2026-10-27T13:00:00") },
+    { startedAt: sgt("2026-10-27T19:00:00"), endedAt: sgt("2026-10-28T06:00:00") },
+    { startedAt: sgt("2026-11-09T19:00:00"), endedAt: sgt("2026-11-10T06:00:00") },
+  ];
+  assert.deepEqual(nightBlipSummaries(sleeps, [], now, 14, since).map(night => night.date), ["2026-11-09", "2026-10-27"]);
+  assert.equal(nightBlipSummaries(sleeps, [], now, 14, sleeps[3].startedAt).length, 1, "since is inclusive");
+  assert.equal(nightBlipSummaries(sleeps, [], now).length, 4, "since is optional");
+});

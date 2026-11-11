@@ -542,3 +542,29 @@ test("guard: the dashboard only reads tables whose writes bump the version", asy
   assert.ok(tables.size >= 6, `expected to see the dashboard's queries, saw ${[...tables].join(", ")}`);
   assert.deepEqual([...tables].filter((name) => !allowed.has(name)), [], "tables read without a version trigger");
 });
+
+
+test("finding 8: tagged dashboard refreshes when the earliest blip leaves its rolling window", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  const expiresAt = NOW + 10 * MINUTE;
+  const at = expiresAt - 15 * 24 * HOUR;
+  await insertActivity(client, { id: "expiring-blip", type: "sleepblip", at, ended: at + MINUTE });
+  await insertActivity(client, { id: "later-blip", type: "sleepblip", at: at + MINUTE, ended: at + 2 * MINUTE });
+  setClock(t, NOW);
+  const first = await getDashboard(dashboardRequest());
+  const tag = etag(first);
+  assert.deepEqual((await first.json()).sleepBlips.map((row: { id: string }) => row.id), ["expiring-blip", "later-blip"]);
+  t.mock.timers.reset();
+  setClock(t, expiresAt - 1);
+  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: tag }))).status, UNCHANGED);
+  t.mock.timers.reset();
+  setClock(t, expiresAt);
+  const expired = await getDashboard(dashboardRequest({ ifNoneMatch: tag }));
+  assert.equal(expired.status, 200);
+  assert.deepEqual((await expired.json()).sleepBlips.map((row: { id: string }) => row.id), ["later-blip"]);
+  t.mock.timers.reset();
+  setClock(t, expiresAt + 1);
+  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: etag(expired) }))).status, UNCHANGED);
+  assert.deepEqual((await dashboardJson(getDashboard)).sleepBlips.map((row: { id: string }) => row.id), ["later-blip"]);
+});

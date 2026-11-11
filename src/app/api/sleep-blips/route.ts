@@ -3,6 +3,7 @@ import { createDB } from "@/db";
 import { requireBabyInHousehold, userNameForHousehold } from "@/lib/db/household";
 import { generateId } from "@/lib/utils";
 import { canUndoBlip, isBlipSettledBy, isSleepBlipUndoToken } from "@/lib/sleep-blips";
+import { reconcileOpenBlips } from "@/lib/sleep-blips-server";
 
 export const runtime = "nodejs";
 
@@ -60,6 +61,18 @@ export async function POST(request: NextRequest) {
             args: [token.activityId, body.babyId],
           });
         } else {
+          const containingSleep = await tx.execute({
+            sql: `SELECT id FROM activities WHERE baby_id = ? AND type = 'sleep'
+                    AND ended_at IS NULL AND started_at <= ?
+                    AND started_at = (SELECT MAX(started_at) FROM activities
+                      WHERE baby_id = ? AND type = 'sleep' AND ended_at IS NULL)
+                  LIMIT 1`,
+            args: [body.babyId, row!.startedAt, body.babyId],
+          });
+          if (containingSleep.rows.length === 0) {
+            await tx.rollback();
+            return NextResponse.json({ error: "The sleep changed elsewhere. Refreshed to the latest state.", code: "STALE_UNDO" }, { status: 409 });
+          }
           // A newer blip opened since would make two open blips: refuse instead.
           const otherOpen = await tx.execute({
             sql: "SELECT id FROM activities WHERE baby_id = ? AND type = 'sleepblip' AND ended_at IS NULL LIMIT 1",
@@ -79,6 +92,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, blipOpen: token.kind === "ended-blip" });
       }
 
+      if (body.action === "start") await reconcileOpenBlips(tx, body.babyId, now);
+
       const openSleep = await tx.execute({
         sql: `SELECT id, started_at FROM activities
               WHERE baby_id = ? AND type = 'sleep' AND ended_at IS NULL
@@ -94,11 +109,11 @@ export async function POST(request: NextRequest) {
 
       if (body.action === "start") {
         if (openSleep.rows.length === 0) {
-          await tx.rollback();
+          await tx.commit();
           return NextResponse.json({ error: "Blips can only start while he is asleep", code: "NOT_SLEEPING" }, { status: 409 });
         }
         if (openBlip.rows.length > 0) {
-          await tx.rollback();
+          await tx.commit();
           return NextResponse.json({ error: "A blip is already going", code: "BLIP_OPEN" }, { status: 409 });
         }
         const startedAt = Math.max(now, Number(openSleep.rows[0].started_at));

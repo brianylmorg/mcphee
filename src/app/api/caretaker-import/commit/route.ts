@@ -35,6 +35,7 @@ import {
 import { assertMilkLedgerMutation, MilkLedgerError } from "@/lib/milk-bank-ledger";
 import { generateId } from "@/lib/utils";
 import { loadPendingChildcareSession } from "@/lib/childcare-mode-server";
+import { reconcileOpenBlips } from "@/lib/sleep-blips-server";
 
 export const runtime = "nodejs";
 
@@ -272,6 +273,7 @@ export async function POST(request: NextRequest) {
       row.duplicateActivityId = activityId;
     }
 
+    await reconcileOpenBlips(tx, batch.baby_id, now);
     const sleepSummary = summarizeCaretakerSleepPlan(sleepPlan);
     const result: CaretakerCommitResponse = {
       batchId: batch.id,

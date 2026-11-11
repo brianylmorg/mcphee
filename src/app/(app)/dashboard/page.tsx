@@ -2630,7 +2630,7 @@ export default function DashboardPage() {
                 </div>
               </section>
               <section className="mt-6 border-t border-border pt-5" aria-label="Night blips">
-                <NightBlipsSummary nights={nightBlipSummaries(sleepActivities, sleepBlips, Date.now(), 14)} />
+                <NightBlipsSummary nights={nightBlipSummaries(sleepActivities, sleepBlips, Date.now(), 14, Date.now() - 14 * 86400_000)} />
               </section>
               <section className="mt-6 border-t border-border pt-5">
                 <h3 className="text-sm font-semibold text-warm-brown">Wake windows</h3>
@@ -3182,7 +3182,7 @@ function LogModal({
     let endedAt: number | null | undefined;
     if ((type === "sleep" || type === "sleepblip") && isEditing) {
       endedAt = activity?.ended_at == null
-        ? null
+        ? (type === "sleepblip" ? undefined : null)
         : Date.parse(endDate + "T" + pad2(endHour) + ":" + pad2(endMinute) + ":00+08:00");
       if (endedAt != null) endedAt = clampNearFutureToNow(endedAt);
       if (endedAt != null && (!Number.isFinite(endedAt) || endedAt < startedAt)) {

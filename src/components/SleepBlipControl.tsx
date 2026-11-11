@@ -52,15 +52,15 @@ export function SleepBlipControl({ blips, disabled, onStart, onStop, initialNow 
 
   const count = blips.length;
   return (
-    <div className="sleep-blip mt-2 flex items-center justify-between gap-2" data-blip="idle">
+    <div className="sleep-blip mt-1.5 flex items-center justify-between gap-2" data-blip="idle">
       <button
         type="button"
         disabled={disabled}
         onClick={onStart}
         aria-label="Start a blip (crying in his sleep)"
-        className="flex min-h-11 items-center gap-1.5 rounded-lg border border-border bg-surface/70 px-3 py-2 text-sm font-semibold text-warm-brown disabled:opacity-60"
+        className="hit-44 -ml-1 flex items-center gap-1 rounded-md px-1 py-0.5 text-xs font-medium text-muted transition-colors hover:text-warm-brown disabled:opacity-60"
       >
-        <Volume2 aria-hidden="true" className="h-4 w-4 text-accent-strong" />
+        <Volume2 aria-hidden="true" className="h-3.5 w-3.5" />
         Blip
       </button>
       <p className="text-right text-xs text-muted tabular-nums">

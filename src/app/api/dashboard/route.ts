@@ -196,7 +196,7 @@ export async function GET(request: NextRequest) {
         // so the read stays small however long the history grows.
         sql: `SELECT a.id, a.baby_id, a.started_at, a.ended_at, a.details
               FROM activities a JOIN babies b ON b.id = a.baby_id
-              WHERE b.household_id = ? AND a.type = 'sleepblip' AND a.started_at >= ?
+              WHERE b.household_id = ? AND a.type = 'sleepblip' AND a.started_at > ?
               ORDER BY a.started_at ASC`,
         args: [householdId, nowMs - SLEEP_BLIP_LOOKBACK_MS],
       },
@@ -270,12 +270,13 @@ export async function GET(request: NextRequest) {
     }));
     // Earliest moment this answer changes with no new write: SGT midnight, a
     // future-dated ledger entry (bank and recent feeds skip those) going live,
-    // or a frozen packet passing its expiry.
+    // a frozen packet passing its expiry, or a blip leaving the rolling window.
     const validUntil = Math.min(
       dayEnd,
       nowMs + TAG_MAX_AGE_MS,
       ...ledgerEvents.map((event) => event.startedAt).filter((at) => at > nowMs),
       ...bankState.frozenPackets.map((packet) => packet.expiresAt).filter((at) => at > nowMs),
+      ...sleepBlips.rows.map((blip) => Number(blip.started_at) + SLEEP_BLIP_LOOKBACK_MS).filter((at) => at > nowMs),
     );
     const latestWeightG = Number((measurements.rows[0] as { weight_g?: unknown } | undefined)?.weight_g);
     const expectedMilkMl = Number.isFinite(latestWeightG)

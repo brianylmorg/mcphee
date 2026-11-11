@@ -13,6 +13,7 @@ import { milkLedgerForHousehold, validateActivityInput } from "@/lib/activity-in
 import { clampNearFutureActivityTimes } from "@/lib/activity-time";
 import { childcareCreationGuard } from "@/lib/childcare-mode-server";
 import { projectChildcareSessionLog } from "@/lib/childcare-activity-log";
+import { reconcileOpenBlips } from "@/lib/sleep-blips-server";
 
 export const runtime = "nodejs";
 
@@ -238,7 +239,7 @@ export async function PUT(request: NextRequest) {
 
     // Fetch existing activity to merge details and verify household ownership.
     const existing = await db.execute({
-      sql: "SELECT type, details, ended_at FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
+      sql: "SELECT type, baby_id, details, ended_at FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
       args: [body.id, householdId],
     });
 
@@ -278,7 +279,7 @@ export async function PUT(request: NextRequest) {
     }
 
     let mergedDetails = {};
-    const existingRow = existing.rows[0] as unknown as { type: string; details: string | null; ended_at: number | null };
+    const existingRow = existing.rows[0] as unknown as { type: string; baby_id: string; details: string | null; ended_at: number | null };
     const existingDetails = existingRow.details;
     if (existingDetails) {
       try {
@@ -304,10 +305,12 @@ export async function PUT(request: NextRequest) {
           }], Date.now());
         }
         await tx.execute({
-          sql: `UPDATE activities SET type = ?, started_at = ?, ended_at = ?, details = ?
+          sql: `UPDATE activities SET type = ?, started_at = ?,
+                ended_at = CASE WHEN type = 'sleepblip' AND ? IS NULL THEN ended_at ELSE ? END, details = ?
                 WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
-          args: [body.type, body.startedAt, "endedAt" in body ? body.endedAt ?? null : existingRow.ended_at, JSON.stringify(mergedDetails), body.id, householdId],
+          args: [body.type, body.startedAt, body.endedAt ?? null, "endedAt" in body ? body.endedAt ?? null : existingRow.ended_at, JSON.stringify(mergedDetails), body.id, householdId],
         });
+        if (existingRow.type === "sleep") await reconcileOpenBlips(tx, existingRow.baby_id, Date.now());
         await tx.commit();
         return NextResponse.json({ success: true });
       } catch (error) {
@@ -324,22 +327,48 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    await db.execute({
-      sql: `UPDATE activities SET 
-            type = ?,
-            started_at = ?,
-            ended_at = ?,
-            details = ?
-            WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
-      args: [
-        body.type,
-        body.startedAt,
-        "endedAt" in body ? body.endedAt ?? null : existingRow.ended_at,
-        JSON.stringify(mergedDetails),
-        body.id,
-        householdId,
-      ],
-    });
+    const tx = await db.transaction("write");
+    try {
+      // Use the authoritative row after acquiring the write lock: a wake on
+      // another device may have closed the blip since the ownership lookup.
+      const current = await tx.execute({
+        sql: "SELECT type, baby_id, details FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
+        args: [body.id, householdId],
+      });
+      const currentRow = current.rows[0];
+      if (!currentRow) {
+        await tx.rollback();
+        return NextResponse.json({ error: "Activity not found" }, { status: 404 });
+      }
+      if (currentRow.type === "sleepblip") {
+        mergedDetails = { ...parseActivityDetails(currentRow.details), ...body.details };
+      }
+      await tx.execute({
+        sql: `UPDATE activities SET
+              type = ?, started_at = ?,
+              ended_at = CASE WHEN type = 'sleepblip' AND ? IS NULL THEN ended_at ELSE ? END,
+              details = ?
+              WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)`,
+        args: [
+          body.type,
+          body.startedAt,
+          body.endedAt ?? null,
+          "endedAt" in body ? body.endedAt ?? null : existingRow.ended_at,
+          JSON.stringify(mergedDetails),
+          body.id,
+          householdId,
+        ],
+      });
+      if (currentRow.type === "sleep" || body.type === "sleep") {
+        await reconcileOpenBlips(tx, String(currentRow.baby_id), Date.now());
+      }
+      await tx.commit();
+    } catch (error) {
+      try { await tx.rollback(); } catch {}
+      throw error;
+    } finally {
+      tx.close();
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -415,7 +444,30 @@ export async function DELETE(request: NextRequest) {
         sql: "DELETE FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
         args: [activityId, householdId],
     });
-    await db.batch(referenceCleanup, "write");
+    const tx = await db.transaction("write");
+    try {
+      const current = await tx.execute({
+        sql: "SELECT type, baby_id, started_at, ended_at FROM activities WHERE id = ? AND baby_id IN (SELECT id FROM babies WHERE household_id = ?)",
+        args: [activityId, householdId],
+      });
+      const row = current.rows[0];
+      const now = Date.now();
+      if (row?.type === "sleep") {
+        await tx.execute({
+          sql: `DELETE FROM activities WHERE baby_id = ? AND type = 'sleepblip'
+                  AND started_at >= ? AND started_at <= ?`,
+          args: [row.baby_id, row.started_at, row.ended_at ?? now],
+        });
+      }
+      for (const statement of referenceCleanup) await tx.execute(statement);
+      if (row?.type === "sleep") await reconcileOpenBlips(tx, String(row.baby_id), now);
+      await tx.commit();
+    } catch (error) {
+      try { await tx.rollback(); } catch {}
+      throw error;
+    } finally {
+      tx.close();
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

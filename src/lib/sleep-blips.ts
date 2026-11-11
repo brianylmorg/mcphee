@@ -140,12 +140,14 @@ function nightDateFor(startedAt: number): string | null {
  * One row per night, newest first. A night is every sleep starting between
  * 18:00 and 07:00 SGT (the same bedtime and NIGHT_ENDS_HOUR rules as the nap
  * charts). Blips count when they start inside one of those sleeps.
+ * If since is supplied, omit whole nights that began before that cutoff.
  */
 export function nightBlipSummaries(
   sleeps: readonly BlipSleep[],
   blips: readonly SleepBlip[],
   now = Date.now(),
   nights = 14,
+  since?: number,
 ): NightBlipSummary[] {
   const groups = new Map<string, Array<{ start: number; end: number; open: boolean }>>();
   for (const sleep of sleeps) {
@@ -161,6 +163,7 @@ export function nightBlipSummaries(
     groups.set(date, list);
   }
 
+  const sortedBlips = [...blips].sort((a, b) => a.startedAt - b.startedAt);
   const summaries: NightBlipSummary[] = [];
   for (const [date, raw] of groups) {
     const intervals = raw.sort((a, b) => a.start - b.start).reduce<Array<{ start: number; end: number; open: boolean }>>((merged, item) => {
@@ -173,17 +176,19 @@ export function nightBlipSummaries(
       }
       return merged;
     }, []);
-    const nightBlips = blips
-      .filter((blip) => intervals.some((interval) => blip.startedAt >= interval.start && blip.startedAt <= interval.end))
-      .sort((a, b) => a.startedAt - b.startedAt);
+    if (since != null && intervals[0].start < since) continue;
+    const nightBlips = sortedBlips
+      .filter((blip) => intervals.some((interval) => blip.startedAt >= interval.start && blip.startedAt <= interval.end));
 
     let longestStretchMs = 0;
     for (const interval of intervals) {
       let cursor = interval.start;
-      for (const blip of nightBlips) {
-        if (blip.startedAt < interval.start || blip.startedAt > interval.end) continue;
-        longestStretchMs = Math.max(longestStretchMs, blip.startedAt - cursor);
-        cursor = Math.max(cursor, Math.min(interval.end, blipEnd(blip, now)));
+      for (const blip of sortedBlips) {
+        const start = Math.max(interval.start, blip.startedAt);
+        const end = Math.min(interval.end, blipEnd(blip, now));
+        if (start > end) continue;
+        longestStretchMs = Math.max(longestStretchMs, start - cursor);
+        cursor = Math.max(cursor, end);
       }
       longestStretchMs = Math.max(longestStretchMs, interval.end - cursor);
     }

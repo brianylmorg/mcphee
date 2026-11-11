@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
           // A blip can only live inside a sleep, so one opened in the undone sleep goes too.
           await tx.execute({
             sql: `DELETE FROM activities
-                  WHERE baby_id = ? AND type = 'sleepblip' AND started_at >= ? AND ended_at IS NULL`,
+                  WHERE baby_id = ? AND type = 'sleepblip' AND started_at >= ?`,
             args: [body.babyId, token.changedAt],
           });
         } else {
@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
           });
           // Reopen the blip that the wake closed.
           await tx.execute({
-            sql: `UPDATE activities SET ended_at = NULL, details = json_remove(details, '$.ending')
-                  WHERE baby_id = ? AND type = 'sleepblip' AND ended_at = ?
+            sql: `UPDATE activities SET ended_at = NULL, details = json_remove(details, '$.ending', '$.wokeAt')
+                  WHERE baby_id = ? AND type = 'sleepblip' AND json_extract(details, '$.wokeAt') = ?
                     AND json_extract(details, '$.ending') = 'woke'`,
             args: [body.babyId, token.changedAt],
           });
@@ -171,9 +171,9 @@ export async function POST(request: NextRequest) {
       });
       // A blip still going when he wakes turned into a wake.
       await tx.execute({
-        sql: `UPDATE activities SET ended_at = MAX(started_at, ?), details = json_set(COALESCE(details, '{}'), '$.ending', 'woke')
+        sql: `UPDATE activities SET ended_at = MAX(started_at, ?), details = json_set(COALESCE(details, '{}'), '$.ending', 'woke', '$.wokeAt', ?)
               WHERE baby_id = ? AND type = 'sleepblip' AND ended_at IS NULL`,
-        args: [changedAt, body.babyId],
+        args: [changedAt, changedAt, body.babyId],
       });
       await tx.commit();
       return NextResponse.json({
