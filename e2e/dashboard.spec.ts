@@ -7,6 +7,7 @@ for (const name of fixtureNames) {
   test(name, async ({ page, context }) => {
     // The first fixture also pays for a cold webpack dashboard/API compilation.
     if (name === "fresh-day") test.setTimeout(60_000);
+    if (name === "asleep-blips") test.setTimeout(90_000);
     const url = process.env.TURSO_DATABASE_URL;
     if (!url?.startsWith("file:")) throw new Error("Run bash scripts/verify.sh ui to create an isolated file database.");
     const client = createClient({ url, authToken: "" });
@@ -52,6 +53,31 @@ for (const name of fixtureNames) {
         await expect(bank).toContainText("1040");
         await bank.getByRole("button", { name: "Show frozen milk details" }).click();
         await expect(bank.getByRole("button", { name: "Thaw 180 ml packet" })).toBeVisible();
+      } else if (name === "asleep-blips") {
+        const card = page.getByRole("region", { name: "Sleep status" });
+        await expect(card).toContainText("No blips this sleep");
+        const refetched = () => page.waitForResponse(response => response.url().endsWith("/api/dashboard") && response.status() === 200);
+        const started = page.waitForResponse(response => response.url().endsWith("/api/sleep-blips") && response.request().method() === "POST");
+        const afterStart = refetched();
+        await card.getByRole("button", { name: "Start a blip (crying in his sleep)" }).click();
+        expect((await started).ok()).toBeTruthy();
+        await afterStart;
+        await expect(card.getByRole("button", { name: "Settled himself", exact: true })).toBeVisible();
+        await expect(page.getByRole("status")).toContainText("Blip started");
+        await mkdir(".verify/shots", { recursive: true });
+        await page.screenshot({ path: ".verify/shots/asleep-blips-open.png", fullPage: true });
+        const stopped = page.waitForResponse(response => response.url().endsWith("/api/sleep-blips") && response.request().method() === "POST");
+        const afterStop = refetched();
+        await card.getByRole("button", { name: "Settled himself", exact: true }).click();
+        expect((await stopped).ok()).toBeTruthy();
+        await afterStop;
+        await expect(card).toContainText(/1 blip · .+ this sleep/);
+        await page.getByRole("button", { name: "View wake window and nap charts" }).click();
+        const nights = page.getByRole("region", { name: "Night blips" });
+        await expect(nights).toContainText("3 blips");
+        await nights.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: ".verify/shots/asleep-blips-chart.png" });
+        await page.getByRole("button", { name: "Close", exact: true }).click();
       } else {
         await expect(page.getByRole("button", { name: "Stop & log", exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: "Left side", exact: true })).toBeVisible();

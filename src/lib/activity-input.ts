@@ -11,6 +11,7 @@ const VALID_TYPES = new Set([
   "diaper",
   "vomit",
   "sleep",
+  "sleepblip",
   "bankadjust",
   "note",
   "temperature",
@@ -31,11 +32,11 @@ export function validateActivityInput(body: Record<string, unknown>, now = Date.
   if (body.details != null && (typeof body.details !== "object" || Array.isArray(body.details))) {
     return "details must be an object";
   }
-  if ((body.type === "note" || body.type === "temperature" || body.type === "sleep")
+  if ((body.type === "note" || body.type === "temperature" || body.type === "sleep" || body.type === "sleepblip")
       && Number(body.startedAt) > now + FUTURE_CLOCK_SKEW_MS) {
     return "startedAt cannot be in the future";
   }
-  if (body.type === "sleep" && body.endedAt != null && Number(body.endedAt) > now + FUTURE_CLOCK_SKEW_MS) {
+  if ((body.type === "sleep" || body.type === "sleepblip") && body.endedAt != null && Number(body.endedAt) > now + FUTURE_CLOCK_SKEW_MS) {
     return "endedAt cannot be in the future";
   }
   const details = (body.details ?? {}) as Record<string, unknown>;

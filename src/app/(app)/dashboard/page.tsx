@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useId, useMemo, type CSSProperties } from "react";
 import Link from "next/link";
 import { useHousehold } from "@/lib/context/household-context";
-import { Baby as BabyIcon, BarChart3, Bell, ChartScatter, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
+import { Baby as BabyIcon, BarChart3, Bell, ChartScatter, BellOff, ChevronDown, ChevronLeft, ChevronRight, Download, Droplet, Heart, Info, LineChart, ListFilter, LogOut, Milk, Moon, NotebookPen, Pencil, Volume2, Pill, Plus, RotateCw, Scale, Snowflake, Thermometer, Trash2, TriangleAlert, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
@@ -15,6 +15,9 @@ import { SleepWindowsChart } from "@/components/SleepWindowsChart";
 import { NapZonesSummary } from "@/components/NapZonesSummary";
 import { ageMaxDaytimeSleepMs, ageWakeWindowGuide, calculateNapLengthZones, calculateNapZones, calculateSleepWindowHistory, currentWakeWindow } from "@/lib/sleep-windows";
 import { SleepStateControl } from "@/components/SleepStateControl";
+import { SleepBlipControl } from "@/components/SleepBlipControl";
+import { NightBlipsSummary } from "@/components/NightBlipsSummary";
+import { blipEndingFromDetails, blipsInSleep, formatBlipDuration, nightBlipSummaries, type BlipSettledBy, type SleepBlip, type SleepBlipUndoToken } from "@/lib/sleep-blips";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
@@ -204,7 +207,8 @@ export default function DashboardPage() {
   const [sleepActivities, setSleepActivities] = useState<DailyNapSession[]>([]);
   const [confirmedSleepCoverages, setConfirmedSleepCoverages] = useState<ConfirmedSleepCoverage[]>([]);
   const [isChangingSleepState, setIsChangingSleepState] = useState(false);
-  const [sleepUndo, setSleepUndo] = useState<{ token: SleepUndoToken; message: string } | null>(null);
+  const [sleepUndo, setSleepUndo] = useState<{ kind: "sleep"; token: SleepUndoToken; message: string } | { kind: "blip"; token: SleepBlipUndoToken; message: string } | null>(null);
+  const [sleepBlips, setSleepBlips] = useState<SleepBlip[]>([]);
   const [sleepNotice, setSleepNotice] = useState<string | null>(null);
   const sleepUndoTimerRef = useRef<number | null>(null);
   const [isEditingSleepSince, setIsEditingSleepSince] = useState(false);
@@ -326,6 +330,7 @@ export default function DashboardPage() {
     temperature: Thermometer,
     medication: Pill,
     sleep: Moon,
+    sleepblip: Volume2,
   };
 
   const activityTypeOptions = [
@@ -336,6 +341,7 @@ export default function DashboardPage() {
     { value: "note", label: "Note" },
     { value: "temperature", label: "Temperature" },
     { value: "sleep", label: "Sleep" },
+    { value: "sleepblip", label: "Blip" },
     { value: "medication", label: "Medication" },
     { value: "bankadjust", label: "Bank adjustment" },
     { value: "bankfreeze", label: "Milk frozen" },
@@ -544,6 +550,16 @@ export default function DashboardPage() {
           endedAt: item.ended_at == null ? null : Number(item.ended_at),
         })));
         setConfirmedSleepCoverages(coverages);
+        setSleepBlips(Array.isArray(data.sleepBlips)
+          ? data.sleepBlips
+            .filter((item: { baby_id?: unknown }) => String(item.baby_id) === String(selectedBaby.id))
+            .map((item: { id?: unknown; started_at?: unknown; ended_at?: unknown; details?: unknown }) => ({
+              id: String(item.id),
+              startedAt: Number(item.started_at),
+              endedAt: item.ended_at == null ? null : Number(item.ended_at),
+              ending: blipEndingFromDetails(item.details),
+            }))
+          : []);
         setSleepState(openSleep
           ? { state: "sleeping", since: Number(openSleep.started_at), activity: openSleep as Activity }
           : {
@@ -1021,10 +1037,10 @@ export default function DashboardPage() {
     if (sleepUndoTimerRef.current != null) window.clearTimeout(sleepUndoTimerRef.current);
   }, []);
 
-  const showSleepUndo = (token: SleepUndoToken, message: string) => {
+  const showSleepUndo = (undo: NonNullable<typeof sleepUndo>) => {
     if (sleepUndoTimerRef.current != null) window.clearTimeout(sleepUndoTimerRef.current);
     setSleepNotice(null);
-    setSleepUndo({ token, message });
+    setSleepUndo(undo);
     sleepUndoTimerRef.current = window.setTimeout(() => {
       setSleepUndo(null);
       sleepUndoTimerRef.current = null;
@@ -1045,13 +1061,42 @@ export default function DashboardPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not update sleep state");
       if (data.undoToken) {
-        showSleepUndo(data.undoToken as SleepUndoToken, target === "sleeping" ? "Sleep started" : "Marked awake");
+        showSleepUndo({ kind: "sleep", token: data.undoToken as SleepUndoToken, message: target === "sleeping" ? "Sleep started" : "Marked awake" });
       }
       await fetchData();
       setActivityFilterRefresh((value) => value + 1);
     } catch (error) {
       if (error instanceof ChildcareConfirmationDeclinedError) return;
       alert(error instanceof Error ? error.message : "Could not update sleep state. Try again.");
+      await fetchData();
+    } finally {
+      setIsChangingSleepState(false);
+    }
+  };
+
+  const handleBlip = async (action: "start" | "stop", settledBy?: BlipSettledBy) => {
+    if (!baby?.id || isChangingSleepState) return;
+    setIsChangingSleepState(true);
+    try {
+      const res = await fetch("/api/sleep-blips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ babyId: baby.id, action, settledBy }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSleepNotice(data.error || "Couldn’t save the blip.");
+      } else if (data.undoToken) {
+        showSleepUndo({
+          kind: "blip",
+          token: data.undoToken as SleepBlipUndoToken,
+          message: action === "start" ? "Blip started" : settledBy === "self" ? "Blip ended · settled himself" : "Blip ended · we settled him",
+        });
+      }
+      await fetchData();
+      setActivityFilterRefresh((value) => value + 1);
+    } catch {
+      setSleepNotice("Couldn’t save the blip. Latest state loaded.");
       await fetchData();
     } finally {
       setIsChangingSleepState(false);
@@ -1065,7 +1110,7 @@ export default function DashboardPage() {
     setSleepUndo(null);
     setIsChangingSleepState(true);
     try {
-      const res = await fetch("/api/sleep-state", {
+      const res = await fetch(pending.kind === "blip" ? "/api/sleep-blips" : "/api/sleep-state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ babyId: baby.id, action: "undo", undoToken: pending.token }),
@@ -1073,10 +1118,12 @@ export default function DashboardPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setSleepNotice(data.code === "STALE_UNDO"
-          ? "Couldn’t undo: the sleep state changed on another device. Latest state loaded."
+          ? pending.kind === "blip"
+            ? "Couldn’t undo: the blip changed on another device. Latest state loaded."
+            : "Couldn’t undo: the sleep state changed on another device. Latest state loaded."
           : data.error || "Couldn’t undo the sleep change.");
       } else {
-        setSleepNotice("Sleep change undone.");
+        setSleepNotice(pending.kind === "blip" ? "Blip change undone." : "Sleep change undone.");
       }
       await fetchData();
       setActivityFilterRefresh((value) => value + 1);
@@ -1384,6 +1431,7 @@ export default function DashboardPage() {
     if (type === "vomit") return "Vomit";
     if (type === "pump") return "Pump";
     if (type === "bankadjust") return "Bank adjustment";
+    if (type === "sleepblip") return "Blip";
     return type.charAt(0).toUpperCase() + type.slice(1);
   };
 
@@ -1544,6 +1592,17 @@ export default function DashboardPage() {
           };
         }
         return { title: "Sleep", subcategory: "", quantity: "" };
+      }
+      case "sleepblip": {
+        const ending = blipEndingFromDetails(d);
+        const endings: Record<string, string> = { self: "Settled himself", us: "We settled him", woke: "Woke up" };
+        return {
+          title: "Blip",
+          subcategory: activity.ended_at == null
+            ? "Still going"
+            : [`${formatTime(activity.started_at)}–${formatTime(Number(activity.ended_at))}`, ending ? endings[ending] : ""].filter(Boolean).join(" · "),
+          quantity: activity.ended_at == null ? "" : formatBlipDuration(Number(activity.ended_at) - activity.started_at),
+        };
       }
       default:
         return { title: activityTitle(activity.type), subcategory: "", quantity: "" };
@@ -1939,6 +1998,14 @@ export default function DashboardPage() {
                 <button type="button" onClick={saveSleepSince} disabled={isChangingSleepState} className="min-h-11 rounded-lg bg-terracotta-dark px-3 py-2 text-sm font-semibold text-on-accent disabled:opacity-60">Save</button>
                 <button type="button" onClick={() => setIsEditingSleepSince(false)} className="min-h-11 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-warm-brown">Cancel</button>
               </div>
+          )}
+          {sleepState.state === "sleeping" && sleepState.since != null && (
+            <SleepBlipControl
+              blips={blipsInSleep(sleepBlips, { startedAt: sleepState.since, endedAt: null })}
+              disabled={isChangingSleepState}
+              onStart={() => { void handleBlip("start"); }}
+              onStop={(settledBy) => { void handleBlip("stop", settledBy); }}
+            />
           )}
           {sleepState.since == null && (
             <p className="mt-2 text-xs text-muted">Awake time starts after the first recorded sleep.</p>
@@ -2562,6 +2629,9 @@ export default function DashboardPage() {
                   <NapZonesSummary normal={normalNapZones} sick={sickNapZones} normalNaps={normalNapLengthZones} sickNaps={sickNapLengthZones} initialView={isSickNow ? "sick" : "usual"} ageGuide={ageGuide} ageLabel={baby?.birth_date ? formatAge(baby.birth_date, { compact: true }) : null} />
                 </div>
               </section>
+              <section className="mt-6 border-t border-border pt-5" aria-label="Night blips">
+                <NightBlipsSummary nights={nightBlipSummaries(sleepActivities, sleepBlips, Date.now(), 14)} />
+              </section>
               <section className="mt-6 border-t border-border pt-5">
                 <h3 className="text-sm font-semibold text-warm-brown">Wake windows</h3>
                 <p className="mt-1 text-xs text-muted">Each dot is one awake stretch; its colour shows which window of the day it was</p>
@@ -3110,13 +3180,13 @@ function LogModal({
     }
 
     let endedAt: number | null | undefined;
-    if (type === "sleep" && isEditing) {
+    if ((type === "sleep" || type === "sleepblip") && isEditing) {
       endedAt = activity?.ended_at == null
         ? null
         : Date.parse(endDate + "T" + pad2(endHour) + ":" + pad2(endMinute) + ":00+08:00");
       if (endedAt != null) endedAt = clampNearFutureToNow(endedAt);
       if (endedAt != null && (!Number.isFinite(endedAt) || endedAt < startedAt)) {
-        alert("Wake time must be after sleep time.");
+        alert(type === "sleepblip" ? "Blip end must be after its start." : "Wake time must be after sleep time.");
         setIsLoading(false);
         return;
       }
@@ -3181,7 +3251,7 @@ function LogModal({
           babyId,
           type,
           startedAt,
-          ...(type === "sleep" && isEditing ? { endedAt } : {}),
+          ...((type === "sleep" || type === "sleepblip") && isEditing ? { endedAt } : {}),
           details,
           ...(!isEditing && childcareOverride ? { childcareOverride: true } : {}),
       };
@@ -3226,7 +3296,7 @@ function LogModal({
       <div className="bg-surface w-full max-w-lg rounded-t-3xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 id="log-activity-title" className="font-display text-xl text-accent-strong capitalize">
-            {isEditing ? "Edit" : "Log"} {type === "bottlefeed" ? "Bottlefeed" : type}
+            {isEditing ? "Edit" : "Log"} {type === "bottlefeed" ? "Bottlefeed" : type === "sleepblip" ? "blip" : type}
           </h2>
           <button type="button" onClick={onClose} aria-label="Close activity form" className="flex h-11 w-11 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-muted hover:text-warm-brown">
             <X aria-hidden="true" className="h-5 w-5" />
@@ -3303,9 +3373,9 @@ function LogModal({
             )}
           </div>
 
-          {type === "sleep" && isEditing && activity?.ended_at != null && (
+          {(type === "sleep" || type === "sleepblip") && isEditing && activity?.ended_at != null && (
             <div>
-              <label className="mb-2 block text-sm font-medium text-warm-brown-light">Wake time</label>
+              <label className="mb-2 block text-sm font-medium text-warm-brown-light">{type === "sleepblip" ? "Blip ended" : "Wake time"}</label>
               <div className="space-y-3">
                 <input
                   aria-label="Sleep end date"

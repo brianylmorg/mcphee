@@ -150,11 +150,13 @@ const UNCHANGED = 204;
 // The old query left entries with the same start time in arbitrary order; the
 // new one breaks ties newest-entered first. Compare with ties ordered alike.
 type Row = { started_at: number; created_at: number; id: string };
-function tieOrdered<T extends { activities?: Row[] }>(body: T): T {
-  if (!Array.isArray(body.activities)) return body;
+// The legacy route predates sleep blips; their read is covered by its own test.
+function tieOrdered<T extends { activities?: Row[]; sleepBlips?: unknown }>(input: T): T {
+  const { sleepBlips: _sleepBlips, ...body } = input;
+  if (!Array.isArray(body.activities)) return body as T;
   const activities = [...body.activities].sort((a, b) =>
     b.started_at - a.started_at || b.created_at - a.created_at || a.id.localeCompare(b.id));
-  return { ...body, activities };
+  return { ...body, activities } as T;
 }
 
 async function dashboardJson(handler: typeof getDashboard, opts?: Parameters<typeof dashboardRequest>[0]) {
@@ -218,6 +220,24 @@ test("the recent list is the newest 50 across all of a household's babies", asyn
     WHERE b.household_id = 'house-1' AND a.type NOT IN ('bankfreeze','bankthaw','bankdiscard')
     ORDER BY a.started_at DESC LIMIT 50`);
   assert.deepEqual(body.activities.map((a: { id: string }) => a.id), newestInDb.rows.map((r) => r.id));
+});
+
+test("sleep blips from the last 15 days come back for the household, oldest first", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  const day = 24 * 60 * 60 * 1000;
+  await client.batch([
+    { sql: "INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at) VALUES ('blip-old','baby-1','sleepblip',?,?,'{}',?)", args: [NOW - 16 * day, NOW - 16 * day + 60_000, NOW - 16 * day] },
+    { sql: "INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at) VALUES ('blip-2','baby-1','sleepblip',?,NULL,'{}',?)", args: [NOW - 60_000, NOW - 60_000] },
+    { sql: "INSERT INTO activities (id, baby_id, type, started_at, ended_at, details, created_at) VALUES ('blip-1','baby-1','sleepblip',?,?,?,?)", args: [NOW - 2 * day, NOW - 2 * day + 120_000, JSON.stringify({ ending: "self" }), NOW - 2 * day] },
+  ], "write");
+  setClock(t, NOW);
+  const body = await dashboardJson(getDashboard);
+  assert.deepEqual(body.sleepBlips.map((b: { id: string }) => b.id), ["blip-1", "blip-2"]);
+  assert.equal(JSON.parse(body.sleepBlips[0].details).ending, "self");
+  assert.equal(body.sleepBlips[1].ended_at, null);
+  const other = await dashboardJson(getDashboard, { household: "house-2" });
+  assert.deepEqual(other.sleepBlips, []);
 });
 
 test("an unchanged poll answers 204 with no body, and a matching tag is required", async (t) => {
@@ -507,7 +527,7 @@ test("guard: the dashboard only reads tables whose writes bump the version", asy
   const execute = db.execute.bind(db);
   const batch = db.batch.bind(db);
   db.execute = (stmt: unknown, ...rest: unknown[]) => { seen.push(sqlOf(stmt)); return execute(stmt, ...rest); };
-  db.batch = (stmts: unknown[], ...rest: unknown[]) => { seen.push(...stmts.map(sqlOf)); return batch(stmts, ...rest); };
+  db.batch = (stmts: unknown, ...rest: unknown[]) => { seen.push(...(stmts as unknown[]).map(sqlOf)); return batch(stmts, ...rest); };
   t.after(() => { db.execute = execute; db.batch = batch; });
 
   for (const household of ["house-1", "house-2"]) await dashboardJson(getDashboard, { household });

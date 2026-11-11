@@ -8,7 +8,7 @@ import {
 } from "@/lib/historical-medication";
 
 export const TIMELINE_TYPES = new Set([
-  "bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "bankadjust",
+  "bottlefeed", "breastfeed", "pump", "diaper", "vomit", "sleep", "sleepblip", "bankadjust",
   "note", "temperature", "bankfreeze", "bankthaw", "bankdiscard", "medication",
 ]);
 

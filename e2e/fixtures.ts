@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client, InStatement } from "@libsql/client";
 import type { BrowserContext } from "@playwright/test";
 
-export const fixtureNames = ["fresh-day", "sick-episode", "childcare-checked-in", "milk-bank", "breastfeed-timer"] as const;
+export const fixtureNames = ["fresh-day", "sick-episode", "childcare-checked-in", "milk-bank", "breastfeed-timer", "asleep-blips"] as const;
 export type FixtureName = typeof fixtureNames[number];
 export type Fixture = { householdId: string; userId: string; babyId: string };
 
@@ -75,6 +75,18 @@ export async function seedFixture(name: FixtureName, client: Client): Promise<Fi
   if (name === "breastfeed-timer") {
     insert(`INSERT INTO active_timers (id, baby_id, type, started_at, current_side, side_switches, started_by)
       VALUES (?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), babyId, "breastfeed", now - 12 * 60_000, "L", "[]", userId]);
+  }
+  if (name === "asleep-blips") {
+    // Blips inside the last three nights' sleep (the one starting 21:00 the evening before).
+    for (let daysAgo = 3; daysAgo >= 1; daysAgo--) {
+      const night = midnight - daysAgo * day;
+      for (let i = 0; i < daysAgo; i++) {
+        const at = night - 2 * hour + i * hour;
+        activity("sleepblip", at, { ending: i === 0 ? "self" : "us" }, at + 4 * 60_000);
+      }
+    }
+    // Asleep now, starting after today's last logged nap ended.
+    activity("sleep", now - Math.min(10 * 60_000, Math.floor(elapsed * 0.2)), {});
   }
   await client.batch(statements, "write");
   return { householdId, userId, babyId };

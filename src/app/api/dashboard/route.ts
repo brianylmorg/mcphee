@@ -22,6 +22,7 @@ const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
 export const runtime = "nodejs";
 
 const RECENT_ACTIVITY_LIMIT = 50;
+const SLEEP_BLIP_LOOKBACK_MS = 15 * 24 * 60 * 60 * 1000;
 // Upper bound on how long an unchanged answer is reused, even if every input
 // looks static: a safety net for time-dependent output nobody has listed yet.
 const TAG_MAX_AGE_MS = 60 * 60 * 1000;
@@ -143,7 +144,7 @@ export async function GET(request: NextRequest) {
       args: [baby.id as string],
     }));
 
-    const [household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, caretakerSleepAudits, ...recentActivityResults] = await db.batch([
+    const [household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, sleepBlips, caretakerSleepAudits, ...recentActivityResults] = await db.batch([
       {
         sql: "SELECT * FROM households WHERE id = ?",
         args: [householdId],
@@ -189,6 +190,15 @@ export async function GET(request: NextRequest) {
               WHERE b.household_id = ? AND a.type = 'sleep'
               ORDER BY (a.ended_at IS NULL) DESC, COALESCE(a.ended_at, a.started_at) DESC`,
         args: [householdId],
+      },
+      {
+        // Blips for the night chart (14 nights) and the current sleep; bounded
+        // so the read stays small however long the history grows.
+        sql: `SELECT a.id, a.baby_id, a.started_at, a.ended_at, a.details
+              FROM activities a JOIN babies b ON b.id = a.baby_id
+              WHERE b.household_id = ? AND a.type = 'sleepblip' AND a.started_at >= ?
+              ORDER BY a.started_at ASC`,
+        args: [householdId, nowMs - SLEEP_BLIP_LOOKBACK_MS],
       },
       {
         sql: caretakerColumnsPresent ? `SELECT baby_id, audit_metadata
@@ -288,6 +298,7 @@ export async function GET(request: NextRequest) {
       childcareMode,
       timers: timers.rows,
       sleepActivities: sleepActivities.rows,
+      sleepBlips: sleepBlips.rows,
       sleepCoverages: caretakerSleepAudits.rows.flatMap((row) => {
         const coverage = caretakerSleepCoverageFromAudit(row.audit_metadata);
         return coverage ? [{ baby_id: String(row.baby_id), ...coverage }] : [];
