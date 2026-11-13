@@ -150,9 +150,9 @@ const UNCHANGED = 204;
 // The old query left entries with the same start time in arbitrary order; the
 // new one breaks ties newest-entered first. Compare with ties ordered alike.
 type Row = { started_at: number; created_at: number; id: string };
-// The legacy route predates sleep blips; their read is covered by its own test.
-function tieOrdered<T extends { activities?: Row[]; sleepBlips?: unknown }>(input: T): T {
-  const { sleepBlips: _sleepBlips, ...body } = input;
+// The legacy route predates sleep blips, night feeds and recent weights; separate tests cover these reads.
+function tieOrdered<T extends { activities?: Row[]; sleepBlips?: unknown; nightFeeds?: unknown; recentWeights?: unknown }>(input: T): T {
+  const { sleepBlips: _sleepBlips, nightFeeds: _nightFeeds, recentWeights: _recentWeights, ...body } = input;
   if (!Array.isArray(body.activities)) return body as T;
   const activities = [...body.activities].sort((a, b) =>
     b.started_at - a.started_at || b.created_at - a.created_at || a.id.localeCompare(b.id));
@@ -238,6 +238,26 @@ test("sleep blips from the last 15 days come back for the household, oldest firs
   assert.equal(body.sleepBlips[1].ended_at, null);
   const other = await dashboardJson(getDashboard, { household: "house-2" });
   assert.deepEqual(other.sleepBlips, []);
+});
+
+test("night feeds from the last 15 days include both feed types for the household, oldest first", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  await client.execute("DELETE FROM activities WHERE type IN ('bottlefeed', 'breastfeed')");
+  const cutoff = NOW - 15 * 24 * HOUR;
+  await insertActivity(client, { id: "feed-old", type: "bottlefeed", at: cutoff - 1 });
+  await insertActivity(client, { id: "feed-cutoff", type: "breastfeed", at: cutoff });
+  await insertActivity(client, { id: "feed-2", baby: "baby-2", type: "breastfeed", at: NOW - MINUTE, details: { duration: 600 } });
+  await insertActivity(client, { id: "feed-1", type: "bottlefeed", at: cutoff + 1, details: { amount: 90, milkType: "formula" } });
+  await insertActivity(client, { id: "feed-other", baby: "baby-3", type: "bottlefeed", at: NOW - HOUR });
+  setClock(t, NOW);
+  const body = await dashboardJson(getDashboard);
+  assert.deepEqual(body.nightFeeds, [
+    { id: "feed-1", baby_id: "baby-1", type: "bottlefeed", started_at: cutoff + 1, details: JSON.stringify({ amount: 90, milkType: "formula" }) },
+    { id: "feed-2", baby_id: "baby-2", type: "breastfeed", started_at: NOW - MINUTE, details: JSON.stringify({ duration: 600 }) },
+  ]);
+  const other = await dashboardJson(getDashboard, { household: "house-2" });
+  assert.deepEqual(other.nightFeeds.map((row: { id: string }) => row.id), ["feed-other"]);
 });
 
 test("an unchanged poll answers 204 with no body, and a matching tag is required", async (t) => {
@@ -567,4 +587,49 @@ test("finding 8: tagged dashboard refreshes when the earliest blip leaves its ro
   setClock(t, expiresAt + 1);
   assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: etag(expired) }))).status, UNCHANGED);
   assert.deepEqual((await dashboardJson(getDashboard)).sleepBlips.map((row: { id: string }) => row.id), ["later-blip"]);
+});
+
+test("tagged dashboard refreshes when each night feed leaves its rolling window", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  await client.execute("DELETE FROM activities WHERE type IN ('bottlefeed', 'breastfeed')");
+  const expiresAt = NOW + 10 * MINUTE;
+  const at = expiresAt - 15 * 24 * HOUR;
+  await insertActivity(client, { id: "expiring-feed", type: "bottlefeed", at });
+  await insertActivity(client, { id: "later-feed", type: "breastfeed", at: at + MINUTE });
+  setClock(t, NOW);
+  const first = await getDashboard(dashboardRequest());
+  const tag = etag(first);
+  assert.deepEqual((await first.json()).nightFeeds.map((row: { id: string }) => row.id), ["expiring-feed", "later-feed"]);
+  t.mock.timers.reset();
+  setClock(t, expiresAt - 1);
+  assert.equal((await getDashboard(dashboardRequest({ ifNoneMatch: tag }))).status, UNCHANGED);
+  t.mock.timers.reset();
+  setClock(t, expiresAt);
+  const expired = await getDashboard(dashboardRequest({ ifNoneMatch: tag }));
+  assert.equal(expired.status, 200);
+  assert.deepEqual((await expired.json()).nightFeeds.map((row: { id: string }) => row.id), ["later-feed"]);
+  t.mock.timers.reset();
+  setClock(t, expiresAt + MINUTE);
+  const expiredAgain = await getDashboard(dashboardRequest({ ifNoneMatch: etag(expired) }));
+  assert.equal(expiredAgain.status, 200);
+  assert.deepEqual((await expiredAgain.json()).nightFeeds, []);
+});
+
+
+test("recent weights are household scoped, weight-only, newest first and capped at six", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  setClock(t, NOW);
+  for (let i = 0; i < 8; i++) {
+    await client.execute({
+      sql: "INSERT INTO measurements (id, baby_id, measured_at, weight_g, created_at) VALUES (?, ?, ?, ?, ?)",
+      args: [`plan-weight-${i}`, i === 7 ? "baby-3" : "baby-1", NOW + i, 6000 + i, NOW],
+    });
+  }
+  await client.execute({
+    sql: "INSERT INTO measurements (id, baby_id, measured_at, length_mm, created_at) VALUES ('length-only', 'baby-1', ?, 650, ?)", args: [NOW + 10, NOW],
+  });
+  const body = await dashboardJson(getDashboard);
+  assert.deepEqual(body.recentWeights, [6, 5, 4, 3, 2, 1].map((i) => ({ baby_id: "baby-1", measured_at: NOW + i, weight_g: 6000 + i })));
 });

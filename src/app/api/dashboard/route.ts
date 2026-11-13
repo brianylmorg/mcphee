@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
       args: [baby.id as string],
     }));
 
-    const [household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, sleepBlips, caretakerSleepAudits, ...recentActivityResults] = await db.batch([
+    const [household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, sleepBlips, nightFeeds, recentWeights, caretakerSleepAudits, ...recentActivityResults] = await db.batch([
       {
         sql: "SELECT * FROM households WHERE id = ?",
         args: [householdId],
@@ -199,6 +199,20 @@ export async function GET(request: NextRequest) {
               WHERE b.household_id = ? AND a.type = 'sleepblip' AND a.started_at > ?
               ORDER BY a.started_at ASC`,
         args: [householdId, nowMs - SLEEP_BLIP_LOOKBACK_MS],
+      },
+      {
+        sql: `SELECT a.id, a.baby_id, a.type, a.started_at, a.details
+              FROM activities a JOIN babies b ON b.id = a.baby_id
+              WHERE b.household_id = ? AND a.type IN ('bottlefeed', 'breastfeed') AND a.started_at > ?
+              ORDER BY a.started_at ASC`,
+        args: [householdId, nowMs - SLEEP_BLIP_LOOKBACK_MS],
+      },
+      {
+        sql: `SELECT m.baby_id, m.measured_at, m.weight_g FROM measurements m
+              JOIN babies b ON m.baby_id = b.id
+              WHERE b.household_id = ? AND m.weight_g IS NOT NULL
+              ORDER BY m.measured_at DESC, m.created_at DESC LIMIT 6`,
+        args: [householdId],
       },
       {
         sql: caretakerColumnsPresent ? `SELECT baby_id, audit_metadata
@@ -270,13 +284,14 @@ export async function GET(request: NextRequest) {
     }));
     // Earliest moment this answer changes with no new write: SGT midnight, a
     // future-dated ledger entry (bank and recent feeds skip those) going live,
-    // a frozen packet passing its expiry, or a blip leaving the rolling window.
+    // a frozen packet passing its expiry, or a blip/feed leaving the rolling window.
     const validUntil = Math.min(
       dayEnd,
       nowMs + TAG_MAX_AGE_MS,
       ...ledgerEvents.map((event) => event.startedAt).filter((at) => at > nowMs),
       ...bankState.frozenPackets.map((packet) => packet.expiresAt).filter((at) => at > nowMs),
       ...sleepBlips.rows.map((blip) => Number(blip.started_at) + SLEEP_BLIP_LOOKBACK_MS).filter((at) => at > nowMs),
+      ...nightFeeds.rows.map((feed) => Number(feed.started_at) + SLEEP_BLIP_LOOKBACK_MS).filter((at) => at > nowMs),
     );
     const latestWeightG = Number((measurements.rows[0] as { weight_g?: unknown } | undefined)?.weight_g);
     const expectedMilkMl = Number.isFinite(latestWeightG)
@@ -300,6 +315,8 @@ export async function GET(request: NextRequest) {
       timers: timers.rows,
       sleepActivities: sleepActivities.rows,
       sleepBlips: sleepBlips.rows,
+      nightFeeds: nightFeeds.rows,
+      recentWeights: recentWeights.rows,
       sleepCoverages: caretakerSleepAudits.rows.flatMap((row) => {
         const coverage = caretakerSleepCoverageFromAudit(row.audit_metadata);
         return coverage ? [{ baby_id: String(row.baby_id), ...coverage }] : [];

@@ -25,6 +25,8 @@ export type BlipSleep = {
   endedAt?: number | null;
 };
 
+export type NightFeed = { startedAt: number; amountMl: number };
+
 export type SleepBlipUndoToken = {
   kind: "started-blip" | "ended-blip";
   activityId: string;
@@ -41,6 +43,8 @@ const SGT_OFFSET_MS = 8 * HOUR_MS;
 const BEDTIME_HOUR = 18;
 // Same rule as the wake-window charts: sleeps this close together are one sleep.
 const MERGE_GAP_MS = 5 * MINUTE_MS;
+const BEDTIME_FEED_MS = 30 * MINUTE_MS;
+const FEED_DEDUPE_MS = 15 * MINUTE_MS;
 
 export function isBlipSettledBy(value: unknown): value is BlipSettledBy {
   return value === "self" || value === "us";
@@ -112,13 +116,18 @@ export type NightBlipSummary = {
   endedAt: number | null;
   blipCount: number;
   blipMs: number;
+  /** All qualifying night feeds, including feeds matched to blips or wakes. */
+  feedCount: number;
+  feedMl: number;
+  /** Feeds not already represented by a logged blip or wake gap. */
+  feedBlips: number;
   selfSettled: number;
   settledByUs: number;
   /** Blips that turned into a full wake. */
   becameWake: number;
   /** Times he was awake between night sleeps (gaps over five minutes). */
   wakeCount: number;
-  /** Longest stretch asleep with no blip and no wake. */
+  /** Longest stretch asleep with no blip, feed or wake. */
   longestStretchMs: number;
   blips: SleepBlip[];
 };
@@ -136,19 +145,15 @@ function nightDateFor(startedAt: number): string | null {
   return null;
 }
 
-/**
- * One row per night, newest first. A night is every sleep starting between
- * 18:00 and 07:00 SGT (the same bedtime and NIGHT_ENDS_HOUR rules as the nap
- * charts). Blips count when they start inside one of those sleeps.
- * If since is supplied, omit whole nights that began before that cutoff.
- */
-export function nightBlipSummaries(
-  sleeps: readonly BlipSleep[],
-  blips: readonly SleepBlip[],
-  now = Date.now(),
-  nights = 14,
-  since?: number,
-): NightBlipSummary[] {
+export type NightSleepWindow = {
+  date: string;
+  startedAt: number;
+  endedAt: number | null;
+  intervals: Array<{ start: number; end: number; open: boolean }>;
+};
+
+/** Shared night grouping and five-minute sleep merging for charts and plans. */
+export function nightSleepWindows(sleeps: readonly BlipSleep[], now: number): NightSleepWindow[] {
   const groups = new Map<string, Array<{ start: number; end: number; open: boolean }>>();
   for (const sleep of sleeps) {
     const start = Number(sleep.startedAt);
@@ -163,29 +168,73 @@ export function nightBlipSummaries(
     groups.set(date, list);
   }
 
-  const sortedBlips = [...blips].sort((a, b) => a.startedAt - b.startedAt);
-  const summaries: NightBlipSummary[] = [];
-  for (const [date, raw] of groups) {
-    const intervals = raw.sort((a, b) => a.start - b.start).reduce<Array<{ start: number; end: number; open: boolean }>>((merged, item) => {
+  return [...groups].map(([date, raw]) => {
+    const intervals = raw.sort((a, b) => a.start - b.start).reduce<NightSleepWindow["intervals"]>((merged, item) => {
       const last = merged[merged.length - 1];
       if (last && item.start <= last.end + MERGE_GAP_MS) {
         last.end = Math.max(last.end, item.end);
         last.open = last.open || item.open;
-      } else {
-        merged.push({ ...item });
-      }
+      } else merged.push({ ...item });
       return merged;
     }, []);
+    const last = intervals[intervals.length - 1];
+    return { date, startedAt: intervals[0].start, endedAt: last.open ? null : last.end, intervals };
+  }).sort((a, b) => b.startedAt - a.startedAt);
+}
+
+export function feedsInNight<T extends NightFeed>(feeds: readonly T[], night: Pick<NightSleepWindow, "startedAt" | "endedAt">, now: number): T[] {
+  return feeds.filter((feed) => feed.startedAt > night.startedAt + BEDTIME_FEED_MS
+    && feed.startedAt < (night.endedAt ?? now)
+    && !(feed.amountMl > 0 && feed.amountMl <= 5));
+}
+
+/**
+ * One row per night, newest first. A night is every sleep starting between
+ * 18:00 and 07:00 SGT (the same bedtime and NIGHT_ENDS_HOUR rules as the nap
+ * charts). Blips count when they start inside one of those sleeps. Feeds after
+ * the first 30 minutes interrupt the night, deduped against blips and wake gaps.
+ * If since is supplied, omit whole nights that began before that cutoff.
+ */
+export function nightBlipSummaries(
+  sleeps: readonly BlipSleep[],
+  blips: readonly SleepBlip[],
+  now = Date.now(),
+  nights = 14,
+  since?: number,
+  feeds: readonly NightFeed[] = [],
+): NightBlipSummary[] {
+  const sortedBlips = [...blips].sort((a, b) => a.startedAt - b.startedAt);
+  const summaries: NightBlipSummary[] = [];
+  for (const night of nightSleepWindows(sleeps, now)) {
+    const { date, intervals } = night;
     if (since != null && intervals[0].start < since) continue;
     const nightBlips = sortedBlips
       .filter((blip) => intervals.some((interval) => blip.startedAt >= interval.start && blip.startedAt <= interval.end));
 
+    const last = intervals[intervals.length - 1];
+    const nightFeeds = feedsInNight(feeds, night, now);
+    const wakeGaps = intervals.slice(1).map((interval, index) => ({
+      start: intervals[index].end, end: interval.start,
+    }));
+    const feedBlips = nightFeeds.filter((feed) =>
+      !sortedBlips.some((blip) => feed.startedAt >= blip.startedAt - FEED_DEDUPE_MS
+        && feed.startedAt <= blipEnd(blip, now) + FEED_DEDUPE_MS)
+      && !wakeGaps.some((gap) => feed.startedAt >= gap.start - FEED_DEDUPE_MS
+        && feed.startedAt <= gap.end + FEED_DEDUPE_MS)).length;
+
+    // Zero-length feed cuts share the blip timeline so out-of-order feeds and
+    // feeds overlapping a logged blip cannot extend a quiet stretch.
+    const interruptions = [
+      ...sortedBlips.map((blip) => ({ start: blip.startedAt, end: blipEnd(blip, now) })),
+      ...nightFeeds.map((feed) => ({ start: feed.startedAt, end: feed.startedAt })),
+    ].sort((a, b) => a.start - b.start);
+
     let longestStretchMs = 0;
     for (const interval of intervals) {
       let cursor = interval.start;
-      for (const blip of sortedBlips) {
-        const start = Math.max(interval.start, blip.startedAt);
-        const end = Math.min(interval.end, blipEnd(blip, now));
+      for (const interruption of interruptions) {
+        const start = Math.max(interval.start, interruption.start);
+        const end = Math.min(interval.end, interruption.end);
         if (start > end) continue;
         longestStretchMs = Math.max(longestStretchMs, start - cursor);
         cursor = Math.max(cursor, end);
@@ -193,13 +242,15 @@ export function nightBlipSummaries(
       longestStretchMs = Math.max(longestStretchMs, interval.end - cursor);
     }
 
-    const last = intervals[intervals.length - 1];
     summaries.push({
       date,
       startedAt: intervals[0].start,
       endedAt: last.open ? null : last.end,
-      blipCount: nightBlips.length,
+      blipCount: nightBlips.length + feedBlips,
       blipMs: totalBlipMs(nightBlips, now),
+      feedCount: nightFeeds.length,
+      feedMl: nightFeeds.reduce((total, feed) => total + feed.amountMl, 0),
+      feedBlips,
       selfSettled: nightBlips.filter((blip) => blip.ending === "self").length,
       settledByUs: nightBlips.filter((blip) => blip.ending === "us").length,
       becameWake: nightBlips.filter((blip) => blip.ending === "woke").length,

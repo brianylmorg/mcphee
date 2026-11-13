@@ -17,6 +17,131 @@ const MIN = 60_000;
 /** Epoch ms for an SGT wall-clock time. */
 const sgt = (iso: string) => Date.parse(iso + "+08:00");
 
+const feedNightSleep = {
+  startedAt: sgt("2026-11-09T19:00:00"),
+  endedAt: sgt("2026-11-10T06:00:00"),
+};
+const feedNightNow = sgt("2026-11-10T12:00:00");
+
+test("a feed inside sleep counts as a blip and cuts the longest stretch", () => {
+  const [night] = nightBlipSummaries([feedNightSleep], [], feedNightNow, 14, undefined, [
+    { startedAt: sgt("2026-11-10T00:00:00"), amountMl: 90 },
+  ]);
+  assert.equal(night.blipCount, 1);
+  assert.equal(night.feedBlips, 1);
+  assert.equal(night.feedCount, 1);
+  assert.equal(night.feedMl, 90);
+  assert.equal(night.blipMs, 0);
+  assert.equal(night.longestStretchMs, 6 * 60 * MIN);
+});
+
+test("bedtime feeds through 30 minutes and feeds at the final wake are ignored", () => {
+  const [night] = nightBlipSummaries([feedNightSleep], [], feedNightNow, 14, undefined, [
+    { startedAt: feedNightSleep.startedAt, amountMl: 90 },
+    { startedAt: feedNightSleep.startedAt + 29 * MIN, amountMl: 90 },
+    { startedAt: feedNightSleep.startedAt + 30 * MIN, amountMl: 90 },
+    { startedAt: feedNightSleep.endedAt, amountMl: 90 },
+    { startedAt: feedNightSleep.startedAt + 30 * MIN + 1, amountMl: 90 },
+  ]);
+  assert.equal(night.feedCount, 1);
+  assert.equal(night.feedMl, 90);
+});
+
+test("placeholder bottles up to 5 ml are ignored, but a breastfeed counts", () => {
+  const [night] = nightBlipSummaries([feedNightSleep], [], feedNightNow, 14, undefined, [
+    { startedAt: sgt("2026-11-09T21:00:00"), amountMl: 1 },
+    { startedAt: sgt("2026-11-09T22:00:00"), amountMl: 5 },
+    { startedAt: sgt("2026-11-10T00:00:00"), amountMl: 0 },
+  ]);
+  assert.equal(night.feedCount, 1);
+  assert.equal(night.feedMl, 0);
+  assert.equal(night.feedBlips, 1);
+  assert.equal(night.blipCount, 1);
+  assert.equal(night.longestStretchMs, 6 * 60 * MIN);
+});
+
+test("feeds within 15 minutes of a blip are deduped but still totalled and cut stretches", () => {
+  const [night] = nightBlipSummaries([feedNightSleep], [
+    { startedAt: sgt("2026-11-09T23:00:00"), endedAt: sgt("2026-11-09T23:05:00") },
+  ], feedNightNow, 14, undefined, [
+    { startedAt: sgt("2026-11-09T23:20:00"), amountMl: 90 },
+    { startedAt: sgt("2026-11-09T22:45:00"), amountMl: 60 },
+  ]);
+  assert.equal(night.feedCount, 2);
+  assert.equal(night.feedMl, 150);
+  assert.equal(night.feedBlips, 0);
+  assert.equal(night.blipCount, 1);
+  assert.equal(night.blipMs, 5 * MIN);
+  assert.equal(night.longestStretchMs, 400 * MIN);
+});
+
+test("feeds in or within 15 minutes of a wake gap do not add blips", () => {
+  const [night] = nightBlipSummaries([
+    { ...feedNightSleep, endedAt: sgt("2026-11-09T23:00:00") },
+    { startedAt: sgt("2026-11-09T23:30:00"), endedAt: feedNightSleep.endedAt },
+  ], [], feedNightNow, 14, undefined, [
+    { startedAt: sgt("2026-11-09T23:15:00"), amountMl: 60 },
+    { startedAt: sgt("2026-11-09T23:45:00"), amountMl: 90 },
+    { startedAt: sgt("2026-11-09T22:45:00"), amountMl: 30 },
+  ]);
+  assert.equal(night.feedCount, 3);
+  assert.equal(night.feedMl, 180);
+  assert.equal(night.feedBlips, 0);
+  assert.equal(night.blipCount, 0);
+  assert.equal(night.wakeCount, 1);
+  assert.equal(night.longestStretchMs, 375 * MIN);
+});
+
+test("feeds beyond the dedupe margin each add a blip, including bottles just over 5 ml", () => {
+  const [night] = nightBlipSummaries([feedNightSleep], [
+    { startedAt: sgt("2026-11-09T23:00:00"), endedAt: sgt("2026-11-09T23:05:00") },
+  ], feedNightNow, 14, undefined, [
+    { startedAt: sgt("2026-11-09T23:20:00") + 1, amountMl: 6 },
+    { startedAt: sgt("2026-11-09T23:21:00"), amountMl: 60 },
+  ]);
+  assert.equal(night.feedCount, 2);
+  assert.equal(night.feedMl, 66);
+  assert.equal(night.feedBlips, 2);
+  assert.equal(night.blipCount, 3);
+});
+
+test("a feed also matches an intersecting logged blip that began outside the sleep", () => {
+  const [night] = nightBlipSummaries([
+    { startedAt: sgt("2026-11-09T23:30:00"), endedAt: feedNightSleep.endedAt },
+  ], [
+    { startedAt: sgt("2026-11-09T23:00:00"), endedAt: sgt("2026-11-10T01:00:00") },
+  ], feedNightNow, 14, undefined, [
+    { startedAt: sgt("2026-11-10T00:30:00"), amountMl: 90 },
+  ]);
+  assert.equal(night.feedCount, 1);
+  assert.equal(night.feedBlips, 0);
+  assert.equal(night.longestStretchMs, 5 * 60 * MIN);
+});
+
+test("a feed during a daytime nap is ignored by the night chart", () => {
+  const [night] = nightBlipSummaries([
+    feedNightSleep,
+    { startedAt: sgt("2026-11-10T09:00:00"), endedAt: sgt("2026-11-10T10:00:00") },
+  ], [], feedNightNow, 14, undefined, [
+    { startedAt: sgt("2026-11-10T09:45:00"), amountMl: 90 },
+  ]);
+  assert.equal(night.feedCount, 0);
+  assert.equal(night.blipCount, 0);
+  assert.equal(night.longestStretchMs, 11 * 60 * MIN);
+});
+
+test("an open night only counts feeds before now", () => {
+  const now = sgt("2026-11-10T00:00:00");
+  const [night] = nightBlipSummaries([{ ...feedNightSleep, endedAt: null }], [], now, 14, undefined, [
+    { startedAt: now - 60 * MIN, amountMl: 60 },
+    { startedAt: now, amountMl: 90 },
+    { startedAt: now + MIN, amountMl: 90 },
+  ]);
+  assert.equal(night.feedCount, 1);
+  assert.equal(night.feedMl, 60);
+  assert.equal(night.longestStretchMs, 4 * 60 * MIN);
+});
+
 test("blips belong to the sleep whose window holds their start", () => {
   const sleep = { startedAt: sgt("2026-11-09T19:00:00"), endedAt: sgt("2026-11-10T06:00:00") };
   const inside = { startedAt: sgt("2026-11-09T23:00:00"), endedAt: sgt("2026-11-09T23:04:00") };

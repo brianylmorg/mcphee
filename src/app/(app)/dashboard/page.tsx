@@ -16,8 +16,10 @@ import { NapZonesSummary } from "@/components/NapZonesSummary";
 import { ageMaxDaytimeSleepMs, ageWakeWindowGuide, calculateNapLengthZones, calculateNapZones, calculateSleepWindowHistory, currentWakeWindow } from "@/lib/sleep-windows";
 import { SleepStateControl } from "@/components/SleepStateControl";
 import { SleepBlipControl } from "@/components/SleepBlipControl";
+import { NightPlanSummary } from "@/components/NightPlanSummary";
+import { computeNightPlan, currentNightSlot, type NightPlanInputs } from "@/lib/night-plan";
 import { NightBlipsSummary } from "@/components/NightBlipsSummary";
-import { blipEndingFromDetails, blipsInSleep, formatBlipDuration, nightBlipSummaries, type BlipSettledBy, type SleepBlip, type SleepBlipUndoToken } from "@/lib/sleep-blips";
+import { blipEndingFromDetails, blipsInSleep, formatBlipDuration, nightBlipSummaries, type BlipSettledBy, type NightFeed, type SleepBlip, type SleepBlipUndoToken } from "@/lib/sleep-blips";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
@@ -46,7 +48,7 @@ import { entryForActiveEpisode, medicationAddEntry, medicationLogEntry, type Med
 import { formatElapsedDuration, formatElapsedSince } from "@/lib/elapsed-time";
 import { mutateSickMode } from "@/lib/sick-mode-client";
 import { applyMilkActivityChangeToTotals, sameTimeMilkMedianReference, shouldHoldDashboardForSickMode, updateRecentMilkFeedList, updateSickLatestMilkFeeds } from "@/lib/dashboard-milk-state";
-import { sgtDateKey as sgtDateKeyForTimestamp } from "@/lib/milk-volumes";
+import { bottleVolumes, parseActivityDetails, sgtDateKey as sgtDateKeyForTimestamp } from "@/lib/milk-volumes";
 import { isNewReleaseLive } from "@/lib/app-version";
 import { aggregateDashboardRefreshResults, runSingleFlight, shouldSkipForManualRefresh, type DashboardRefreshResult, type RefreshTaskResult } from "@/lib/dashboard-refresh";
 import { useDashboardRefreshBlocked, useStandalonePullToRefresh } from "@/hooks/use-standalone-pull-to-refresh";
@@ -209,6 +211,8 @@ export default function DashboardPage() {
   const [isChangingSleepState, setIsChangingSleepState] = useState(false);
   const [sleepUndo, setSleepUndo] = useState<{ kind: "sleep"; token: SleepUndoToken; message: string } | { kind: "blip"; token: SleepBlipUndoToken; message: string } | null>(null);
   const [sleepBlips, setSleepBlips] = useState<SleepBlip[]>([]);
+  const [nightFeeds, setNightFeeds] = useState<NightFeed[]>([]);
+  const [recentWeights, setRecentWeights] = useState<NightPlanInputs["weights"]>([]);
   const [sleepNotice, setSleepNotice] = useState<string | null>(null);
   const sleepUndoTimerRef = useRef<number | null>(null);
   const [isEditingSleepSince, setIsEditingSleepSince] = useState(false);
@@ -310,6 +314,15 @@ export default function DashboardPage() {
   const normalNapLengthZones = useMemo(() => calculateNapLengthZones(sleepWindowDays, { includeDate: (date) => !sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
   const sickNapLengthZones = useMemo(() => calculateNapLengthZones(sleepWindowDays, { lookbackDays: 90, includeDate: (date) => sleepSickDates.has(date) }), [sleepWindowDays, sleepSickDates]);
   const isSickNow = Boolean(sickMode?.schemaReady && sickMode.activeEpisode);
+  const nightPlanNow = Date.now();
+  const nightPlan = useMemo(() => computeNightPlan({
+    sleeps: sleepActivities, feeds: nightFeeds, weights: recentWeights, isSick: isSickNow, now: nightPlanNow,
+  }), [sleepActivities, nightFeeds, recentWeights, isSickNow, nightPlanNow]);
+  const nightSlot = currentNightSlot({ sleeps: sleepActivities, now: nightPlanNow });
+  const nightSize = nightSlot ? nightPlan.slots[nightSlot] : undefined;
+  const planBottleMl = nightPlan.status === "ready" && nightSize
+    && ["active", "usual", "locked"].includes(nightSize.mode) && (nightSize.tonightMl ?? 0) > 0
+    ? nightSize.tonightMl : undefined;
   const ageGuide = ageWakeWindowGuide(baby?.birth_date, Date.now());
   useEffect(() => {
     setSelectedMilkDate((current) => current || todayDateKey);
@@ -559,6 +572,22 @@ export default function DashboardPage() {
               endedAt: item.ended_at == null ? null : Number(item.ended_at),
               ending: blipEndingFromDetails(item.details),
             }))
+          : []);
+        setRecentWeights(Array.isArray(data.recentWeights)
+          ? data.recentWeights
+            .filter((item: { baby_id?: unknown }) => String(item.baby_id) === String(selectedBaby.id))
+            .map((item: { measured_at: unknown; weight_g: unknown }) => ({ measuredAt: Number(item.measured_at), weightG: Number(item.weight_g) }))
+          : []);
+        setNightFeeds(Array.isArray(data.nightFeeds)
+          ? data.nightFeeds
+            .filter((item: { baby_id?: unknown }) => String(item.baby_id) === String(selectedBaby.id))
+            .map((item: { type?: unknown; started_at?: unknown; details?: unknown }) => {
+              const volumes = bottleVolumes(parseActivityDetails(item.details));
+              return {
+                startedAt: Number(item.started_at),
+                amountMl: item.type === "breastfeed" ? 0 : volumes.breastmilkMl + volumes.formulaMl,
+              };
+            })
           : []);
         setSleepState(openSleep
           ? { state: "sleeping", since: Number(openSleep.started_at), activity: openSleep as Activity }
@@ -2630,7 +2659,8 @@ export default function DashboardPage() {
                 </div>
               </section>
               <section className="mt-6 border-t border-border pt-5" aria-label="Night blips">
-                <NightBlipsSummary nights={nightBlipSummaries(sleepActivities, sleepBlips, Date.now(), 14, Date.now() - 14 * 86400_000)} />
+                <NightPlanSummary plan={nightPlan} />
+                <NightBlipsSummary nights={nightBlipSummaries(sleepActivities, sleepBlips, Date.now(), 14, Date.now() - 14 * 86400_000, nightFeeds)} />
               </section>
               <section className="mt-6 border-t border-border pt-5">
                 <h3 className="text-sm font-semibold text-warm-brown">Wake windows</h3>
@@ -2819,6 +2849,7 @@ export default function DashboardPage() {
       {/* Log Modal */}
       {showLogModal && (
         <LogModal
+          planBottleMl={planBottleMl}
           type={logType!}
           babyId={baby?.id!}
           userId={userId}
@@ -2936,6 +2967,7 @@ export default function DashboardPage() {
 }
 
 function LogModal({
+  planBottleMl,
   type,
   babyId,
   userId,
@@ -2949,6 +2981,7 @@ function LogModal({
   onDelete,
   onSuccess,
 }: {
+  planBottleMl?: number;
   type: string;
   babyId: string;
   userId: string | null;
@@ -3000,8 +3033,8 @@ function LogModal({
     ? bottleBreastmilkLibraryDeduction(detailsObj)
     : 0;
   const availableBreastmilkMl = Math.max(0, Math.floor(breastmilkLibraryMl + existingBreastmilkAmount));
-  const suggestedBottleAmount = !isEditing && type === "bottlefeed" && availableBreastmilkMl > 0
-    ? String(availableBreastmilkMl)
+  const suggestedBottleAmount = !isEditing && type === "bottlefeed"
+    ? (planBottleMl != null && planBottleMl > 0 ? String(planBottleMl) : availableBreastmilkMl > 0 ? String(availableBreastmilkMl) : "")
     : "";
   const normalizeBottleMilkType = (value: unknown): BottleFeedLine["milkType"] => value === "formula" ? "formula" : "breastmilk";
   const numberString = (value: unknown): string => {

@@ -74,9 +74,12 @@ for (const name of fixtureNames) {
         await expect(card).toContainText(/1 blip · .+ this sleep/);
         await page.getByRole("button", { name: "View wake window and nap charts" }).click();
         const nights = page.getByRole("region", { name: "Night blips" });
+        await expect(nights.getByRole("heading", { name: "Night plan", exact: true })).toBeVisible();
         await expect(nights).toContainText("3 blips");
         await nights.scrollIntoViewIfNeeded();
         await page.screenshot({ path: ".verify/shots/asleep-blips-chart.png" });
+        await nights.getByRole("heading", { name: "Night plan", exact: true }).evaluate(element => element.scrollIntoView({ block: "center" }));
+        await page.screenshot({ path: ".verify/shots/asleep-blips-plan.png" });
         await page.getByRole("button", { name: "Close", exact: true }).click();
       } else {
         await expect(page.getByRole("button", { name: "Stop & log", exact: true })).toBeVisible();

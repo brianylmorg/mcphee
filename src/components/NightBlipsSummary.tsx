@@ -26,6 +26,7 @@ function nightLabel(date: string): string {
 
 function NightRow({ night }: { night: NightBlipSummary }) {
   const details = [
+    night.feedCount > 0 ? `${night.feedCount} ${night.feedCount === 1 ? "feed" : "feeds"}${night.feedMl > 0 ? ` · ${night.feedMl} ml` : ""}` : null,
     night.longestStretchMs > 0 ? `longest ${formatBlipDuration(night.longestStretchMs)} asleep` : null,
     night.blipCount > 0 && night.selfSettled > 0 ? `${night.selfSettled} settled himself` : null,
     night.settledByUs > 0 ? `${night.settledByUs} by us` : null,
@@ -35,7 +36,7 @@ function NightRow({ night }: { night: NightBlipSummary }) {
   const count = `${night.blipCount} ${night.blipCount === 1 ? "blip" : "blips"}`;
   return <div className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0">
     <dt className="whitespace-nowrap text-warm-brown">{nightLabel(night.date)}{night.endedAt == null ? " · tonight" : ""}</dt>
-    <dd className="text-right tabular-nums">{count}{night.blipCount > 0 ? ` · ${formatBlipDuration(night.blipMs)}` : ""}{details.length ? <div className="text-xs text-muted">{details.map((part, index) => <span key={part}>{index ? " · " : ""}<span className="whitespace-nowrap">{part}</span></span>)}</div> : null}</dd>
+    <dd className="text-right tabular-nums">{count}{night.blipMs > 0 ? ` · ${formatBlipDuration(night.blipMs)}` : ""}{details.length ? <div className="text-xs text-muted">{details.map((part, index) => <span key={part}>{index ? " · " : ""}<span className="whitespace-nowrap">{part}</span></span>)}</div> : null}</dd>
   </div>;
 }
 
@@ -48,7 +49,7 @@ export function NightBlipsSummary({ nights }: Props) {
       <dl className="mt-2">{nights.map((night) => <NightRow key={night.date} night={night} />)}</dl>
       <ul className="mt-2 list-disc pl-4 text-xs text-muted">
         <li>A night is every sleep from 18:00 to 07:00.</li>
-        <li>A blip is crying in his sleep that you marked from the sleep card.</li>
+        <li>A blip is crying you marked on the sleep card, or a feed during the night.</li>
         <li>Longest asleep is the longest stretch with no blip and no wake.</li>
       </ul>
     </>}
