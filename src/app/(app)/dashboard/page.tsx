@@ -19,7 +19,7 @@ import { SleepBlipControl } from "@/components/SleepBlipControl";
 import { NightPlanSummary } from "@/components/NightPlanSummary";
 import { computeNightPlan, currentNightSlot, type NightPlanInputs } from "@/lib/night-plan";
 import { NightBlipsSummary } from "@/components/NightBlipsSummary";
-import { blipEndingFromDetails, blipsInSleep, formatBlipDuration, nightBlipSummaries, type BlipSettledBy, type NightFeed, type SleepBlip, type SleepBlipUndoToken } from "@/lib/sleep-blips";
+import { blipEndingFromDetails, blipsInSleep, formatBlipDuration, nightBlipSummaries, SLEEP_BLIP_CONTROL_VISIBLE, type BlipSettledBy, type NightFeed, type SleepBlip, type SleepBlipUndoToken } from "@/lib/sleep-blips";
 import { DailyNapSummary } from "@/components/DailyNapSummary";
 import { MilkBank } from "@/components/MilkBank";
 import RecentBottleFeeds from "@/components/RecentBottleFeeds";
@@ -2028,7 +2028,7 @@ export default function DashboardPage() {
                 <button type="button" onClick={() => setIsEditingSleepSince(false)} className="min-h-11 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-warm-brown">Cancel</button>
               </div>
           )}
-          {sleepState.state === "sleeping" && sleepState.since != null && (
+          {SLEEP_BLIP_CONTROL_VISIBLE && sleepState.state === "sleeping" && sleepState.since != null && (
             <SleepBlipControl
               blips={blipsInSleep(sleepBlips, { startedAt: sleepState.since, endedAt: null })}
               disabled={isChangingSleepState}

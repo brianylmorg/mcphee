@@ -9,6 +9,13 @@ import { NIGHT_ENDS_HOUR } from "./daily-naps";
  */
 export const SLEEP_BLIP_TYPE = "sleepblip";
 
+/**
+ * The dashboard Blip button is hidden (B, 14 Nov 2026): the start/stop timer
+ * was forgotten at night and night feeds alone drive the night plan. Flip to
+ * true to bring the button back; the API, diary rows and charts are untouched.
+ */
+export const SLEEP_BLIP_CONTROL_VISIBLE: boolean = false;
+
 export type BlipSettledBy = "self" | "us";
 /** How a blip ended: he settled on his own, a parent settled him, or he woke up. */
 export type BlipEnding = BlipSettledBy | "woke";

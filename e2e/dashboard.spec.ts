@@ -55,23 +55,12 @@ for (const name of fixtureNames) {
         await expect(bank.getByRole("button", { name: "Thaw 180 ml packet" })).toBeVisible();
       } else if (name === "asleep-blips") {
         const card = page.getByRole("region", { name: "Sleep status" });
-        await expect(card).toContainText("No blips this sleep");
-        const refetched = () => page.waitForResponse(response => response.url().endsWith("/api/dashboard") && response.status() === 200);
-        const started = page.waitForResponse(response => response.url().endsWith("/api/sleep-blips") && response.request().method() === "POST");
-        const afterStart = refetched();
-        await card.getByRole("button", { name: "Start a blip (crying in his sleep)" }).click();
-        expect((await started).ok()).toBeTruthy();
-        await afterStart;
-        await expect(card.getByRole("button", { name: "Settled himself", exact: true })).toBeVisible();
-        await expect(page.getByRole("status")).toContainText("Blip started");
+        // The Blip button is hidden (SLEEP_BLIP_CONTROL_VISIBLE = false); history stays.
+        await expect(card).toBeVisible();
+        await expect(card.getByRole("button", { name: "Start a blip (crying in his sleep)" })).toHaveCount(0);
+        await expect(card).not.toContainText("this sleep");
         await mkdir(".verify/shots", { recursive: true });
-        await page.screenshot({ path: ".verify/shots/asleep-blips-open.png", fullPage: true });
-        const stopped = page.waitForResponse(response => response.url().endsWith("/api/sleep-blips") && response.request().method() === "POST");
-        const afterStop = refetched();
-        await card.getByRole("button", { name: "Settled himself", exact: true }).click();
-        expect((await stopped).ok()).toBeTruthy();
-        await afterStop;
-        await expect(card).toContainText(/1 blip · .+ this sleep/);
+        await page.screenshot({ path: ".verify/shots/asleep-blips-hidden.png", fullPage: true });
         await page.getByRole("button", { name: "View wake window and nap charts" }).click();
         const nights = page.getByRole("region", { name: "Night blips" });
         await expect(nights.getByRole("heading", { name: "Night plan", exact: true })).toBeVisible();
