@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { computeNightPlan, currentNightSlot, nightPlanSummaryText, slotForTime, type NightPlanInputs } from "./night-plan";
+import { computeNightPlan, currentNightSlot, nightPlanTonightText, slotForTime, type NightPlanInputs } from "./night-plan";
 
 const at = (date: string, time: string) => Date.parse(`${date}T${time}:00+08:00`);
 const DAY = 86400_000;
@@ -40,7 +40,7 @@ test("breastfeeds make only their slot unusable; unknown holds its place and has
   assert.equal(unknown.activeSlot, "evening");
   assert.deepEqual(unknown.slots.evening, { mode: "unknown" });
   assert.equal(unknown.slots.early?.mode, "usual");
-  assert.doesNotMatch(nightPlanSummaryText(unknown)!, /Evening/);
+  assert.doesNotMatch(nightPlanTonightText(unknown), /Evening/);
   const skipped = plan([120, 100, 0, 0]);
   assert.equal(skipped.slots.evening?.tonightMl, 100);
   const gone = input([120, 1, 1, 0]);
@@ -66,7 +66,7 @@ test("midnight weight gate locks missing, stale, short or insufficient growth an
   assert.equal(result.slots.midnight?.tonightMl, 120);
 });
 
-test("each pause reason returns no sizes or push", () => {
+test("each pause reason returns no sizes", () => {
   const base = input();
   for (const [override, reason] of [
     [{ isSick: true }, "sick mode"],
@@ -77,7 +77,6 @@ test("each pause reason returns no sizes or push", () => {
     assert.equal(result.status, "paused");
     assert.equal(result.reason, reason);
     assert.deepEqual(result.slots, {});
-    assert.equal(nightPlanSummaryText(result), null);
   }
   assert.notEqual(computeNightPlan({ ...base, feeds: [] }).status, "paused");
   assert.notEqual(computeNightPlan({ ...base, feeds: [{ startedAt: now - DAY, amountMl: 100 }] }).status, "paused");
@@ -89,7 +88,6 @@ test("needs four completed recent nights, keeps seven at most and excludes ongoi
     const result = computeNightPlan({ ...base, sleeps });
     assert.equal(result.status, "not-enough-data");
     assert.deepEqual(result.slots, {});
-    assert.equal(nightPlanSummaryText(result), null);
   }
   assert.equal(computeNightPlan({ ...base, sleeps: [...base.sleeps, { startedAt: now - 11 * DAY, endedAt: now - 10 * DAY }] }).slots.evening?.usualMl, 120);
   const eight = input([120, 120, 0, 0, 0, 0, 0, 0]);
@@ -123,13 +121,13 @@ test("qualification shares bedtime exclusion and tiny feed rules; totals sum wit
   assert.equal(computeNightPlan({ ...base, feeds: [...base.feeds, ...extra] }).slots.evening?.usualMl, 140);
 });
 
-test("milk day rolls at 07:00 and summary formats sizes, omissions and settle first", () => {
+test("milk day rolls at 07:00 and tonight text formats sizes, omissions and settle first", () => {
   const base = input([80, 80, 60, 60]);
   base.feeds = [...base.feeds, { startedAt: at("2026-11-12", "08:00"), amountMl: 540 }];
   const result = computeNightPlan(base);
   assert.equal(result.dayMilkMl, 540);
-  assert.equal(nightPlanSummaryText(result, "Robin"), "Milk since 7am: 540 of 650 ml. Tonight: Evening: settle first · 01:00 140 ml · 05:00 100 ml.");
-  assert.doesNotMatch(nightPlanSummaryText(plan([1, 1, 1, 1]))!, /Evening/);
+  assert.equal(nightPlanTonightText(result), "Evening: settle first · 01:00 140 ml · 05:00 100 ml");
+  assert.doesNotMatch(nightPlanTonightText(plan([1, 1, 1, 1])), /Evening/);
   assert.equal(computeNightPlan({ ...base, now: at("2026-11-12", "06:59") }).dayMilkMl, 1100);
   assert.equal(computeNightPlan({ ...base, now: at("2026-11-12", "07:00") }).dayMilkMl, 0);
 });

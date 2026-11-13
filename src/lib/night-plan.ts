@@ -116,9 +116,3 @@ export function nightPlanTonightText(plan: NightPlan): string {
     return [size.mode === "settle-first" ? `${label}: settle first` : `${label} ${size.tonightMl} ml`];
   }).join(" · ");
 }
-
-export function nightPlanSummaryText(plan: NightPlan, _babyName?: string): string | null {
-  if (plan.status !== "ready") return null;
-  const tonight = nightPlanTonightText(plan);
-  return `Milk since 7am: ${plan.dayMilkMl} of ${plan.dayTargetMl} ml.${tonight ? ` Tonight: ${tonight}.` : ""}`;
-}
