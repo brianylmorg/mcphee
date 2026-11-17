@@ -47,6 +47,10 @@ export async function seedFixture(name: FixtureName, client: Client): Promise<Fi
     activity("sleep", Math.floor(start + span * 0.32), {}, Math.floor(start + span * 0.40));
     activity("sleep", Math.floor(start + span * 0.65), {}, Math.floor(start + span * 0.73));
   }
+  if (name === "fresh-day") {
+    // A screenshot-imported poo diaper: size not shown, stool kept as the note.
+    activity("diaper", Math.floor(midnight + elapsed * 0.9), { peeUnits: 0, poop: "yes", notes: "Stool: normal, yellow" });
+  }
   if (name === "sick-episode") {
     const episodeId = randomUUID();
     const medicationId = randomUUID();

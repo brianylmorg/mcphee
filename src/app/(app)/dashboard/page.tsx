@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { formatAge, timeSince, median, formatTime, formatDate, formatWeight } from "@/lib/utils";
 import { bottleBreastmilkLibraryDeduction, parseMlCalculation } from "@/lib/milk-calculation";
 import { activityNoteText } from "@/lib/activity-note";
+import { diaperHasPoop, diaperPoopQuantity } from "@/lib/diaper-poop";
 import { clampNearFutureToNow, minuteOptionsIncluding } from "@/lib/activity-time";
 import { MilkAsOfHistoryChart, MilkHistoryChart } from "@/components/MilkHistoryChart";
 import { SleepWindowsChart } from "@/components/SleepWindowsChart";
@@ -1534,13 +1535,12 @@ export default function DashboardPage() {
       }
       case "diaper": {
         const peeUnits = peeUnitsLabel(d.peeUnits ?? d.peeSize);
-        const poopSize = d.poop === "M" || d.poop === "L" ? String(d.poop) : "";
         const hasPee = Boolean(peeUnits);
-        const hasPoop = Boolean(poopSize);
+        const hasPoop = diaperHasPoop(d.poop);
         return {
           title: "Diaper",
           subcategory: hasPee && hasPoop ? "Pee + poop" : hasPee ? "Pee" : hasPoop ? "Poop" : "Diaper change",
-          quantity: [hasPee ? peeUnits : "", hasPoop ? `poop ${poopSize}` : ""].filter(Boolean).join(" · "),
+          quantity: [hasPee ? peeUnits : "", diaperPoopQuantity(d.poop)].filter(Boolean).join(" · "),
         };
       }
       case "vomit": {
@@ -3089,7 +3089,9 @@ function LogModal({
     () => {
       if (!isEditing) return "no";
       const v = detailsObj.poop;
-      return v === "M" || v === "L" ? String(v) : "no";
+      if (v === "M" || v === "L") return String(v);
+      // Screenshot/paper-log poo has no size; keep it unless the user picks one.
+      return diaperHasPoop(v) ? "yes" : "no";
     }
   );
   const [diaperPeeUnits, setDiaperPeeUnits] = useState(
@@ -3607,7 +3609,7 @@ function LogModal({
                   >
                     No
                   </button>
-                  {["M", "L"].map((s) => (
+                  {(diaperPoop === "yes" ? ["yes", "M", "L"] : ["M", "L"]).map((s) => (
                     <button
                       key={s}
                       onClick={() => {
@@ -3619,7 +3621,7 @@ function LogModal({
                           : "bg-surface border border-border"
                       }`}
                     >
-                      {s}
+                      {s === "yes" ? "Yes" : s}
                     </button>
                   ))}
                 </div>

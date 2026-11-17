@@ -3,6 +3,7 @@ import { createDB } from "@/db";
 import { requireBabyInHousehold } from "@/lib/db/household";
 import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { readActivityTimeline } from "@/lib/activity-timeline";
+import { diaperHasPoop, diaperPoopQuantity } from "@/lib/diaper-poop";
 
 export const runtime = "nodejs";
 
@@ -149,13 +150,12 @@ function displayFields(type: unknown, details: Record<string, unknown>) {
 
   if (type === "diaper") {
     const peeUnits = peeUnitsLabel(details.peeUnits ?? details.peeSize);
-    const poopSize = details.poop === "M" || details.poop === "L" ? String(details.poop) : "";
     const hasPee = Boolean(peeUnits);
-    const hasPoop = Boolean(poopSize);
+    const hasPoop = diaperHasPoop(details.poop);
     return {
       activity: "Diaper",
       subcategory: hasPee && hasPoop ? "Pee + poop" : hasPee ? "Pee" : hasPoop ? "Poop" : "Diaper change",
-      quantity: [hasPee ? peeUnits : "", hasPoop ? "poop " + poopSize : ""].filter(Boolean).join(" | "),
+      quantity: [hasPee ? peeUnits : "", diaperPoopQuantity(details.poop)].filter(Boolean).join(" | "),
     };
   }
 

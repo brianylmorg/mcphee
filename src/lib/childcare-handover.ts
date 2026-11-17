@@ -95,7 +95,7 @@ function peeLabel(value: unknown): string {
 /** Poo as recorded: M/L from the diaper form, "yes" from a caretaker screenshot. */
 function pooLabel(value: unknown): string {
   if (value === "M" || value === "L") return `Poo ${value}`;
-  if (value === "yes") return "Poo";
+  if (value === "yes" || value === true) return "Poo";
   return "No poo";
 }
 

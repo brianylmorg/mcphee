@@ -307,3 +307,35 @@ test("invalid diaper contents, empty naps and explicitly negative poo evidence c
   ], "2026-10-14");
   assert.equal(noPoo[0].draft.details.poop, "no");
 });
+
+test("poo diapers are recognised in the childcare app's wording and keep the stool note", () => {
+  const parse = (...texts: string[]) => parseCaretakerOcrLines([
+    line("heading", 0, "Past diaper changes:"),
+    ...texts.map((text, index) => line(`entry-${index}`, 10 + index * 30, text)),
+  ], "2026-11-17");
+  const cases: Array<[string, string, string, string | undefined]> = [
+    ["02:40 PM - Routine, Poo - Normal Stool - Yellow", "0", "yes", "Stool: normal, yellow"],
+    ["02:40 PM - Routine, Wet, Poo - Watery Stool - Green", "3", "yes", "Stool: watery, green"],
+    ["02:40 PM - Routine, Wet & Poo", "3", "yes", undefined],
+    ["02:40 PM - Routine, Soiled", "0", "yes", undefined],
+    ["02:40 PM - Routine, Wet, Soiled", "3", "yes", undefined],
+    ["02:40 PM - Routine, Dirty", "0", "yes", undefined],
+    ["02:40 PM - Routine, Wet, no stool", "3", "no", undefined],
+    ["02:40 PM - Routine, Wet", "3", "no", undefined],
+  ];
+  for (const [text, peeUnits, poop, notes] of cases) {
+    const [row] = parse(text);
+    assert.equal(row.draft.details.peeUnits, peeUnits, text);
+    assert.equal(row.draft.details.poop, poop, text);
+    assert.equal(row.draft.details.notes, notes, text);
+    assert.equal(row.issues.some((entry) => entry.code === "UNSUPPORTED_LAYOUT"), false, text);
+  }
+  // "BM" means breast milk in B's logs, so it is not read as poo.
+  assert.equal(parse("02:40 PM - Routine, BM")[0].draft.details.poop, "no");
+  // Stool text wrapped onto the next OCR line, followed by remarks.
+  const [wrapped] = parse("10:44 AM - Routine, Poo - Hard Stool -", "Dark Brown", "Remarks: Changed clothes");
+  assert.equal(wrapped.draft.details.notes, "Stool: hard, dark brown");
+  // Two poo entries read together still need review.
+  const [merged] = parse("10:44 AM - Routine, Poo, Soiled");
+  assert.equal(merged.issues.some((entry) => entry.code === "UNSUPPORTED_LAYOUT"), true);
+});

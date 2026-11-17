@@ -34,6 +34,16 @@ for (const name of fixtureNames) {
         // Also prove persistence across a fresh dashboard load.
         await page.reload();
         await expect(page.getByLabel("Recent bottle feeds").getByLabel("123 ml consumed").filter({ visible: true })).toBeVisible();
+        // Imported poo (stored as "yes") reads as poop in the diary and survives an edit.
+        const pooRow = page.getByRole("button", { name: "Edit diaper activity", exact: true }).filter({ hasText: "Poop" }).filter({ hasNotText: /poop [ML]/ }).first();
+        await expect(pooRow).toBeVisible();
+        await pooRow.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: ".verify/shots/imported-poo.png" });
+        await pooRow.click();
+        const edit = page.getByRole("dialog", { name: /^Edit diaper$/i });
+        await expect(edit.getByRole("button", { name: "Yes", exact: true })).toBeVisible();
+        await page.screenshot({ path: ".verify/shots/imported-poo-edit.png" });
+        await edit.getByRole("button", { name: "Close activity form" }).click();
       } else if (name === "sick-episode") {
         const health = page.getByRole("region", { name: "Health check-in" });
         await expect(health).toBeVisible();

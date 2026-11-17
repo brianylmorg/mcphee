@@ -159,6 +159,25 @@ function dedupeIssues(issues: CaretakerImportIssue[]): CaretakerImportIssue[] {
   });
 }
 
+// The childcare app writes "Routine, Poo - Normal Stool - Yellow"; other carers
+// may write "Soiled", "Dirty" or just the stool. "BM" is left out: it means breast milk.
+const POO_WORDS = String.raw`poo|poop|poos|bowel\s+movement|soiled|dirty|stools?`;
+const POO_WORD_RE = new RegExp(String.raw`\b(?:${POO_WORDS})\b`, "i");
+const NEGATED_POO_RE = new RegExp(String.raw`\b(?:no|not|without)\s+(?:${POO_WORDS})\b`, "i");
+const POO_TYPE_RE_G = /\b(?:poo|poop|poos|bowel\s+movement|soiled|dirty)\b/gi;
+
+/** "Poo - Normal Stool - Yellow" → "Stool: normal, yellow". Null when only "Poo" is shown. */
+export function stoolDescription(text: string): string | null {
+  const match = /\b(?:poo|poop|soiled|dirty)\s*[-–—:]\s*([^|]*?\bstools?\b(?:\s*[-–—,]\s*[a-z][a-z ]{0,20})?)/i.exec(text)
+    ?? /\b([a-z]+(?:\s+[a-z]+)?\s+stools?\b(?:\s*[-–—,]\s*[a-z][a-z ]{0,20})?)/i.exec(text);
+  if (!match) return null;
+  const parts = match[1]
+    .split(/\s*[-–—,]\s*/)
+    .map((part) => part.replace(/\bstools?\b/i, "").replace(/\b(?:remarks?|added\s+by)\b.*$/i, "").trim().toLowerCase())
+    .filter(Boolean);
+  return parts.length ? `Stool: ${parts.join(", ")}` : null;
+}
+
 function parseTimedGroups(
   lines: CaretakerOcrLine[],
   dateKey: string,
@@ -175,8 +194,7 @@ function parseTimedGroups(
     }
     if (section === "diaper") {
       return (/\bwet\b/i.test(next.text) && contains(items, /\bwet\b/i))
-        || (/\b(?:poo|poop|bowel\s+movement)\b/i.test(next.text)
-          && contains(items, /\b(?:poo|poop|bowel\s+movement)\b/i));
+        || (POO_WORD_RE.test(next.text) && contains(items, POO_WORD_RE));
     }
     return false;
   };
@@ -235,8 +253,8 @@ function parseTimedGroups(
       results.push({ lines: chunk, draft, issues: dedupeIssues([...common, ...draftIssues(draft)]) });
     } else if (section === "diaper") {
       const wet = /\bwet\b/i.test(text);
-      const poo = /\b(?:poo|poop|bowel\s+movement)\b/i.test(text)
-        && !/\b(?:no|not|without)\s+(?:poo|poop|bowel\s+movement)\b/i.test(text);
+      const poo = POO_WORD_RE.test(text) && !NEGATED_POO_RE.test(text);
+      const stool = poo ? stoolDescription(text) : null;
       const draft: CaretakerActivityDraft = {
         type: "diaper",
         startedAt: activityStart,
@@ -245,11 +263,13 @@ function parseTimedGroups(
           peeUnits: wet ? "3" : "0",
           peeUnitsSource: wet ? "McPhee default from source Wet" : undefined,
           poop: poo ? "yes" : "no",
+          ...(stool ? { notes: stool } : {}),
         },
         note: null,
       };
       const wetMatches = text.match(/\bwet\b/gi) ?? [];
-      const pooMatches = text.match(/\b(?:poo|poop|bowel\s+movement)\b/gi) ?? [];
+      // "Poo - Normal Stool" is one poo, so count the diaper-type words only.
+      const pooMatches = text.match(POO_TYPE_RE_G) ?? [];
       if (wetMatches.length > 1 || pooMatches.length > 1) {
         common.push(issue("UNSUPPORTED_LAYOUT", "Multiple diaper values were read together; correct or exclude this entry."));
       }
