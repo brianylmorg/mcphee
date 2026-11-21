@@ -324,7 +324,6 @@ function DoseHistory({
   busy,
   onBusy,
   onChanged,
-  editRequest = 0,
 }: {
   babyId: string;
   episodeId: string;
@@ -332,7 +331,6 @@ function DoseHistory({
   busy: boolean;
   onBusy: (busy: boolean) => void;
   onChanged: () => Promise<void> | void;
-  editRequest?: number;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingMedication, setEditingMedication] = useState(false);
@@ -436,35 +434,29 @@ function DoseHistory({
     setEditingMedication(true);
   };
 
-  useEffect(() => {
-    if (editRequest > 0) beginMedicationEdit();
-    // Capture the current prescription/revision only on an explicit edit request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editRequest]);
-
   return (
-    <div className="mt-1.5 border-t border-border/70 pt-1.5">
+    <div className="mt-1 space-y-2 pb-1 pl-3">
       <div className="flex items-start justify-between gap-2">
         <p className="medication-prescription min-w-0 text-muted">
           Prescribed dose: {medication.doseText}
           {intervalText ? ` · ${intervalText}` : ""}
         </p>
-        <button type="button" disabled={busy} onClick={() => editingMedication ? setEditingMedication(false) : beginMedicationEdit()} className="min-h-9 shrink-0 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">{editingMedication ? "Cancel edit" : "Edit medication"}</button>
+        <button type="button" disabled={busy} onClick={() => editingMedication ? setEditingMedication(false) : beginMedicationEdit()} className="hit-44 min-h-8 shrink-0 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">{editingMedication ? "Cancel" : "Edit"}</button>
       </div>
       {editingMedication && (
-        <div className="mt-2 rounded-lg bg-cream/60 p-2">
+        <div className="rounded-lg bg-cream/60 p-2">
           <MedicationFields draft={medicationDraft} onChange={setMedicationDraft} suggestions={[]} />
           <button type="button" onClick={updateMedication} disabled={busy || !medicationDraft.name.trim() || !medicationDraft.doseText.trim() || medicationScheduleValidationError(medicationDraft) != null} className="mt-2 min-h-9 rounded-lg bg-terracotta-dark px-4 text-sm font-semibold text-on-accent disabled:opacity-50">Save medication</button>
         </div>
       )}
       {medication.latestDose && medication.minIntervalHours != null && (
-        <p className="mt-1 text-xs text-muted">
+        <p className="text-xs text-muted">
           Entered next window: {formatTime(medication.latestDose.givenAt + medication.minIntervalHours * 60 * 60 * 1000)}
           {medication.maxIntervalHours != null && medication.maxIntervalHours !== medication.minIntervalHours ? `–${formatTime(medication.latestDose.givenAt + medication.maxIntervalHours * 60 * 60 * 1000)}` : ""}. This is not a safe-to-dose recommendation.
         </p>
       )}
       {doses.length > 0 && (
-        <div className="mt-1.5 space-y-1">
+        <div className="space-y-0.5">
           <p className="medication-dose-history text-[12px] font-semibold uppercase tracking-[0.12em] text-muted">Dose history</p>
           {doses.map((dose) => (
             <DoseHistoryRow key={dose.id} dose={dose} editing={editingId === dose.id} disabled={busy} onEdit={() => setEditingId(dose.id)} onCancel={() => setEditingId(null)} onSave={(time, text, expectedRevision) => saveDose(dose, time, text, expectedRevision)} onDelete={() => deleteDose(dose)} />
@@ -504,7 +496,7 @@ function DoseHistoryRow({ dose, editing, disabled, onEdit, onCancel, onSave, onD
   }
 
   return (
-    <div className="medication-history-row flex items-center gap-3 border-b border-border/60 py-1 last:border-b-0">
+    <div className="medication-history-row flex items-center gap-3 py-1">
       <p className="min-w-0 flex-1 text-warm-brown"><span className="medication-history-meta font-semibold tabular-nums">{formatDate(dose.givenAt)} · {formatTime(dose.givenAt)}</span> · {dose.doseText}{dose.givenBy && <span className="medication-history-meta block break-words text-muted">Given by {dose.givenBy}</span>}</p>
       <button type="button" disabled={disabled} onClick={beginEdit} className="hit-44 min-h-8 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50">Edit</button>
       <button type="button" disabled={disabled} onClick={onDelete} aria-label="Delete recorded dose" className="hit-44 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-50"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
@@ -516,22 +508,19 @@ function MedicationRow({ babyId, episodeId, medication, now, busy, onBusy, onCha
   const latest = medication.latestDose;
   const medicationSchedule = medicationIntervalText(medication);
   const [expanded, setExpanded] = useState(false);
-  const [editRequest, setEditRequest] = useState(0);
-  return (
-    <div data-medication-row={medication.id} className="border-b border-border/70 last:border-b-0">
+    return (
+    <div data-medication-row={medication.id} className="py-1.5">
       <div className="flex min-h-6 items-center gap-1">
         <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
           <button type="button" aria-label={`Log ${medication.name}`} disabled={busy || !onLog} onClick={() => onLog?.(medication.id)} className="medication-name health-log-action min-h-6 min-w-0 max-w-full break-words text-left font-semibold leading-snug text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">{medication.name}</button>
-          {medication.asNeeded && <span className="whitespace-nowrap rounded-full bg-terracotta/10 px-1.5 py-0.5 text-[11px] font-normal text-accent-strong">As needed</span>}
-          {!medication.asNeeded && medicationSchedule && <span className="medication-schedule whitespace-nowrap text-[11px] font-normal text-muted">{medicationSchedule}</span>}
+          {(medication.asNeeded || medicationSchedule) && <span className="medication-schedule whitespace-nowrap text-[11px] font-normal text-muted">{medication.asNeeded ? "As needed" : medicationSchedule}</span>}
         </div>
         <button type="button" aria-label={`Dose history for ${medication.name}`} aria-expanded={expanded} aria-controls={`medication-history-${medication.id}`} onClick={() => setExpanded(value => !value)} className="medication-row-control flex min-h-6 min-w-8 shrink-0 items-center gap-1 rounded-lg px-1 text-right text-xs text-muted">
           <span aria-label={latest ? `Last given ${formatTime(latest.givenAt)}, ${formatElapsedSince(latest.givenAt, now)}` : "No doses logged"} className="medication-last-dose font-semibold tabular-nums">{latest ? <><span>{formatTime(latest.givenAt).replace(/ hrs$/, "")}</span><span aria-hidden="true" className="medication-dose-separator"> · </span><span className="medication-dose-elapsed">{formatElapsedSince(latest.givenAt, now)}</span></> : "No doses logged"}</span>
           <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
         </button>
-        <button type="button" aria-label={`Edit medication ${medication.name}`} title="Edit medication" disabled={busy} onClick={() => { setExpanded(true); setEditRequest(value => value + 1); }} className="medication-row-control flex h-6 w-7 shrink-0 items-center justify-center rounded-lg text-accent-strong disabled:opacity-50"><Pencil aria-hidden="true" className="h-3.5 w-3.5" /></button>
       </div>
-      <div id={`medication-history-${medication.id}`} hidden={!expanded}><DoseHistory babyId={babyId} episodeId={episodeId} medication={medication} busy={busy} onBusy={onBusy} onChanged={onChanged} editRequest={editRequest} /></div>
+      <div id={`medication-history-${medication.id}`} hidden={!expanded}><DoseHistory babyId={babyId} episodeId={episodeId} medication={medication} busy={busy} onBusy={onBusy} onChanged={onChanged} /></div>
     </div>
   );
 }

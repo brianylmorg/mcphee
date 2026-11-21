@@ -105,7 +105,7 @@ test("active sick mode renders every medication as a compact row", () => {
   assert.match(html, /As needed/);
   assert.match(html, /Last given/);
   assert.match(html, /No doses logged/);
-  assert.equal((html.match(/class="medication-row-control /g) ?? []).length, 8);
+  assert.equal((html.match(/class="medication-row-control /g) ?? []).length, 4);
   // Medication hierarchy is exposed through semantic hooks, not CSS chains.
   assert.equal((html.match(/class="medication-name /g) ?? []).length, 4);
   assert.equal((html.match(/medication-prescription/g) ?? []).length, 4);
@@ -288,8 +288,9 @@ test("active episode lifecycle is in settings while health and medication editin
   const dashboard = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined }));
   assert.match(dashboard, /Health check-in/);
   assert.doesNotMatch(dashboard, />End mode<\/button>/);
-  assert.equal((dashboard.match(/title="Edit medication"/g) ?? []).length, 4);
-  assert.match(dashboard, /aria-label="Edit medication Medication 2"/);
+  // One edit control per medication, inside the expanded detail; no pencil on the row.
+  assert.doesNotMatch(dashboard, /title="Edit medication"/);
+  assert.doesNotMatch(dashboard, /aria-label="Edit medication /);
 });
 
 test("medication edits carry the captured optimistic-concurrency revision", () => {
@@ -361,7 +362,7 @@ test("health-check labels and medication names expose distinct logging shortcuts
   // "Log a new diaper" lives in the expanded disclosure, so a diaper must exist.
   data.summary.latestDiapers = [{ id: "diaper-1", startedAt: NOW - 60 * 60 * 1000, peeUnits: 1, isWet: true, poop: "no" }];
   const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined, onLogActivity: () => undefined, onLogMedication: () => undefined, onAddMedication: () => undefined }));
-  for (const label of ["Log temperature", "Log diaper", "Log a new diaper", "Log medication", "Log Medication 2", "Edit medication Medication 2", "Dose history for Medication 2", "Add medication prescription"]) assert.ok(html.includes(`aria-label="${label}"`));
+  for (const label of ["Log temperature", "Log diaper", "Log a new diaper", "Log medication", "Log Medication 2", "Dose history for Medication 2", "Add medication prescription"]) assert.ok(html.includes(`aria-label="${label}"`));
   assert.match(html, /aria-expanded="false" aria-controls="medication-history-med-2"/);
   assert.doesNotMatch(html, /Time Medication 2 was given|Dose of Medication 2 given|>Actual dose</);
 });
