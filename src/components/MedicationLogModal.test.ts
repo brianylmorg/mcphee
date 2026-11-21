@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import MedicationLogModal, { buildLogDosePayload, initialDoseTime, isMedicationLogDirty } from "./MedicationLogModal";
+import MedicationLogModal, { buildLogDosePayload, defaultDoseFor, initialDoseTime, isMedicationLogDirty } from "./MedicationLogModal";
 import { parseSgtDateTime, sgtDateTimeInput } from "@/lib/sick-mode-client";
 import type { SickMedication } from "@/lib/sick-mode";
 
@@ -17,6 +17,7 @@ test("dose modal provides medication selection, explicit actual amount and Singa
   assert.match(html, /Amount given/);
   assert.match(html, /Time given \(Singapore\)/);
   assert.match(html, /does not calculate or recommend a dose/);
+  // No medication chosen yet, so nothing to pre-fill.
   assert.doesNotMatch(html, /value="Entered prescription"/);
   assert.match(html, /disabled=""[^>]*>Save dose/);
 });
@@ -27,14 +28,35 @@ test("dirty dose detection protects an entered amount, medication choice or chan
   assert.equal(isMedicationLogDirty({ ...pristine, doseText: " 2.5 ml " }), true);
   assert.equal(isMedicationLogDirty({ ...pristine, medicationId: "med-2" }), true);
   assert.equal(isMedicationLogDirty({ ...pristine, givenAt: "2026-10-07T10:01:00" }), true);
+  // A pre-filled prescription dose left alone is not an unsaved change; editing it is.
+  const prefilled = { ...pristine, doseText: "2.5 ml", defaultDoseText: "2.5 ml" };
+  assert.equal(isMedicationLogDirty(prefilled), false);
+  assert.equal(isMedicationLogDirty({ ...prefilled, doseText: " 2.5 ml " }), false);
+  assert.equal(isMedicationLogDirty({ ...prefilled, doseText: "3 ml" }), true);
+  assert.equal(isMedicationLogDirty({ ...prefilled, doseText: "" }), true);
 });
 
-test("individual medication shortcut preselects without pre-filling an actual dose", () => {
+test("the default dose is the trimmed prescription dose", () => {
+  assert.equal(defaultDoseFor({ doseText: " 2.5 ml " }), "2.5 ml");
+  assert.equal(defaultDoseFor(null), "");
+  assert.equal(defaultDoseFor(undefined), "");
+});
+
+test("individual medication shortcut preselects and pre-fills the prescription dose, ready to save", () => {
   const html = renderToStaticMarkup(createElement(MedicationLogModal, { ...props, initialMedicationId: "med-1" }));
   assert.match(html, /value="med-1" selected=""/);
-  assert.match(html, /Entered prescription/);
   assert.match(html, /No doses logged/);
-  assert.doesNotMatch(html, /value="Entered prescription"/);
+  assert.match(html, /<input[^>]+value="Entered prescription"/);
+  assert.match(html, /Pre-filled from the prescription/);
+  // A filled amount, valid time and chosen medication leave the save button enabled.
+  assert.doesNotMatch(html, /disabled=""[^>]*>Save dose/);
+});
+
+test("a medication with no prescription dose starts with an empty amount", () => {
+  const blank = { ...medication, doseText: "  " };
+  const html = renderToStaticMarkup(createElement(MedicationLogModal, { ...props, medications: [blank], initialMedicationId: "med-1" }));
+  assert.doesNotMatch(html, /Pre-filled from the prescription/);
+  assert.match(html, /disabled=""[^>]*>Save dose/);
 });
 
 test("empty medications and stale mode cannot save a dose", () => {

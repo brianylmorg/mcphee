@@ -129,6 +129,11 @@ test("previous sessions merge history and pending, dedupe by id and read newest 
 
   // One combined list: no second "Care logs to import" section.
   assert.equal((html.match(/Previous sessions/g) ?? []).length, 1);
+  const detailsStart = html.indexOf("<details");
+  const summaryStart = html.indexOf("Previous sessions");
+  assert.ok(detailsStart > -1 && detailsStart < summaryStart);
+  assert.doesNotMatch(html.slice(detailsStart, html.indexOf(">", detailsStart)), /\bopen(?:=|\s|$)/);
+  assert.ok(html.includes("Previous sessions (4)"));
   assert.doesNotMatch(html, /Care logs to import/);
   // Four closed sessions: the duplicated id and the active stay collapse away.
   assert.equal((html.match(/<li /g) ?? []).length, 4);
@@ -148,6 +153,12 @@ test("previous sessions merge history and pending, dedupe by id and read newest 
   // Removed, still-open and active sessions never reach the list.
   assert.doesNotMatch(html, /(1 Nov|1 Sep|1 May) 2026/);
   assert.doesNotMatch(html, /session-[a-z-]+/);
+});
+
+test("previous sessions summary hints at pending imports", () => {
+  const html = render({ pendingSessions: [daytime], historySessions: [imported] });
+
+  assert.ok(html.includes("Previous sessions (2) · 1 to import"));
 });
 
 test("every row carries its own import status", () => {

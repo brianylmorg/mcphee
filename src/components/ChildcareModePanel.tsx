@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Baby, Check, ImageUp, LogIn, LogOut, Pencil, Trash2 } from "lucide-react";
+import { Baby, Check, ChevronDown, ImageUp, LogIn, LogOut, Pencil, Trash2 } from "lucide-react";
 import type { ChildcareSessionSummary } from "@/lib/childcare-mode-contract";
 
 export interface ChildcareSessionTimes {
@@ -362,6 +362,7 @@ export default function ChildcareModePanel({
       );
   }, [activeId, historySessions, pendingSessions]);
 
+  const pendingCount = sessions.filter((session) => sessionStatus(session) === "pending").length;
   const sessionsKey = sessions.map((session) => session.id).join("|");
 
   // A changed set of listed sessions drops any open row editor, row action and
@@ -716,10 +717,14 @@ export default function ChildcareModePanel({
       )}
 
       {sessions.length > 0 && (
-        <div className="mt-3 min-w-0 border-t border-border pt-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Previous sessions
-          </h3>
+        <details className="group mt-3 min-w-0 border-t border-border pt-3">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted">
+            <span>
+              Previous sessions ({sessions.length})
+              {pendingCount > 0 && <> · {pendingCount} to import</>}
+            </span>
+            <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
           <ul className="mt-2 max-h-[60vh] min-w-0 space-y-2 overflow-y-auto pr-0.5">
             {sessions.map((session) => {
               const status = sessionStatus(session);
@@ -829,7 +834,7 @@ export default function ChildcareModePanel({
               );
             })}
           </ul>
-        </div>
+        </details>
       )}
       {onImportWithoutSession && (
         <button

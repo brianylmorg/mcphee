@@ -50,12 +50,32 @@ for (const name of fixtureNames) {
         await expect(health).toContainText("37.8 °C");
         await expect(health.getByRole("button", { name: "Log Paracetamol", exact: true })).toBeVisible();
         await expect(health.getByRole("button", { name: "Dose history for Paracetamol" })).toContainText(/\d/);
+        // Logging a dose starts from the prescription's own dose, ready to save.
+        await health.getByRole("button", { name: "Log Paracetamol", exact: true }).click();
+        const dose = page.getByRole("dialog", { name: "Log medication" });
+        await expect(dose.getByLabel("Amount given")).toHaveValue("2.5 ml");
+        await expect(dose.getByText("Pre-filled from the prescription")).toBeVisible();
+        await expect(dose.getByRole("button", { name: "Save dose" })).toBeEnabled();
+        await page.screenshot({ path: ".verify/shots/medication-prefill.png" });
+        await dose.getByRole("button", { name: "Close medication log" }).click();
+        await expect(dose).toBeHidden();
       } else if (name === "childcare-checked-in") {
         const status = page.getByRole("button", { name: "Childcare status: in childcare" });
         await expect(status).toBeVisible();
         await status.click();
         await expect(page.getByRole("heading", { name: "Robin is in childcare" })).toBeVisible();
         await expect(page.getByRole("region", { name: "Childcare", exact: true })).toContainText("Checked in");
+        // Previous sessions start collapsed, with a count and the pending-import hint.
+        const care = page.getByRole("region", { name: "Childcare", exact: true });
+        const previous = care.locator("summary", { hasText: "Previous sessions (2) · 1 to import" });
+        await expect(previous).toBeVisible();
+        await expect(care.getByRole("button", { name: "Edit session" }).first()).toBeHidden();
+        await previous.click();
+        await expect(care.getByRole("button", { name: "Edit session" }).first()).toBeVisible();
+        await previous.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: ".verify/shots/childcare-sessions-open.png" });
+        await previous.click();
+        await expect(care.getByRole("button", { name: "Edit session" }).first()).toBeHidden();
         await page.getByRole("button", { name: "Close baby settings" }).click();
       } else if (name === "milk-bank") {
         const bank = page.getByRole("region", { name: "Breastmilk bank" });

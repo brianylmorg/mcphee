@@ -27,14 +27,22 @@ export function isMedicationLogDirty({
   initialGivenAt,
   givenAt,
   doseText,
+  defaultDoseText = "",
 }: {
   initialMedicationId?: string;
   medicationId?: string;
   initialGivenAt: string;
   givenAt: string;
   doseText: string;
+  /** The prescription dose the field starts with; leaving it alone is not an unsaved change. */
+  defaultDoseText?: string;
 }): boolean {
-  return Boolean(doseText.trim() || medicationId !== initialMedicationId || givenAt !== initialGivenAt);
+  return Boolean(doseText.trim() !== defaultDoseText.trim() || medicationId !== initialMedicationId || givenAt !== initialGivenAt);
+}
+
+/** The dose already entered with the prescription, offered as the starting amount. */
+export function defaultDoseFor(medication: Pick<SickMedication, "doseText"> | null | undefined): string {
+  return medication?.doseText?.trim() ?? "";
 }
 
 export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt, medications, initialMedicationId, childcareOverride = false, isStale, onClose, onRefresh }: {
@@ -46,7 +54,8 @@ export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt
   const attempt = useRef<{ signature: string; requestId: string; expectedLatestDoseId: string | null } | null>(null);
   const initialGivenAt = useRef(initialDoseTime(episodeStartedAt));
   const [selected, setSelected] = useState(() => medications.find(medication => medication.id === initialMedicationId) ?? null);
-  const [doseText, setDoseText] = useState("");
+  const doseEdited = useRef(false);
+  const [doseText, setDoseText] = useState(() => defaultDoseFor(medications.find(medication => medication.id === initialMedicationId)));
   const [givenAt, setGivenAt] = useState(initialGivenAt.current);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +74,12 @@ export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt
     };
   }, []);
 
+  // Offer the prescription dose as the amount, unless the user already typed their own.
+  const chooseMedication = (medication: SickMedication | null) => {
+    setSelected(medication);
+    if (!doseEdited.current) setDoseText(defaultDoseFor(medication));
+  };
+
   const requestClose = () => {
     if (busy) return;
     const dirty = isMedicationLogDirty({
@@ -73,6 +88,7 @@ export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt
       initialGivenAt: initialGivenAt.current,
       givenAt,
       doseText,
+      defaultDoseText: defaultDoseFor(selected),
     });
     if (dirty && !confirm("Discard this unsaved medication dose?")) return;
     onClose();
@@ -122,14 +138,15 @@ export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt
         {isStale && <p role="status" className="text-xs text-warning">Details are out of date. Logging is paused until reconnecting.</p>}
         {medications.length === 0 ? <p className="text-sm text-muted">Add a medication in Health check-in first, then record its doses here.</p> : <>
           <label className="block text-sm font-medium">Medication
-            <select autoFocus required disabled={busy || isStale} value={selected?.id ?? ""} onChange={event => { setSelected(medications.find(medication => medication.id === event.target.value) ?? null); attempt.current = null; setNeedsReview(false); setError(null); }} className="mt-2 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+            <select autoFocus required disabled={busy || isStale} value={selected?.id ?? ""} onChange={event => { chooseMedication(medications.find(medication => medication.id === event.target.value) ?? null); attempt.current = null; setNeedsReview(false); setError(null); }} className="mt-2 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm">
               <option value="">Choose medication</option>
               {medications.map(medication => <option key={medication.id} value={medication.id}>{medication.name}{medication.asNeeded ? " · As needed" : ""}</option>)}
             </select>
           </label>
           {selected && <div className="rounded-lg bg-surface-muted p-3 text-xs leading-relaxed"><p>Entered prescription: <span className="font-semibold">{selected.doseText}</span>{selected.asNeeded ? " · As needed" : ""}</p><p className="mt-1 text-muted">{selected.latestDose ? `Last given ${formatTime(selected.latestDose.givenAt)} · ${formatElapsedSince(selected.latestDose.givenAt)}` : "No doses logged"}</p></div>}
           <label className="block text-sm font-medium">Amount given
-            <input required maxLength={120} value={doseText} disabled={busy || isStale} onChange={event => setDoseText(event.target.value)} placeholder="Amount and unit, e.g. 3.5 ml" className="mt-2 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
+            {selected && doseText.trim() !== "" && doseText.trim() === defaultDoseFor(selected) && <span className="mt-0.5 block text-xs font-normal text-muted">Pre-filled from the prescription. Change it if you gave a different amount.</span>}
+            <input required maxLength={120} value={doseText} disabled={busy || isStale} onChange={event => { doseEdited.current = true; setDoseText(event.target.value); }} placeholder="Amount and unit, e.g. 3.5 ml" className="mt-2 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
           </label>
           <label className="block text-sm font-medium">Time given (Singapore)
             <input required type="datetime-local" step="1" value={givenAt} disabled={busy || isStale} onChange={event => setGivenAt(event.target.value)} className="mt-2 min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
@@ -138,7 +155,7 @@ export default function MedicationLogModal({ babyId, episodeId, episodeStartedAt
           <p className="text-xs leading-relaxed text-muted">Record the amount actually given. Follow the prescribed instructions; this form does not calculate or recommend a dose.</p>
         </>}
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-        {needsReview && <button type="button" disabled={isStale || busy || !currentMedication} onClick={() => { setSelected(currentMedication ?? null); attempt.current = null; setNeedsReview(false); setError(null); }} className="min-h-11 w-full rounded-lg border border-border px-3 text-sm font-semibold">Review latest history</button>}
+        {needsReview && <button type="button" disabled={isStale || busy || !currentMedication} onClick={() => { chooseMedication(currentMedication ?? null); attempt.current = null; setNeedsReview(false); setError(null); }} className="min-h-11 w-full rounded-lg border border-border px-3 text-sm font-semibold">Review latest history</button>}
         <button type="submit" disabled={busy || isStale || needsReview || !currentMedication || invalidTime || !doseText.trim()} className="min-h-11 w-full rounded-lg bg-terracotta-dark px-4 py-3 text-sm font-semibold text-on-accent disabled:opacity-50">{busy ? "Saving…" : "Save dose"}</button>
       </form>
     </dialog>

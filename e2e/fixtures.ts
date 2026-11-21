@@ -68,6 +68,12 @@ export async function seedFixture(name: FixtureName, client: Client): Promise<Fi
     activity("temperature", now - hour / 2, { celsius: 37.8, method: "armpit" });
   }
   if (name === "childcare-checked-in") {
+    // Two closed stays from earlier days, one still waiting for its care log import.
+    for (const [daysAgo, pending] of [[1, 1], [3, 0]] as const) {
+      const start = midnight - daysAgo * day + 8 * hour;
+      insert(`INSERT INTO childcare_sessions (id, baby_id, checked_in_at, checked_out_at, checked_in_by, checked_out_by, check_in_request_id, check_out_request_id, pending_import, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), babyId, start, start + 8 * hour, "Alex", "Alex", randomUUID(), randomUUID(), pending, start, start + 8 * hour]);
+    }
     const checkedIn = Math.floor(midnight + elapsed * 0.8);
     insert(`INSERT INTO childcare_sessions (id, baby_id, checked_in_at, checked_in_by, check_in_request_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), babyId, checkedIn, "Alex", randomUUID(), checkedIn, checkedIn]);
