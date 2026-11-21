@@ -590,7 +590,7 @@ test("a scheduled min-only medication shows Every 6h in the compact row and deta
   data.medications = [medication(1, { name: "Paracetamol", asNeeded: false, minIntervalHours: 6, maxIntervalHours: null })];
   const html = renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined }));
 
-  assert.match(html, /class="medication-schedule[^"]*">Every 6h</);
+  assert.match(html, /class="medication-schedule[^"]*">3.5ml · Every 6h</);
   assert.match(html, /medication-prescription[^>]*>Prescribed dose: 3\.5ml · Every 6h</);
   assert.doesNotMatch(html, /As needed/);
 });
