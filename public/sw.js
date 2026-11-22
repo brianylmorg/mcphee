@@ -48,6 +48,8 @@ self.addEventListener("push", (e) => {
       body: data.body || "",
       icon: "/icon.svg",
       badge: "/icon.svg",
+      // A newer nap, feed or dose push replaces the older one of its kind.
+      ...(data.tag ? { tag: data.tag, renotify: true } : {}),
       data: { url: data.url || "/dashboard" },
     })
   );
