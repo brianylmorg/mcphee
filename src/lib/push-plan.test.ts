@@ -53,7 +53,7 @@ test("nap push fires within 10 minutes of the zone, once per wake window", () =>
   const [push] = planPushes(input({ napHint: hint(), awakeSince }));
   assert.equal(push.key, `nap:${awakeSince}`);
   assert.equal(push.title, "Nap zone in 8m");
-  assert.match(push.body, /awake since 08:08\. He usually goes down 2h00–2h30 after waking\./);
+  assert.match(push.body, /awake since 08:08\. He usually sleeps 2h00–2h30 after waking\./);
 
   assert.deepEqual(planPushes(input({ napHint: hint({ untilMs: 11 * MIN }), awakeSince })), []);
   assert.equal(planPushes(input({ napHint: hint({ status: "in", untilMs: 0 }), awakeSince }))[0].title, "Nap zone now");

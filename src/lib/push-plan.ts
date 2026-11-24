@@ -82,7 +82,7 @@ function napPush(input: PushPlanInput): PlannedPush | null {
     key: `nap:${input.awakeSince}`,
     tag: "nap",
     title,
-    body: `${input.babyName} has been awake since ${sgtClock(input.awakeSince)}. He usually goes down ${duration(hint.fromMs)}–${duration(hint.toMs)} after waking.`,
+    body: `${input.babyName} has been awake since ${sgtClock(input.awakeSince)}. He usually sleeps ${duration(hint.fromMs)}–${duration(hint.toMs)} after waking.`,
     url: "/dashboard",
   };
 }
