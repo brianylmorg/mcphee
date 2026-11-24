@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { applySickModeSchema } from "./sick-mode-schema";
 import { applyCaretakerImportSchema } from "./caretaker-import-schema";
+import { applyMilkLedgerCacheSchema } from "./milk-ledger-cache-schema";
 import { applyDashboardVersionSchema } from "./dashboard-version-schema";
 import { applyChildcareModeSchema } from "./childcare-mode-schema";
 
@@ -124,6 +125,7 @@ async function migrate() {
     await applySickModeSchema(client);
     await applyChildcareModeSchema(client);
     await applyCaretakerImportSchema(client);
+    await applyMilkLedgerCacheSchema(client);
     await applyDashboardVersionSchema(client);
     console.log("Migrations completed successfully.");
   } catch (error) {

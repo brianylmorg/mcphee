@@ -23,6 +23,7 @@
 - The tag is built from `dashboard_version`, a counter that triggers bump on every write to the tables in `DASHBOARD_VERSION_TABLES` (`src/db/dashboard-version-schema.ts`). **If the dashboard API starts reading another table, add it there** and run the migration on preview and prod. The guard test in `src/app/api/dashboard/route.test.ts` fails until you do.
 - If the response gains a new time-dependent value (something that changes with the clock, not with writes), add its next change time to `validUntil` in the route. The property test only catches what the fixture data exercises.
 - Rebuilding a table (create, copy, drop, rename) drops its triggers. The API then stops handing out tags (full answer every poll) until migrations re-create them, so re-run the migration after any table rebuild.
+- The milk bank replays the whole ledger, so the dashboard caches it in `milk_ledger_cache` and replays only after a feed, pump or bank write (`src/lib/milk-ledger-cache.ts`). These two tables deliberately have no `dashboard_version` triggers.
 - Vercel runs `pnpm test:dashboard` before every build (`vercel.json`), so a change that breaks these tests can't deploy.
 
 ## Preview environment

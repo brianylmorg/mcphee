@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createDB } from "@/db";
-import { bottleBreastmilkLibraryDeduction } from "@/lib/milk-calculation";
 import { normalizeActivityCreators } from "@/lib/activity-creators";
 import { bottleVolumes, parseActivityDetails, pumpAmount } from "@/lib/milk-volumes";
-import { replayMilkLedger, type MilkLedgerActivity } from "@/lib/milk-bank-ledger";
+import { loadMilkBankSummary } from "@/lib/milk-ledger-cache";
 import { selectRecentMilkFeeds, type RecentMilkFeedActivity } from "@/lib/recent-milk-feeds";
 import { caretakerSleepCoverageFromAudit } from "@/lib/caretaker-sleep-audit";
 import { isCaretakerImportSchemaReady } from "@/db/caretaker-import-schema";
@@ -22,6 +21,8 @@ const sgtDateFormatter = new Intl.DateTimeFormat("en-CA", {
 export const runtime = "nodejs";
 
 const RECENT_ACTIVITY_LIMIT = 50;
+// selectRecentMilkFeeds keeps 3; the margin covers ties it breaks by id.
+const RECENT_MILK_FEED_ROWS = 10;
 const SLEEP_BLIP_LOOKBACK_MS = 15 * 24 * 60 * 60 * 1000;
 // Upper bound on how long an unchanged answer is reused, even if every input
 // looks static: a safety net for time-dependent output nobody has listed yet.
@@ -144,7 +145,10 @@ export async function GET(request: NextRequest) {
       args: [baby.id as string],
     }));
 
-    const [household, timers, measurements, dailyMilk, pumpedLedger, users, sleepActivities, sleepBlips, nightFeeds, recentWeights, caretakerSleepAudits, ...recentActivityResults] = await db.batch([
+    const milkBankPromise = loadMilkBankSummary(db, householdId, nowMs);
+    // Awaited below; this only stops a failure from surfacing as unhandled if the batch throws first.
+    milkBankPromise.catch(() => {});
+    const [household, timers, measurements, dailyMilk, recentBottles, users, sleepActivities, sleepBlips, nightFeeds, recentWeights, caretakerSleepAudits, ...recentActivityResults] = await db.batch([
       {
         sql: "SELECT * FROM households WHERE id = ?",
         args: [householdId],
@@ -173,12 +177,12 @@ export async function GET(request: NextRequest) {
         args: [householdId, "bottlefeed", "pump", dayStart, dayEnd],
       },
       {
-        sql: `SELECT a.id, a.baby_id, a.type, a.details, a.started_at, a.created_at FROM activities a
-              JOIN babies b ON a.baby_id = b.id
-              WHERE b.household_id = ?
-                AND a.type IN (?, ?, ?, ?, ?, ?)
-              ORDER BY a.started_at ASC, a.created_at ASC`,
-        args: [householdId, "bottlefeed", "pump", "bankadjust", "bankfreeze", "bankthaw", "bankdiscard"],
+        // The newest few bottles for the selected baby. The milk bank itself
+        // (the whole-history ledger) comes from loadMilkBankSummary below.
+        sql: `SELECT id, baby_id, type, details, started_at, created_at FROM activities
+              WHERE baby_id = ? AND type = 'bottlefeed' AND started_at > 0 AND started_at <= ?
+              ORDER BY started_at DESC, created_at DESC LIMIT ${RECENT_MILK_FEED_ROWS}`,
+        args: [String(babyRows[0]?.id ?? ""), nowMs],
       },
       {
         sql: "SELECT name FROM users WHERE household_id = ?",
@@ -236,7 +240,7 @@ export async function GET(request: NextRequest) {
       ? await loadChildcareModeState(db, householdId, String(selectedBabyId))
       : { schemaReady: await isChildcareModeSchemaReady(db), activeSession: null, pendingSessions: [] };
     const recentMilkFeeds = selectRecentMilkFeeds(
-      pumpedLedger.rows as unknown as RecentMilkFeedActivity[],
+      recentBottles.rows as unknown as RecentMilkFeedActivity[],
       selectedBabyId,
       now.getTime(),
       3,
@@ -256,40 +260,14 @@ export async function GET(request: NextRequest) {
     }, { breastmilkMl: 0, formulaMl: 0, pumpedMl: 0 });
     const dailyMilkMl = dailyMilkTotals.breastmilkMl + dailyMilkTotals.formulaMl;
 
-    const ledgerEvents: MilkLedgerActivity[] = pumpedLedger.rows.map((row) => {
-      const typedRow = row as unknown as { id: string; type: string; details: string | null; started_at?: number; created_at?: number };
-      return {
-        id: String(typedRow.id),
-        type: String(typedRow.type),
-        startedAt: Number(typedRow.started_at),
-        createdAt: Number(typedRow.created_at),
-        details: parseActivityDetails(typedRow.details),
-      };
-    });
-    const bankState = replayMilkLedger(ledgerEvents, now.getTime(), new Set(ledgerEvents.map((event) => event.id)));
-    const pumpEvents = ledgerEvents.filter((event) => event.type === "pump");
-    const latestPump = pumpEvents[pumpEvents.length - 1];
-    const totalPumpedMl = pumpEvents.reduce((sum, event) => sum + pumpAmount(event.details), 0);
-    const breastmilkConsumedMl = ledgerEvents
-      .filter((event) => event.type === "bottlefeed")
-      .reduce((sum, event) => sum + bottleBreastmilkLibraryDeduction(event.details), 0);
-    const pumpedMilkBatches = bankState.availableBatches.map((batch) => ({
-      id: batch.id,
-      addedAt: batch.addedAt,
-      pumpedAt: batch.addedAt,
-      amountMl: batch.amountMl,
-      remainingMl: batch.remainingMl,
-      isAdjustment: batch.source === "adjustment",
-      source: batch.source,
-    }));
+    const milkBank = await milkBankPromise;
     // Earliest moment this answer changes with no new write: SGT midnight, a
     // future-dated ledger entry (bank and recent feeds skip those) going live,
     // a frozen packet passing its expiry, or a blip/feed leaving the rolling window.
     const validUntil = Math.min(
       dayEnd,
       nowMs + TAG_MAX_AGE_MS,
-      ...ledgerEvents.map((event) => event.startedAt).filter((at) => at > nowMs),
-      ...bankState.frozenPackets.map((packet) => packet.expiresAt).filter((at) => at > nowMs),
+      milkBank.nextChangeAt ?? Infinity,
       ...sleepBlips.rows.map((blip) => Number(blip.started_at) + SLEEP_BLIP_LOOKBACK_MS).filter((at) => at > nowMs),
       ...nightFeeds.rows.map((feed) => Number(feed.started_at) + SLEEP_BLIP_LOOKBACK_MS).filter((at) => at > nowMs),
     );
@@ -331,18 +309,7 @@ export async function GET(request: NextRequest) {
         expectedMl: expectedMilkMl,
       },
       recentMilkFeeds,
-      pumpedMilk: {
-        walletMl: bankState.availableMl,
-        availableMl: bankState.availableMl,
-        frozenMl: bankState.frozenMl,
-        frozenPackets: bankState.frozenPackets,
-        bankHistory: bankState.history,
-        totalPumpedMl,
-        breastmilkConsumedMl,
-        lastPumpMl: latestPump ? pumpAmount(latestPump.details) : 0,
-        lastPumpAt: latestPump?.startedAt ?? null,
-        batches: pumpedMilkBatches,
-      },
+      pumpedMilk: milkBank.pumpedMilk,
     }, {
       headers: tagBase
         ? { ...NO_STORE, ETag: formatTag({ ...tagBase, validUntil }), [DASHBOARD_TAG_HEADER]: formatTag({ ...tagBase, validUntil }) }

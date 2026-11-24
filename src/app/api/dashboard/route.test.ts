@@ -498,6 +498,7 @@ test("optional: identical answers on a local copy of real data (MCPHEE_DASHBOARD
       assert.deepEqual(tieOrdered(await dashboardJson(getDashboard, { household })), tieOrdered(await dashboardJson(legacyDashboard, { household })),
         `household ${household.slice(0, 4)}… at ${new Date(at).toISOString()}`);
       const first = await getDashboard(dashboardRequest({ household }));
+      assert.deepEqual(tieOrdered(await first.clone().json()), tieOrdered(await dashboardJson(legacyDashboard, { household })), "cached milk bank too");
       assert.equal((await getDashboard(dashboardRequest({ household, ifNoneMatch: etag(first) }))).status, UNCHANGED);
     }
   }
@@ -555,6 +556,10 @@ test("guard: the dashboard only reads tables whose writes bump the version", asy
   const allowed = new Set<string>([
     ...DASHBOARD_VERSION_TABLES,
     "dashboard_version",
+    // Derived from activities and babies, which already bump the version; see
+    // src/db/milk-ledger-cache-schema.ts for why these must not have triggers.
+    "milk_ledger_version",
+    "milk_ledger_cache",
     "sqlite_master",
     "pragma_schema_version",
     "pragma_table_info",
@@ -632,4 +637,183 @@ test("recent weights are household scoped, weight-only, newest first and capped 
   });
   const body = await dashboardJson(getDashboard);
   assert.deepEqual(body.recentWeights, [6, 5, 4, 3, 2, 1].map((i) => ({ baby_id: "baby-1", measured_at: NOW + i, weight_g: 6000 + i })));
+});
+
+
+// ---- Milk bank cache (src/lib/milk-ledger-cache.ts) ----
+
+const isLedgerRead = (sql: string) => /a\.type IN \(/.test(sql) && /ORDER BY a\.started_at ASC, a\.created_at ASC/.test(sql);
+
+/** Counts whole-ledger reads made by the current route (the legacy route is not counted). */
+async function countingDb(t: TestContext) {
+  const { createDB } = await import("@/db");
+  const db = createDB() as unknown as { batch: (...args: unknown[]) => unknown };
+  const batch = db.batch.bind(db);
+  let counting = false;
+  let ledgerReads = 0;
+  db.batch = (stmts: unknown, ...rest: unknown[]) => {
+    if (counting) {
+      for (const stmt of stmts as unknown[]) {
+        if (isLedgerRead(typeof stmt === "string" ? stmt : String((stmt as { sql: string }).sql))) ledgerReads += 1;
+      }
+    }
+    return batch(stmts, ...rest);
+  };
+  t.after(() => { db.batch = batch; });
+  return async (household = "house-1") => {
+    const before = ledgerReads;
+    counting = true;
+    const current = await dashboardJson(getDashboard, { household });
+    counting = false;
+    const legacy = await dashboardJson(legacyDashboard, { household });
+    assert.deepEqual(tieOrdered(current), tieOrdered(legacy), `${household} matches the full replay`);
+    return ledgerReads - before;
+  };
+}
+
+test("milk bank: replayed once per ledger change, served from the cache otherwise", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  setClock(t, NOW);
+  const load = await countingDb(t);
+
+  assert.equal(await load(), 1, "first load replays");
+  assert.equal(await load(), 0, "second load is cached");
+  assert.equal(await load("house-2"), 1, "each household has its own row");
+
+  await insertActivity(client, { id: "diaper-x", type: "diaper", at: NOW - MINUTE, details: { kind: "wet" } });
+  assert.equal(await load(), 0, "a diaper does not touch the ledger");
+  await client.execute("UPDATE activities SET details = '{\"kind\":\"dirty\"}' WHERE id = 'diaper-x'");
+  assert.equal(await load(), 0, "nor does editing one");
+
+  const ledgerWrites = [
+    ["pump insert", () => insertActivity(client, { id: "pump-x", type: "pump", at: NOW - MINUTE, details: { amount: 45 } })],
+    ["bottle edit", () => client.execute("UPDATE activities SET details = '{\"milkType\":\"breastmilk\",\"amount\":200}' WHERE id = 'bf-80'")],
+    ["bottle time edit", () => client.execute(`UPDATE activities SET started_at = ${NOW - 2 * MINUTE} WHERE id = 'bf-79'`)],
+    ["pump delete", () => client.execute("DELETE FROM activities WHERE id = 'pump-x'")],
+    ["diaper turned into a bottle", () => client.execute("UPDATE activities SET type = 'bottlefeed', details = '{\"milkType\":\"breastmilk\",\"amount\":30}' WHERE id = 'diaper-x'")],
+    ["bottle turned into a note", () => client.execute("UPDATE activities SET type = 'note', details = NULL WHERE id = 'diaper-x'")],
+    ["bank adjust", () => insertActivity(client, { id: "adjust-x", type: "bankadjust", at: NOW - MINUTE, details: { amount: 25 } })],
+    ["freeze", () => insertActivity(client, { id: "freeze-x", type: "bankfreeze", at: NOW - MINUTE, details: { amount: 20, source: "reconcile" } })],
+    ["discard", () => insertActivity(client, { id: "discard-x", type: "bankdiscard", at: NOW - MINUTE / 2, details: { packetId: "freeze-x", amount: 20 } })],
+  ] as const;
+  for (const [label, write] of ledgerWrites) {
+    await write();
+    assert.equal(await load(), 1, `${label} forces a replay`);
+    assert.equal(await load(), 0, `then ${label} is cached`);
+  }
+
+  // A baby moving household changes both households' ledgers.
+  assert.equal(await load("house-2"), 1);
+  await client.execute("UPDATE babies SET household_id = 'house-2' WHERE id = 'baby-2'");
+  assert.equal(await load(), 1);
+  assert.equal(await load("house-2"), 1);
+});
+
+test("milk bank: the cache expires when a future entry goes live or a packet expires, and never serves the past", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  const at = async (ms: number) => { t.mock.timers.reset(); setClock(t, ms); };
+  const load = await countingDb(t);
+
+  await at(NOW);
+  assert.equal(await load(), 1);
+  await at(NOW + 19 * MINUTE);
+  assert.equal(await load(), 0);
+  await at(NOW + 20 * MINUTE);
+  assert.equal(await load(), 1, "pump-future went live");
+  await at(NOW + 44 * MINUTE);
+  assert.equal(await load(), 0);
+  await at(NOW + 45 * MINUTE);
+  assert.equal(await load(), 1, "freeze-old expired");
+  await at(NOW + 10 * MINUTE);
+  assert.equal(await load(), 1, "an answer computed later is not reused for an earlier moment");
+  await client.execute({ sql: "DELETE FROM activities WHERE started_at > ?", args: [NOW + HOUR] });
+  await at(NOW + HOUR);
+  assert.equal(await load(), 1);
+  await at(NOW + 25 * HOUR - MINUTE);
+  assert.equal(await load(), 0, "nothing pending: reused for a day");
+  await at(NOW + 25 * HOUR);
+  assert.equal(await load(), 1, "recomputed at least daily");
+});
+
+test("milk bank: a cache row from another version, schema or format is ignored", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  setClock(t, NOW);
+  const load = await countingDb(t);
+  assert.equal(await load(), 1);
+
+  const fake = JSON.stringify({ pumpedMilk: { availableMl: -1 }, nextChangeAt: null });
+  // Proves the row is what gets served when everything matches...
+  await client.execute({ sql: "UPDATE milk_ledger_cache SET payload = ? WHERE household_id = 'house-1'", args: [fake] });
+  const served = await dashboardJson(getDashboard);
+  assert.equal(served.pumpedMilk.availableMl, -1);
+  // ...and never when any part of its label is off.
+  for (const tweak of [
+    "ledger_version = ledger_version - 1",
+    "schema_version = schema_version - 1",
+    "format = 'old'",
+  ]) {
+    await client.execute(`UPDATE milk_ledger_cache SET ${tweak}, payload = '${fake}' WHERE household_id = 'house-1'`);
+    assert.equal(await load(), 1, tweak);
+  }
+});
+
+test("milk bank: an older version never overwrites a newer cache row", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  setClock(t, NOW);
+  const load = await countingDb(t);
+  assert.equal(await load(), 1);
+  const before = (await client.execute("SELECT ledger_version, payload FROM milk_ledger_cache WHERE household_id = 'house-1'")).rows[0];
+  // Same upsert the loader runs, labelled with an older version.
+  await client.execute({
+    sql: `INSERT INTO milk_ledger_cache (household_id, ledger_version, schema_version, format, computed_at, valid_until, payload)
+          VALUES ('house-1', ?, 0, 'mb1', 0, 0, 'stale')
+          ON CONFLICT(household_id) DO UPDATE SET ledger_version = excluded.ledger_version, payload = excluded.payload
+          WHERE excluded.ledger_version >= milk_ledger_cache.ledger_version`,
+    args: [Number(before.ledger_version) - 1],
+  });
+  const after = (await client.execute("SELECT ledger_version, payload FROM milk_ledger_cache WHERE household_id = 'house-1'")).rows[0];
+  assert.deepEqual(after, before);
+  const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../../../lib/milk-ledger-cache.ts", import.meta.url), "utf8"));
+  assert.match(source, /WHERE excluded\.ledger_version >= milk_ledger_cache\.ledger_version/, "the loader keeps this guard");
+});
+
+test("milk bank: a dropped trigger stops cache use and cache writes", async (t) => {
+  const client = await openDb(t);
+  await seed(client);
+  setClock(t, NOW);
+  const load = await countingDb(t);
+  assert.equal(await load(), 1);
+  const computedAt = async () => (await client.execute("SELECT computed_at FROM milk_ledger_cache")).rows.map((row) => Number(row.computed_at));
+  const before = await computedAt();
+
+  await client.execute("DROP TRIGGER trg_milk_ledger_activities_insert");
+  await insertActivity(client, { id: "pump-x", type: "pump", at: NOW - MINUTE, details: { amount: 45 } });
+  t.mock.timers.reset();
+  setClock(t, NOW + MINUTE);
+  assert.equal(await load(), 1, "schema change: the old row is not trusted, and the new pump shows");
+  assert.equal(await load(), 1, "nothing is cached while a trigger is missing");
+  assert.deepEqual(await computedAt(), before);
+
+  await migrate();
+  assert.equal(await load(), 1);
+  assert.equal(await load(), 0, "migration restores caching");
+});
+
+test("milk bank: before its migration the dashboard replays every time and matches the old answer", async (t) => {
+  const client = await openDb(t);
+  for (const row of (await client.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'trg_milk_ledger_%'")).rows) {
+    await client.execute(`DROP TRIGGER ${row.name}`);
+  }
+  await client.execute("DROP TABLE milk_ledger_cache");
+  await client.execute("DROP TABLE milk_ledger_version");
+  await seed(client);
+  setClock(t, NOW);
+  const load = await countingDb(t);
+  assert.equal(await load(), 1);
+  assert.equal(await load(), 1);
+  assert.ok(etag(await getDashboard(dashboardRequest())), "dashboard tags are unaffected");
 });
