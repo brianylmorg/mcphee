@@ -48,7 +48,19 @@ for (const name of fixtureNames) {
         const health = page.getByRole("region", { name: "Health check-in" });
         await expect(health).toBeVisible();
         await expect(health).toContainText("37.8 °C");
+        // Five medicines start collapsed to one row naming the next scheduled dose,
+        // so the milk card stays in view; opening it lists them all.
+        const medicines = health.locator("details.health-medications-disclosure");
+        await expect(medicines).toContainText("5 medicines");
+        await expect(medicines).toContainText("Amoxicillin");
+        await expect(medicines).toContainText(/due \d{2}:\d{2} hrs · in/);
+        await expect(health.getByRole("button", { name: "Log Paracetamol", exact: true })).toBeHidden();
+        await expect(health.getByRole("button", { name: "Log medication", exact: true })).toBeVisible();
+        const milkTop = await page.locator(".milk-consumption-card").evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
+        await page.screenshot({ path: ".verify/shots/sick-meds-collapsed.png", clip: { x: 0, y: 0, width: 390, height: Math.min(milkTop + 330, 1400) } });
+        await medicines.locator("summary").click();
         await expect(health.getByRole("button", { name: "Log Paracetamol", exact: true })).toBeVisible();
+        await page.screenshot({ path: ".verify/shots/sick-meds-expanded.png", clip: { x: 0, y: 0, width: 390, height: 1100 } });
         await expect(health.getByRole("button", { name: "Dose history for Paracetamol" })).toContainText(/\d/);
         // Logging a dose starts from the prescription's own dose, ready to save.
         await health.getByRole("button", { name: "Log Paracetamol", exact: true }).click();

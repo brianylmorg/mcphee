@@ -27,6 +27,7 @@ export default function LatestEntriesDisclosure({
   titleClassName,
   summaryWrapperClassName,
   contentClassName,
+  defaultOpen,
 }: {
   title: string;
   summary?: ReactNode;
@@ -36,9 +37,11 @@ export default function LatestEntriesDisclosure({
   titleClassName?: string;
   summaryWrapperClassName?: string;
   contentClassName?: string;
+  /** Initial state only; React leaves the user's later toggling alone. */
+  defaultOpen?: boolean;
 }) {
   return (
-    <details className={`latest-entries group ${className ?? ""}`} data-latest-entries="true">
+    <details className={`latest-entries group ${className ?? ""}`} data-latest-entries="true" open={defaultOpen}>
       <summary className="latest-entries-toggle flex w-full cursor-pointer list-none items-center gap-2 text-left [&::-webkit-details-marker]:hidden">
         <span className={`latest-entries-title ${titleClassName ?? ""}`}>{title}</span>
         <ChevronDown

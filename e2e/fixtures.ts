@@ -64,6 +64,19 @@ export async function seedFixture(name: FixtureName, client: Client): Promise<Fi
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [medicationId, episodeId, "Paracetamol", "2.5 ml", 1, 360, null, started, "Alex", started]);
     insert(`INSERT INTO sick_mode_doses (id, medication_id, given_at, dose_text, given_by, request_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), medicationId, now - hour, "2.5 ml", "Alex", randomUUID(), now - hour, now - hour]);
+    // A real course has several medicines; the health card has to stay readable with them.
+    for (const [name, dose, asNeeded, every, doseAgo] of [
+      ["Ibuprofen", "2.5 ml", 1, 360, 3 * hour],
+      ["Amoxicillin", "5 ml", 0, 480, 2 * hour],
+      ["Cetirizine", "2 ml", 0, 1440, 9 * hour],
+      ["Saline drops", "2 drops", 1, null, 5 * hour],
+    ] as const) {
+      const extraId = randomUUID();
+      insert(`INSERT INTO sick_mode_medications (id, episode_id, name, dose_text, as_needed, min_interval_minutes, max_interval_minutes, created_at, created_by, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [extraId, episodeId, name, dose, asNeeded, every, null, started, "Alex", started]);
+      insert(`INSERT INTO sick_mode_doses (id, medication_id, given_at, dose_text, given_by, request_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), extraId, now - doseAgo, dose, "Alex", randomUUID(), now - doseAgo, now - doseAgo]);
+    }
     activity("temperature", now - 20 * hour, { celsius: 38.2, method: "armpit" });
     activity("temperature", now - hour / 2, { celsius: 37.8, method: "armpit" });
   }

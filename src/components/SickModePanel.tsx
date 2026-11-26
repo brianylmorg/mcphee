@@ -6,6 +6,7 @@ import { formatElapsedSince } from "@/lib/elapsed-time";
 import { formatDate, formatTime } from "@/lib/utils";
 import { sgtDateKey } from "@/lib/milk-volumes";
 import LatestEntriesDisclosure from "@/components/LatestEntriesDisclosure";
+import { MEDICATION_COLLAPSE_FROM, medicationSummary } from "@/lib/medication-summary";
 import {
   identifyMedicationPrescriptionDraft,
   medicationScheduleValidationError,
@@ -1136,6 +1137,9 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
     return sgtDateKey(diaper.startedAt) === diaperTodayKey ? time : `${formatDate(diaper.startedAt)} · ${time}`;
   };
 
+  const medicationRows = data.medications.map((medication) => <MedicationRow key={medication.id} babyId={babyId} episodeId={activeEpisode.id} medication={medication} now={now} busy={busy || isStale} onBusy={setBusy} onChanged={onRefresh} onLog={onLogMedication} />);
+  const medicationSummaryInfo = medicationSummary(data.medications, now);
+
   return (
     <section className="health-check-in rounded-lg border border-terracotta/30 bg-surface p-2 shadow-sm" aria-labelledby="sick-mode-heading">
       {isStale && <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">Couldn’t refresh sick mode. Details may be out of date; actions are paused until it reconnects.</p>}
@@ -1195,7 +1199,21 @@ export default function SickModePanel({ babyId, data, isStale = false, display =
 
       <div className="health-medications mt-1 border-t border-border/70 pt-0">
         <div className="flex items-center justify-between gap-3"><button type="button" aria-label="Log medication" disabled={busy || isStale || !onLogMedication} onClick={() => onLogMedication?.()} className="health-log-action min-h-6 text-[11px] font-semibold uppercase tracking-[0.12em] text-accent-strong underline-offset-4 hover:underline disabled:opacity-50">Medications</button><button type="button" aria-label="Add medication prescription" disabled={busy || isStale || !onAddMedication} onClick={() => onAddMedication?.()} className="inline-flex min-h-6 items-center gap-1 px-2 text-xs font-semibold text-accent-strong disabled:opacity-50"><Plus aria-hidden="true" className="h-4 w-4" />Add</button></div>
-        {data.medications.length > 0 ? <div>{data.medications.map((medication) => <MedicationRow key={medication.id} babyId={babyId} episodeId={activeEpisode.id} medication={medication} now={now} busy={busy || isStale} onBusy={setBusy} onChanged={onRefresh} onLog={onLogMedication} />)}</div> : <p className="mt-1 text-xs text-muted">No medications added.</p>}
+        {data.medications.length === 0 ? <p className="mt-1 text-xs text-muted">No medications added.</p> : data.medications.length < MEDICATION_COLLAPSE_FROM ? <div>{medicationRows}</div> : (
+          <LatestEntriesDisclosure
+            className="health-medications-disclosure"
+            title={medicationSummaryInfo.label}
+            titleClassName="text-muted"
+            summaryWrapperClassName="flex flex-wrap items-baseline gap-x-1.5 gap-y-0"
+            summary={medicationSummaryInfo.headline && (
+              <>
+                <span className="medication-summary-name font-semibold text-warm-brown">{medicationSummaryInfo.headline.name}</span>
+                <span data-medication-summary-tone={medicationSummaryInfo.headline.tone} className={`medication-summary-detail tabular-nums ${medicationSummaryInfo.headline.tone === "overdue" ? "font-semibold text-danger" : medicationSummaryInfo.headline.tone === "due" ? "font-semibold text-warning" : "text-muted"}`}>{medicationSummaryInfo.headline.detail}</span>
+              </>
+            )}
+            entries={<div>{medicationRows}</div>}
+          />
+        )}
       </div>
 
       {summary?.lastCompletedDayConcern && <p className="mt-4 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs leading-relaxed text-danger">On {summary.lastCompletedDayConcern.date}, {summary.lastCompletedDayConcern.totalMl} ml was logged—below the episode’s {summary.lastCompletedDayConcern.thresholdMl} ml 50% full-day intake threshold.</p>}

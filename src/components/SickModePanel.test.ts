@@ -214,13 +214,15 @@ test("latest diapers keep the newest summary closed and bound history at three",
   };
 
   // Empty state is explicit and never claims zero pee.
-  const empty = build(0);
+  // The medicines list is its own disclosure further down; judge the diapers part only.
+  const diapersOf = (html: string) => html.split('class="health-medications')[0];
+  const empty = diapersOf(build(0));
   assert.match(empty, /No diapers logged yet/);
   assert.doesNotMatch(empty, /data-diaper-row=/);
   assert.doesNotMatch(empty, /data-latest-entries="true"/);
 
   for (const count of [1, 2, 3, 4]) {
-    const html = build(count);
+    const html = diapersOf(build(count));
     assert.match(html, /<details[^>]*data-latest-entries="true"/);
     assert.doesNotMatch(html, /<details[^>]*\bopen/);
     assert.equal(
@@ -639,4 +641,32 @@ test("the shared medication fields use scheduled labels and an inline interval m
   const prn = render({ key: "k", name: "Paracetamol", doseText: "3.5ml", asNeeded: true, minIntervalHours: "", maxIntervalHours: "" });
   assert.match(prn, /Earliest interval \(hours, optional\)/);
   assert.doesNotMatch(prn, /Enter how often this medication should be given\./);
+});
+
+test("three or more medicines collapse to one summary row; one or two stay listed", () => {
+  const render = (count: number) => {
+    const data = activeResponse();
+    data.medications = data.medications.slice(0, count);
+    return renderToStaticMarkup(createElement(SickModePanel, { babyId: "baby-1", data, onRefresh: () => undefined, onLogMedication: () => undefined }));
+  };
+  const meds = (html: string) => html.slice(html.indexOf('class="health-medications'));
+
+  for (const count of [1, 2]) {
+    const html = meds(render(count));
+    assert.doesNotMatch(html, /health-medications-disclosure/);
+    assert.equal((html.match(/data-medication-row=/g) ?? []).length, count);
+  }
+
+  const collapsed = meds(render(4));
+  assert.match(collapsed, /<details[^>]*health-medications-disclosure/);
+  assert.doesNotMatch(collapsed, /<details[^>]*health-medications-disclosure[^>]*\bopen/);
+  assert.match(collapsed, />4 medicines<\/span>/);
+  // Medication 3 is scheduled with no dose yet, so it is the headline and due now.
+  assert.match(collapsed, /medication-summary-name[^>]*>Medication 3</);
+  assert.match(collapsed, /data-medication-summary-tone="due"[^>]*>no dose yet</);
+  // Every row is still in the document for the opened state and for screen readers.
+  assert.equal((collapsed.match(/data-medication-row=/g) ?? []).length, 4);
+  // Logging a medicine and adding a prescription stay one tap away while collapsed.
+  assert.match(collapsed, /aria-label="Log medication"/);
+  assert.match(collapsed, /aria-label="Add medication prescription"/);
 });
